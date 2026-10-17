@@ -103,7 +103,21 @@ jobs:
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq "map(select(.tag_name == \"$TAG\")) | .[0].id // empty")
           if [ -n "$id" ]; then
-            echo "复用已存在的 Release：标签 $TAG，id=$id"
+            # 已经正式发布的 Release 不允许再被复用上传：标签一旦发布，用户下到的包就不该在
+            # 无人察觉的情况下被替换。要重发只能提升版本号、打新标签（顺带也避免把「同一个
+            # 版本的产物」换成两批不同的东西）。
+            isdraft=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id" --jq '.draft')
+            if [ "$isdraft" != "true" ]; then
+              echo "::error::标签 $TAG 的 Release 已经正式发布，产物不可再替换。请提升版本号后重新发标签。"
+              exit 1
+            fi
+            # 复用草稿时**必须**把 target_commitish 拉到本次运行的提交：草稿阶段 Git 标签还没
+            # 创建，target_commitish 是决定「发布后标签指向哪里」的唯一依据。v0.1.0 就踩过：
+            # 草稿由更早一次运行创建、产物由后来这次运行构建，结果标签指向 f6e005e，而 27 个
+            # 产物全部产自 0cae10b，差了两个提交。
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+              -f target_commitish="$GITHUB_SHA" > /dev/null
+            echo "复用已存在的草稿 Release：标签 $TAG，id=$id，target_commitish → ${GITHUB_SHA:0:7}"
           else
             id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
               -f tag_name="$TAG" \

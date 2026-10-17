@@ -448,13 +448,12 @@ function updateFlow() {
   p.push(t(912, 468, 'Download, replace and restart all require the user to click.', { fs: 19, fill: INK2 }));
 
   p.push(
-    t(80, 556, 'Draft and pre-release versions are never delivered to clients. Before the first public release the endpoint returns 404,', {
+    t(80, 556, 'Drafts and pre-releases are never delivered; an unreachable endpoint shows "no update information available yet".', {
       fs: 20,
       fill: SLATE,
     }),
   );
-  p.push(t(80, 590, 'which the tray reports as "no update information available yet".', { fs: 20, fill: SLATE }));
-  p.push(t(80, 624, 'Losing the signing key means no further usable updates: clients reject packages signed by a different key.', { fs: 20, fill: SLATE }));
+  p.push(t(80, 590, 'Losing the signing key means no further usable updates: clients reject packages signed by a different key.', { fs: 20, fill: SLATE }));
 
   wrap('update-flow.svg', W, H, 'Daylight Desktop auto-update trust chain', p.join('\n  '));
 }

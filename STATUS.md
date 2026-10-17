@@ -4,7 +4,7 @@
 
 验证等级用语（按 [AGENTS.md](AGENTS.md)）：**规划中** < **代码已实现** < **本地测试通过** < **真实服务实连成功** < **云端部署验证通过** < **生产验收通过**。
 
-## 本轮：CI/CD 六平台发布流水线 + 应用内自动更新（2026-10-17）
+## 本轮：CI/CD 六平台发布流水线 + 应用内自动更新（2026-10-17 ~ 10-18）
 
 ### 交付内容
 
@@ -22,7 +22,7 @@
   - `guard` 任务先校验**标签版本与 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处版本一致**，不一致直接失败，避免发出一个「版本号说不清」的包。
   - `fail-fast: false`：单平台失败不影响其余平台。
   - `includeUpdaterJson` 在当前的 `tauri-action` 里已更名为 `uploadUpdaterJson`；并显式设 `updaterJsonPreferNsis: true`（Windows 自动更新只能装 NSIS，不设就会把装不上的 `.msi` 写进 `latest.json`），`retryAttempts: 2`（六个 job 并发创建同一个 Release）。
-  - `tauri-apps/tauri-action@v1`，`releaseDraft` 由 guard 任务归一化后的 `draft` 输出决定（**不写死**）：推标签默认正式发布，手动运行时可勾「只产出草稿 Release」来在不公开的前提下验证六平台构建。
+  - `tauri-apps/tauri-action@v1`，草稿形态由 guard 任务归一化后的 `draft` 输出决定（**不写死**，落在**创建 Release 那一步**的 `-F draft="$DRAFT"` 上）：推标签默认正式发布，手动运行时可勾「只产出草稿 Release」来在不公开的前提下验证六平台构建。
 - **应用内自动更新（Rust 侧，`src-tauri/src/update.rs`）**：`tauri-plugin-updater` + `tauri-plugin-dialog`。启动约 6 秒后**静默**检查一次（已是最新不打扰用户），托盘菜单新增「检查更新…」手动检查；发现新版本弹原生对话框，**用户点确认后**才下载安装，装完 `app.restart()`；下载期间用窗口标题显示「正在下载更新…」。绝不静默安装，也不需要 WebView 参与。
   - 配套：`tauri.conf.json` 增加 `plugins.updater`（可公开的 minisign 公钥 + 本仓库 `releases/latest/download/latest.json`）与 `bundle.createUpdaterArtifacts: true`。
   - 私钥生成在 `work/updater-key/daylight.key`（`work/` 不进仓库），只用于本机与 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`。
@@ -36,6 +36,7 @@
 - **D6 自动更新只在原生侧实现，不给应用页调用通道**：应用页由回环 HTTP（`src-tauri/capabilities/main.json` 里有 `remote: {"urls":["http://127.0.0.1:*/*"]}`）提供，页面可以调 Tauri 命令。「替换自己的安装文件」是本机权限最高的操作之一，把它做成纯 Rust 能力，页面即使被注入也够不到；签名校验也发生在原生侧，不依赖 WebView 里任何脚本。代价：更新入口在托盘菜单而不是应用内设置页；收益：更新能力不在远程来源页面的可达面内。
 - **D7 交叉打包必须换内置 Node，不能只换 Rust target**：安装包内置 Node 二进制，`--target x86_64-apple-darwin` 只换 Rust 产物架构，内置 Node 与原生模块仍是构建机架构，会产出一个「Rust 是 x64、Node 是 arm64」的包——在 Intel Mac 上直接启动失败。因此 `prepare-desktop.mjs` 必须同时处理内置 Node 与 `npm install --cpu`，并由 `desktop-tests` 里的「发布矩阵与内置 Node 架构映射一一对应」守死：**矩阵里每个 target 都必须在 `TRIPLES` 中有映射**，否则会静默退回「复制本机 Node」。
 - **D8 签名为发布必需，不提供「无签名也发布」的开关**：`createUpdaterArtifacts: true` + 缺少 `TAURI_SIGNING_PRIVATE_KEY` 时打包会**明确失败**。这是刻意的——没有签名就不该发布更新，客户端也会拒绝安装（同时挡住被篡改的包）。
+- **D9 已发布的产物不可替换，草稿被复用时必须把 `target_commitish` 拉到本次运行的提交**：草稿阶段 Git 标签还没创建，`target_commitish` 是「发布后标签指向哪里」的唯一依据。若复用时不动它，标签就会指向**第一次创建那份草稿的运行**的提交，而不是真正构建这批产物的提交——`v0.1.0` 实测踩过：27 个产物全部产自 `0cae10b`，标签却指向 `f6e005e`（差两个提交）。同时，同标签的 Release 一旦**已正式发布**，再跑一律失败并提示提升版本号：已发布的包被静默替换会让「用户下到的东西」不可追溯。
 
 ### 本轮验证记录
 
@@ -58,6 +59,9 @@
 | `latest.json` 地址改写与完整性校验 | `npm run test:desktop` #14 | API 地址 → `releases/download/<tag>/<文件名>`；签名与其它字段原样保留；**重复运行不再改动**（幂等）；指向不存在的资产、或形态不认识的地址一律报错；六个平台缺任何一个都能被检出 | 本地测试通过 |
 | **六平台发布流水线真实运行（修复后完整一轮）** | `release.yml`，`workflow_dispatch` + 勾草稿，标签 `v0.1.0`，run [`39053509331`](https://github.com/yunforis/DaylightDesktop/actions/runs/39053509331) | `校验版本` + **六个平台 job**（`macos-arm64` / `macos-x64` / `linux-x64` / `linux-arm64` / `windows-x64` / `windows-arm64`）+ `修整 latest.json` **全部 success**。全程只创建 **1 份**草稿 Release（`id=415954992`，`draft=true`，第二轮复用了第一轮那份，走的正是幂等复用分支），收齐 **27 个产物**：macOS 双架构 `.dmg` + `.app.tar.gz` + `.sig`、Windows 双架构 `-setup.exe`（NSIS）+ `en-US.msi` + `.sig`、Linux 双架构 `AppImage` + `.deb` + `.rpm` + `.sig`，以及 `latest.json` | **云端部署验证通过（六平台出包，草稿）** |
 | `latest.json` 指向公开下载地址（真实产物核对） | 从草稿 Release 读回 `latest.json`（`Accept: application/octet-stream`） | 18 个平台键全部指向 `https://github.com/yunforis/DaylightDesktop/releases/download/v0.1.0/<文件名>`，不再是需要鉴权的 asset API 地址；`windows-x86_64` / `windows-aarch64` 指向 `-setup.exe`，另有 `-msi` 键指向 `.msi`；六个必需平台（darwin/linux/windows × aarch64/x86_64）齐全 | 云端部署验证通过（草稿） |
+| **正式发布 `v0.1.0`** | `PATCH /releases/<id>`（`draft: false, prerelease: false`），随后**不带任何 token** 读取公开地址 | 状态变为 `draft=false`、`prerelease=false`、`published_at=2026-10-17T18:11:40Z`（北京时间 10-18 02:11）。`releases/download/v0.1.0/latest.json` 与 `releases/latest/download/latest.json` 均**匿名可读 HTTP 200**（Script 无需鉴权 = 与客户端同一条路径），版本 `0.1.0`，18 个平台键全部是公开下载地址，六个必需平台齐全（`windows-*` 指向 `-setup.exe`） | **云端部署验证通过** |
+| CI 发现并修复：复用草稿时 `target_commitish` 停在旧提交 | 用 API 核对 run 的 `head_sha`、Release 的 `target_commitish`、标签指向与 27 个产物的上传时间 | 草稿是更早一次运行创建的（`target_commitish=f6e005e`），而 27 个产物**全部**由 run [`39053509331`](https://github.com/yunforis/DaylightDesktop/actions/runs/39053509331)（`head_sha=0cae10b`）在 17:28:52Z–17:36:23Z 上传——**标签差点指向与产物相差两个提交的位置**。已修：复用草稿时 `PATCH target_commitish=$GITHUB_SHA`，并拒绝复用已正式发布的 Release；当前这份 Release 的标签已改指到 `0cae10b`，`target_commitish` 元数据同步修正 | 云端部署验证通过（已修并核对） |
+| 桌面专有测试（补测后） | `npm run test:desktop` | **14/14 通过**（新增断言：创建与复用两条路径都必须把 `target_commitish` 定到本次运行的提交；guard 必须拒绝复用已正式发布的 Release） | 本地测试通过 |
 | 发布正文模板 | `sed "s/{{VERSION}}/0.1.0/g" .github/release-body.md` | 版本占位替换正确，六平台下载表与实际产物名一致 | 本地测试通过 |
 | 产物文件名与引用自检 | `npm run test:desktop` #12 + 反向对照（撤掉修正重新构建） | 修正生效时 0 个非法名、117 个 `/assets/` 引用全部存在；**撤掉修正后该测试精确失败并点名那两个文件** | 本地测试通过 |
 | Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（新增 updater / dialog 插件与 `update.rs`） | 本地测试通过 |
@@ -73,12 +77,12 @@
 
 ### 未验证 / 明确边界
 
-- **六平台出包已在草稿 Release 上真实验证通过，但还没有发布正式版本、也没有在实机上启动过**：`desktop.yml`（三平台 verify）三平台全绿；`release.yml` 六平台矩阵在修掉两个缺陷（Linux AppImage 误收 musl 原生模块、并发创建重复 Release 与 `latest.json` 用了 asset API 地址）后**完整跑通一轮**：`校验版本`、六个平台构建、`修整 latest.json` 全部 success，唯一一份草稿 Release 里收齐六平台安装包与 `latest.json`。**注意这仍是草稿**：`v0.1.0` 标签要到发布时才创建，公开更新地址 `releases/latest/download/latest.json` 在发布前返回 404，客户端会显示「还没有取到可用的更新信息」。**发布动作需要人明确决定后再做**；`latest.json` 里的 `releases/download/v0.1.0/...` 地址在发布后才会生效。
+- **六平台出包与正式发布都已在真实 CI 上验证通过，但应用没有在实机上启动过**：`desktop.yml`（三平台 verify）三平台全绿；`release.yml` 六平台矩阵在修掉三个缺陷（Linux AppImage 误收 musl 原生模块、并发创建重复 Release 与 `latest.json` 用了 asset API 地址、复用草稿时 `target_commitish` 停在旧提交）后**完整跑通一轮**：`校验版本`、六个平台构建、`修整 latest.json` 全部 success，Release 收齐六平台安装包与 `latest.json`，**`v0.1.0` 已于 2026-10-18（北京时间）正式发布**（标签指向构建提交 `0cae10b`）。公开更新地址 `releases/latest/download/latest.json` 已实测**匿名可读 HTTP 200**，18 个平台键全是公开下载地址、六个必需平台齐全——也就是说「客户端能拿到更新清单」这条路径是真的通了。剩下的空白是：装了 `0.1.0` 的客户端只会比较到「已是最新」，**真正的下载 → 校验 → 替换 → 重启要等第二个版本发布后才有机会验证**。
 - **文件名必须在 Windows 上也合法**：安装包里的每个文件名不能以点或空格结尾、不能含 `<>:"|?*`、不能用 `CON`/`PRN`/`NUL`/`COM1`/`LPT1` 这些保留名。构建发生在 macOS / Linux 上，这类文件名在那里完全合法，问题只会在 Windows 用户机器上出现。Vite 的默认资源命名就踩过：没有扩展名的文件（pdfjs-dist 的 `LICENSE_JBIG2`）会被命名成 `LICENSE_JBIG2-C_izpuvI.`。`vite.config.js` 已修掉这一点，`prepare-desktop.mjs` 在打包前会检查一遍并直接报错，`desktop-tests` 也有断言守着。\n- **Windows 上凭据文件没有 POSIX 权限位**：`server/secure-json.js` 写盘请求 `mode: 0o600`，Windows 会忽略它，Node 读回来恒是 `0o666`（CI 实测 `expected 384 / actual 438`）。这一侧的实际保护是「主密钥存进 Windows 凭据管理器」+「`%APPDATA%` 目录继承的 ACL」，都无法用 `fs.stat` 断言。`desktop-tests` 已改为按平台分支断言，并在注释里写明原因，不假装 Windows 上也验证了 0600。
 - **Windows 上 PATH 的键名是 `Path`，曾导致 `desktop:check` 静默失败**：`scripts/desktop.mjs` 里写的是 `env.PATH = ...`，而 `env` 是从 `process.env` 展开出的普通对象（大小写敏感），于是新增了一个键而不是改已有的 `Path`，交给子进程的环境块里同时存在 `Path` 与 `PATH`，系统挑到了不含 cargo 的那个——`spawnSync('cargo')` 找不到可执行文件，`npm run desktop:check` 只给出退出码 1、**全程没有任何输出**（CI 日志里唯一线索就是这一行）。已改为按键名不敏感地定位 PATH，并在 `cargo` 启动失败时明确报出原因；`desktop-tests` 里有静态断言守住写法。**这个差异只在 Windows 上存在**：macOS/Linux 的环境块是真·大小写敏感，复刻不出「系统在重复键里挑一个」的行为，所以本机无法行为验证，只能靠 `windows-latest` 上的真实运行。
 - **Windows 检出是 CRLF 行尾**：正则里的 `.` 不匹配 `\r`，带 `$` 锚点的断言在 CRLF 上会静默失效。写上面那条 PATH 守卫时就踩了一次——剥注释的 `/\/\/.*$/` 在 CRLF 下匹配不到行尾，把注释里那句「不要写 `env.PATH`」当成了违规代码，于是在 `windows-latest` 上失败、在 macOS 上通过。测试里读源码现已统一走 `readText()` 先归一化行尾。
 - **文件名必须跨平台合法，构建期就要挡住**：Windows 不允许文件名以点或空格结尾、不允许含 `<>:"|?*`、不允许 `CON`/`PRN`/`AUX`/`NUL`/`COM1..9`/`LPT1..9` 这些保留名。构建在 macOS/Linux 上跑，这类名字在那里完全合法，只有 Windows 用户会中招。Vite 的默认资源命名踩过这个坑：没有扩展名的文件（pdfjs-dist 的 `LICENSE_JBIG2`）会被命名成 `LICENSE_JBIG2-C_izpuvI.`，Tauri 打包时报 `resource path ... doesn't exist`；`vite.config.js` 已修，`prepare-desktop.mjs` 打包前会整树检查并报错。**这也是 `windows-latest` 那一步存在的意义**：不要在 Mac 上看到绿就认为跨平台没问题。
-- **自动更新未做端到端验证**：已验证「签名能被应用内嵌公钥接受、篡改即拒绝」，但**下载 → 校验 → 替换安装文件 → 重启**这条完整链路需要先发布两个真实版本才能验证。Linux 上还额外依赖 AppImage 形态（`.deb` 装的版本不会自动更新）。
+- **自动更新未做端到端验证**：已验证「签名能被应用内嵌公钥接受、篡改即拒绝」，也已确认公开更新地址匿名可读；但**下载 → 校验 → 替换安装文件 → 重启**这条完整链路需要**两个**已发布版本才能验证，本轮只发布了 `v0.1.0`。Linux 上还额外依赖 AppImage 形态（`.deb` 装的版本不会自动更新）。
 - **`tauri.conf.json` 里的公钥与 `work/updater-key/` 的私钥是本轮新生成的**，此前没有更新密钥。若私钥丢失，客户端会拒绝后续所有更新，只能让用户手动重装——`work/updater-key/` 需要自行备份（不进仓库）。
 - **macOS 未签名未公证**：本轮与 CI 默认产出未签名包，首次打开需要在「系统设置 → 隐私与安全性」手动放行。配好 `APPLE_*` Secrets 后可自动签名公证，需要 Apple 开发者账号。
 - **安装包在真实 Linux / Windows runner 上构建成功 ≠ 应用在那两个系统上跑起来了**：六平台构建是在 GitHub 托管的 `ubuntu-22.04` / `ubuntu-24.04-arm` / `windows-latest` / `windows-11-arm` 上真实执行的（不是本地模拟），但**没有在实机上启动过**——没有对应机器可用，也没有人验证过界面、托盘、托盘菜单、PDF 预览与自动更新在 Windows / Linux 上的实际表现。这一条要一直挂到真有实机验证为止。

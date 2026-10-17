@@ -474,6 +474,18 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
   assert.match(release, /releaseId:\s*\$\{\{\s*needs\.guard\.outputs\.releaseId\s*\}\}/, '构建作业必须按 guard 给出的 releaseId 上传');
   assert.ok(!/tagName:\s*\$\{\{\s*needs\.guard/.test(release), 'build 作业里不该再按 tagName 找/建 Release，否则并发时会劈出多份');
 
+  // 复用草稿时必须把 target_commitish 拉到本次运行的提交。草稿阶段 Git 标签还没创建，
+  // 而 target_commitish 一旦停留在「第一次创建那份草稿的运行」的提交上，发布出来的标签
+  // 就会指向与产物不对应的提交：v0.1.0 实测踩过——27 个产物全部产自 0cae10b，标签却指向
+  // f6e005e（差两个提交）。创建与复用两条路径都要写死这次运行的 SHA。
+  assert.equal(
+    (release.match(/-f target_commitish="\$GITHUB_SHA"/g) ?? []).length,
+    2,
+    '创建与复用两条路径都必须把 target_commitish 定到本次运行的提交',
+  );
+  // 已正式发布的 Release 不该被复用上传，否则用户下到的包会被静默替换。
+  assert.match(release, /已经正式发布/, 'guard 必须拒绝复用已正式发布的 Release');
+
   // 收尾作业：tauri-action 写的 latest.json 用的是资产 API 地址，客户端拿到的会是 JSON 元数据
   // 而不是安装包，必须改写成公开下载地址；顺带卡住「哪个平台没传上来」。
   assert.match(release, /^  finalize:/m, 'release.yml 必须有 finalize 收尾作业');
