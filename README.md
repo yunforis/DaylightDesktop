@@ -42,7 +42,7 @@
 | 为了用上 AI，先搭服务器、数据库和账号体系 | 下载安装包即可运行，内置 Node 后台，数据默认留在本机 |
 | 简历与发票附件分散 | 在招聘、发票页面集中查看，处理结果可对照原件 |
 
-**当前交付：** 桌面壳层、本地单用户工作区、预置场景模板、知识检索、小 D 助手，以及原生侧自动更新的完整框架。六种目标（macOS arm64/x64、Windows x64/arm64、Linux x64/arm64）的安装包已在 CI 真实构建，**正式版本 [`v0.1.0`](https://github.com/yunforis/DaylightDesktop/releases/tag/v0.1.0) 已发布**：一轮完整发布跑通了「校验版本 → 六平台构建 → 修整 `latest.json`」全部环节，Release 里收齐 **27 个产物**（`.dmg` / `.app.tar.gz` / NSIS `-setup.exe` / `.msi` / `AppImage` / `.deb` / `.rpm` 与各自的 `.sig`，以及 `latest.json`）；标签指向构建这批产物的提交 `0cae10b`，`latest.json` 的 18 个平台键全部指向公开下载地址，公开更新地址已实测匿名可达（HTTP 200）。**安装包尚未在真实 Windows / Linux 机器上启动过**；未验证项逐条记录在 [STATUS](STATUS.md) 与[已知边界](#evidence)。
+**当前交付：** 桌面壳层、本地单用户工作区、预置场景模板、知识检索、小 D 助手，以及原生侧自动更新的完整框架。六种目标（macOS arm64/x64、Windows x64/arm64、Linux x64/arm64）的安装包已在 CI 真实构建，**正式版本 [`v0.1.0`](https://github.com/yunforis/DaylightDesktop/releases/tag/v0.1.0) 已发布**：一轮完整发布跑通了「校验版本 → 六平台构建 → 修整 `latest.json`」全部环节，Release 里收齐 **27 个产物**（`.dmg` / `.app.tar.gz` / NSIS `-setup.exe` / `.msi` / `AppImage` / `.deb` / `.rpm` 与各自的 `.sig`，以及 `latest.json`）；标签指向构建这批产物的提交 `467ddd2`，`latest.json` 的 18 个平台键全部指向公开下载地址，公开更新地址已实测匿名可达（HTTP 200，且取样下载到的是二进制而不是元数据 JSON）。**安装包尚未在真实 Windows / Linux 机器上启动过**；未验证项逐条记录在 [STATUS](STATUS.md) 与[已知边界](#evidence)。
 
 <a id="quickstart"></a>
 ## ⚡ 快速开始
@@ -253,7 +253,9 @@ git push origin v0.1.0
 
 也可以到 Actions 页面手动运行 `release` 工作流，填一个标签（标签不存在时会在本次运行的提交上创建），并可勾选 **「只产出草稿 Release」**只构建不公开——用于先验证六平台能不能都出包。**草稿验证通过后，直接在 Releases 页面把这份草稿发布出去**即为正式发布：草稿里已经有全部产物与 `latest.json`。
 
-> ⚠️ 重复运行同一条标签时 `guard` 的行为：如果那份 Release **还是草稿**，会被复用，同时把 `target_commitish` 更新到本次运行的提交——这样发布出来的标签指向的才是真正构建这批产物的提交（`v0.1.0` 踩过一次：草稿由更早的运行创建，标签差点指向与产物相差两个提交的位置）。如果标签下的 Release **已经正式发布**，再跑会**直接失败**并提示提升版本号：已发布的产物不允许被静默替换。
+> ⚠️ 重复运行同一条标签时 `guard` 的行为：如果那份 Release **还是草稿**，会被复用，同时把 `target_commitish` 更新到本次运行的提交——这样发布出来的标签指向的才是真正构建这批产物的提交（`v0.1.0` 踩过一次：草稿由更早的运行创建，标签差点指向与产物相差两个提交的位置）。如果标签下的 Release **已经正式发布**，这一轮会**整体跳过**（空操作）：已发布的产物不允许被静默替换。
+
+> ℹ️ 在 Releases 页面发布草稿后，Actions 里会**再出现一次** `release` 运行——这是正常的：发布草稿会创建 Git 标签，而本工作流由 `push: tags: v*` 触发。这次运行会走「已正式发布 → 跳过」，几秒内绿灯结束，不重建、不改 `latest.json`。
 
 | 平台 | Runner | Rust target |
 | --- | --- | --- |
@@ -397,7 +399,7 @@ bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴�
 
 ### 已知边界
 
-- **六平台出包与正式发布都已在真实 CI 上验证通过，实机启动未验证**：六种目标的安装包已在 GitHub 托管的 runner 上**真实构建成功**（含 macOS 的 `.dmg`/`.app.tar.gz`、Windows 的 NSIS `-setup.exe`/`.msi`、Linux 的 `AppImage`/`.deb`/`.rpm`，以及各自的 `.sig`）。发布流水线在草稿阶段暴露的缺陷（并发创建重复 Release、`latest.json` 指向需鉴权的 asset API 地址、复用草稿时 `target_commitish` 停留在旧提交导致标签与产物不对应）都已修复并补了测试；修复后完整一轮（`校验版本` + 六个平台 job + `修整 latest.json`）全部 success，Release 收齐六平台产物与 `latest.json`，**`v0.1.0` 已于 2026-10-18（北京时间）正式发布**，标签指向构建提交 `0cae10b`，实测 `latest.json` 的 18 个平台键全部是公开下载地址，公开更新地址匿名可达（HTTP 200）。但**应用本身没有在真实 Windows / Linux 机器上启动过**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包。因此这是**代码已实现 + 构建与发布通过**，不是**实机跑通**。完整记录见 [STATUS.md](STATUS.md)。
+- **六平台出包与正式发布都已在真实 CI 上验证通过，实机启动未验证**：六种目标的安装包已在 GitHub 托管的 runner 上**真实构建成功**（含 macOS 的 `.dmg`/`.app.tar.gz`、Windows 的 NSIS `-setup.exe`/`.msi`、Linux 的 `AppImage`/`.deb`/`.rpm`，以及各自的 `.sig`）。发布流水线在草稿阶段暴露的缺陷都已修复并补了测试：并发创建重复 Release、`latest.json` 指向需鉴权的 asset API 地址、复用草稿时 `target_commitish` 停留在旧提交（标签会与产物对不上）、以及**「发布草稿本身会创建 Git 标签、从而再触发一次本工作流」把已发布产物重写一遍**（最后一个最隐蔽：实测把 Linux 资产换成了新构建的，`latest.json` 被中途改写成 12 个键指向 asset API 地址，客户端会「下载」到一段 JSON）。修复后完整一轮（`校验版本` + 六个平台 job + `修整 latest.json`）全部 success，Release 收齐六平台产物与 `latest.json`，**`v0.1.0` 已于 2026-10-18（北京时间）正式发布**，标签指向构建提交 `467ddd2`，实测 `latest.json` 的 18 个平台键全部是公开下载地址、六个必需平台齐全、12 个被引用的产物都有 `.sig`，公开更新地址匿名可达（HTTP 200）且取样下载到的是二进制；发布触发的第二次工作流运行实测在 11 秒内以「跳过」结束，产物与 `latest.json` 一字未改。但**应用本身没有在真实 Windows / Linux 机器上启动过**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包。因此这是**代码已实现 + 构建与发布通过**，不是**实机跑通**。完整记录见 [STATUS.md](STATUS.md)。
 - **自动更新未做端到端验证**：本机已实测「更新产物签名能被应用内嵌公钥接受、篡改 1 字节即被拒绝」（含反向对照），但**下载 → 校验 → 替换安装文件 → 重启**这一整条链路需要发布两个真实版本才能验证，本轮未做。Linux 上还额外依赖 AppImage 形态。
 - **macOS 安装包未做签名与公证**：本机与 CI 默认产出未签名包，首次打开需要手动放行。配好 `APPLE_*` Secrets 后即可自动签名公证，那时需要 Apple 开发者账号（付费）。
 - **正式版本已发布，端到端更新仍未验证**：`v0.1.0` 已发布（2026-10-18 北京时间），公开更新地址匿名可达；但「下载 → 校验 → 替换安装文件 → 重启」需要**两个**已发布版本才能验证，本轮只发布了第一个。
