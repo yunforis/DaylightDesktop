@@ -161,6 +161,7 @@ bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴�
 - 托盘菜单 →「检查更新…」可手动检查，无论结果如何都会给出反馈。
 - **绝不静默安装**：弹窗里点「下载并安装」之后才会下载，下载期间窗口标题显示进度提示，装完自动重启到新版本。本地数据与配置不受影响（更新只替换程序本体）。
 - 更新逻辑**全部在 Rust 壳层**（`src-tauri/src/update.rs`）。应用页由回环 HTTP 提供，不给页面调用「替换自己安装文件」这条命令的通道，页面即使被注入也够不到更新能力。
+- 还没发布过任何正式版本时，更新端点返回 404，插件会把它折叠成 `ReleaseNotFound`。原生侧会把这类情况翻译成「还没有取到可用的更新信息」，而不是误报成「网络故障」；缺少当前平台安装包（`TargetNotFound`）也单独区分提示。
 
 ### 信任链
 
@@ -205,10 +206,16 @@ git push origin v0.1.0
 | Secret | 是否必需 | 说明 |
 | --- | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | **必需** | `work/updater-key/daylight.key` 的**文件内容**。缺失时打包会在「生成更新产物」这步直接失败——这是刻意的，没有签名不该发布更新 |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 可选 | 私钥口令，密钥未设口令时留空 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 可选 | 私钥口令。当前密钥未设口令，**不要填**：让它保持不存在（表达式为空串）与「无口令密钥」是匹配的，本机已实测这一组合能正常签名 |
 | `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | 可选 | macOS 签名与公证。**不配也能出包**，但用户首次打开需要在「系统设置 → 隐私与安全性」里手动放行 |
 
 工作流只在 `APPLE_CERTIFICATE` 非空时才注入签名变量（空变量会让 Tauri 打包器报错），所以没配证书时不会因此失败。
+
+### 仓库必须保持公开
+
+更新源 `.../releases/latest/download/latest.json` 是**匿名**地址。仓库转私有后客户端会拿到 404，自动更新整体失效。这一点不能靠客户端绕过去：把仓库的读取 token 打进安装包，等于让每个下载者都能读到整个仓库，而且 token 一过期所有客户端的更新就集体失效。
+
+万一仓库确实是私有的，客户端不会崩——托盘菜单会明确显示「还没有取到可用的更新信息」，用户可到 Releases 页面（登录后可见）手动下载覆盖安装。
 
 ### Linux / Windows 自更新的产物要求
 

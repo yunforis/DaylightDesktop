@@ -44,6 +44,7 @@ node scripts/desktop-sync.mjs --check
 - **去管理端**：`/api/admin/*` 在桌面模式由单点守卫统一返回 404（代码保留，仅屏蔽路由）。前端不得再出现任何管理端入口。
 - **监听地址**：桌面模式强制 `127.0.0.1`；首选端口被占用时回退随机端口，并通过 `DAYLIGHT_READY <port>` 通知壳层。
 - **凭据加密**：`settings.json` 与 `infra.json` 走 `server/secure-json.js`（AES-256-GCM，密钥来自系统凭据库）。**拿不到密钥时必须明确报错，绝不降级为明文**。其余业务 JSON 明文 + 临时文件 rename 原子写。
+  - 写盘时请求 `mode: 0o600`，但这只在 POSIX 上生效：Windows 没有权限位，Node 读回来恒是 `0o666`。Windows 侧的保护来自「主密钥存进 Windows 凭据管理器（内容加密）」与 `%APPDATA%` 目录继承的 ACL，两者都无法用 `fs.stat` 断言——不要为了让它「看起来通过了」而删掉断言，`desktop-tests` 里是按平台分支断言的。
 - **本地默认**：`infra.postgres.enabled`、`infra.mq.enabled` 在桌面模式默认 `false`（见 `server/infra/config.js` 的 `DESKTOP` 开关）。不要为了让某个功能「跑起来」而打开它们。
 - **不要静态 `import 'vite'`**：安装版运行时不含 vite，必须动态 `await import('vite')`。
 - QQ 邮箱使用 IMAP：`imap.qq.com:993`，TLS，用户名为邮箱地址，密码为 IMAP 授权码。
@@ -59,6 +60,7 @@ node scripts/desktop-sync.mjs --check
 
 - **版本号三处必须一致**：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`。`release.yml` 的 guard 任务会挡住不一致的标签，但改版本时就该一起改。应用版本以 `tauri.conf.json` 为准（自动更新就是拿它和 `latest.json` 比）。
 - **发布方式**：改版本 → 提交 → `git tag v<版本>` → `git push origin <标签>`。也可以到 Actions 手动运行 `release` 工作流并填一个已存在的标签（重跑某个平台用）。
+- **仓库必须保持公开**：更新源是 `https://github.com/yunforis/DaylightDesktop/releases/latest/download/latest.json`，这是**匿名**下载地址。仓库转为私有后客户端会拿到 404，自动更新整体失效（客户端会把 `ReleaseNotFound` 显示成「还没有取到可用的更新信息」，不会崩，但也不会更新）。若确实要转私有，必须同时改成带 Authorization 头的私有下载方案，并接受「拿到安装包的人就能读出 token」的后果。
 - **更新签名私钥绝不可提交**：公钥在 `src-tauri/tauri.conf.json`（可公开），私钥只在本机 `work/updater-key/daylight.key` 与 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`。私钥丢失等于失去自动更新能力（客户端会拒绝别把密钥签出来的包），需要自行备份并提醒用户手动重装。
 - **自动更新只在 Rust 侧实现**：不给应用页调用更新命令的通道（`src-tauri/src/update.rs`）。页面来自回环 HTTP，属于远程来源；「替换自己的安装文件」这类能力不暴露给它。新增更新相关能力时保持这个边界。
 - **发布矩阵与内置 Node 架构必须一一对应**：安装包内置 Node 二进制，`scripts/prepare-desktop.mjs` 的 `TRIPLES` 负责按 `DAYLIGHT_TARGET_TRIPLE` 换 Node 与原生模块架构。**在 `release.yml` 里新增或改名 target 时，必须在 `TRIPLES` 里补上对应项**，否则打包脚本会静默退回「复制本机 Node」，产出一个架构错配的包。`desktop-tests` 里有断言守这件事。

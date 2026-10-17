@@ -267,7 +267,15 @@ test('凭据加密落盘可无损读回，密文不含明文子串', async () =>
     assert.deepEqual(readSecureJson(file), payload);
 
     const mode = fs.statSync(file).mode & 0o777;
-    assert.equal(mode, 0o600, '密文文件权限必须是 0600');
+    if (process.platform === 'win32') {
+      // Windows 没有 POSIX 权限位：Node 对普通文件恒报 0o666，`{ mode: 0o600 }` 会被忽略
+      // （实测 CI：expected 384 / actual 438）。这一侧的保护来自两处，都无法用 fs.stat 断言：
+      // 主密钥存进 Windows 凭据管理器（内容加密）与 %APPDATA% 目录继承的 ACL。
+      // 这里不假装能验证 ACL，只把「Windows 上这行断言没有意义」钉住，避免以后又被当成回归。
+      assert.equal(mode, 0o666, 'Windows 上没有 POSIX 权限位，Node 恒报 0o666');
+    } else {
+      assert.equal(mode, 0o600, '密文文件权限必须是 0600');
+    }
 
     // 没有主密钥时必须明确失败，绝不静默降级为明文。
     delete process.env.DAYLIGHT_MASTER_KEY;
@@ -478,6 +486,10 @@ test('自动更新：签名公钥、发布源与原生侧流程都已接好', ()
   assert.match(updateRs, /OkCancelCustom/, '必须先弹出确认对话框');
   assert.match(updateRs, /app\.restart\(\)/, '安装完成后要重启到新版本');
   assert.ok(!/install\(\s*\)\s*\.await\s*;\s*$/m.test(updateRs), '不得在未确认的情况下直接安装');
+  // 还没发布过正式版本时端点返回 404，插件把它折叠成 ReleaseNotFound；最新版本缺当前平台
+  // 安装包时是 TargetNotFound。两者都不是故障，不能提示成「检查更新失败」。
+  assert.match(updateRs, /ReleaseNotFound/, '404（还没发布过版本）不能被当成检查失败');
+  assert.match(updateRs, /TargetNotFound/, '缺少当前平台安装包不能被当成检查失败');
 
   // 发布流水线必须真的带上签名私钥来构建，否则更新产物签不出来。
   const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');

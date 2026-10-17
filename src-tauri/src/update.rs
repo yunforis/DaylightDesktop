@@ -42,10 +42,13 @@ pub fn check_now(app: AppHandle) {
     });
 }
 
-/// `run` 的三种正常出口里没有「已安装」：安装成功后 `app.restart()` 不会返回。
+/// `run` 的正常出口里没有「已安装」：安装成功后 `app.restart()` 不会返回。
 enum Outcome {
     UpToDate,
     Declined,
+    /// 取不到可用的发布信息：还没发布过正式版本，或最新版本没提供当前系统的包。
+    /// 这不是故障，不该按「检查更新失败」提示。
+    NoReleaseInfo,
 }
 
 fn message(app: &AppHandle, kind: MessageDialogKind, title: &str, body: String) {
@@ -62,12 +65,47 @@ fn run(app: &AppHandle, silent_when_current: bool) -> Result<Outcome, String> {
     result
 }
 
+/// 把「没有可用的发布信息」与「真的出错了」分开。
+///
+/// 端点还没发布过任何正式版本时，GitHub 的 `latest.json` 返回 404；更新插件把 404 折叠成
+/// `ReleaseNotFound`。`TargetNotFound` 则是发布页存在、但没有当前平台/架构的条目（比如某个
+/// 平台的包构建失败了）。这两种都不是网络故障，按「检查更新失败，请确认网络」提示会把人
+/// 引到错误的方向，所以在原生侧翻译成人话。
+fn describe_unavailable(error: tauri_plugin_updater::Error, current: &str) -> String {
+    match error {
+        tauri_plugin_updater::Error::ReleaseNotFound => format!(
+            "还没有取到可用的更新信息（当前 {current}）。\n\n\
+             常见原因是还没有发布过新版本；也可能是网络暂时访问不到 GitHub。\n\
+             已安装的版本不受影响。"
+        ),
+        tauri_plugin_updater::Error::TargetNotFound(target) => format!(
+            "最新版本还没有为你的系统提供安装包（{target}）。\n\n\
+             你可以到发布页手动下载对应平台的安装包。"
+        ),
+        tauri_plugin_updater::Error::TargetsNotFound(targets) => format!(
+            "最新版本还没有为你的系统提供安装包（{}）。\n\n\
+             你可以到发布页手动下载对应平台的安装包。",
+            targets.join(" / ")
+        ),
+        other => format!("{other}"),
+    }
+}
+
 fn run_inner(app: &AppHandle, silent_when_current: bool) -> Result<Outcome, String> {
     let current = app.package_info().version.to_string();
-    let update = tauri::async_runtime::block_on(async {
-        let updater = app.updater().map_err(|error| error.to_string())?;
-        updater.check().await.map_err(|error| error.to_string())
-    })?;
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let update = match tauri::async_runtime::block_on(updater.check()) {
+        Ok(update) => update,
+        Err(error @ (tauri_plugin_updater::Error::ReleaseNotFound
+            | tauri_plugin_updater::Error::TargetNotFound(_)
+            | tauri_plugin_updater::Error::TargetsNotFound(_))) => {
+            if !silent_when_current {
+                message(app, MessageDialogKind::Info, "Daylight 更新", describe_unavailable(error, &current));
+            }
+            return Ok(Outcome::NoReleaseInfo);
+        }
+        Err(error) => return Err(error.to_string()),
+    };
 
     let Some(update) = update else {
         if !silent_when_current {

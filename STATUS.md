@@ -57,7 +57,8 @@
 
 ### 未验证 / 明确边界
 
-- **发布流水线一次都没实际运行过**。全部结论来自本机静态校验（YAML、目标映射、交叉打包实测、签名校验）。首次打标签发布的成功率取决于 runner 可用性，其中 `ubuntu-24.04-arm` 与 `windows-11-arm` 是 GitHub 的 ARM64 runner，可用性随仓库可见性与账号类型变化——若不可用，对应平台会以 job 失败的形式暴露，不影响其余平台。
+- **发布流水线尚未真正跑完整**：`desktop.yml`（三平台 verify）在 2026-10-17 首次真实运行，**macOS `macos-14` 全绿（17/17 步）**，Windows 因一条断言在 CI 上暴露的问题失败（详见下方），Linux 的桌面专有测试通过后在后续步骤继续。`.github/workflows/release.yml` 的六平台矩阵**仍未运行过**（要等第一次打标签）。ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随仓库可见性与账号类型变化。
+- **Windows 上凭据文件没有 POSIX 权限位**：`server/secure-json.js` 写盘请求 `mode: 0o600`，Windows 会忽略它，Node 读回来恒是 `0o666`（CI 实测 `expected 384 / actual 438`）。这一侧的实际保护是「主密钥存进 Windows 凭据管理器」+「`%APPDATA%` 目录继承的 ACL」，都无法用 `fs.stat` 断言。`desktop-tests` 已改为按平台分支断言，并在注释里写明原因，不假装 Windows 上也验证了 0600。
 - **自动更新未做端到端验证**：已验证「签名能被应用内嵌公钥接受、篡改即拒绝」，但**下载 → 校验 → 替换安装文件 → 重启**这条完整链路需要先发布两个真实版本才能验证。Linux 上还额外依赖 AppImage 形态（`.deb` 装的版本不会自动更新）。
 - **`tauri.conf.json` 里的公钥与 `work/updater-key/` 的私钥是本轮新生成的**，此前没有更新密钥。若私钥丢失，客户端会拒绝后续所有更新，只能让用户手动重装——`work/updater-key/` 需要自行备份（不进仓库）。
 - **macOS 未签名未公证**：本轮与 CI 默认产出未签名包，首次打开需要在「系统设置 → 隐私与安全性」手动放行。配好 `APPLE_*` Secrets 后可自动签名公证，需要 Apple 开发者账号。
