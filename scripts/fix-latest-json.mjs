@@ -18,7 +18,7 @@
  *
  * 用法（在工作流里由 finalize 作业调用）：
  *   GITHUB_TOKEN=... node scripts/fix-latest-json.mjs \
- *     --repo owner/repo --tag v0.1.0 --release-id 123 [--expect darwin-x86_64,...]
+ *     --repo owner/repo --tag v0.1.0 --release-id 123
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,6 +96,8 @@ async function api(path, { token, method = 'GET', accept = 'application/vnd.gith
   if (!response.ok) {
     throw new Error(`${method} ${path} → HTTP ${response.status}：${(await response.text()).slice(0, 300)}`);
   }
+  // DELETE 成功返回 204，没有 body；直接 response.json() 会抛「Unexpected end of JSON input」。
+  if (response.status === 204) return null;
   return raw ? Buffer.from(await response.arrayBuffer()) : response.json();
 }
 
@@ -134,14 +136,29 @@ async function main() {
   for (const line of changes) console.log(`  ${line}`);
 
   await api(`/repos/${repo}/releases/assets/${latest.id}`, { token, method: 'DELETE' });
-  await fetch(`https://uploads.github.com/repos/${repo}/releases/${releaseId}/assets?name=latest.json`, {
+  const upload = await fetch(`https://uploads.github.com/repos/${repo}/releases/${releaseId}/assets?name=latest.json`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'daylight-release' },
     body: JSON.stringify(fixed, null, 2),
-  }).then(async response => {
-    if (!response.ok) throw new Error(`上传 latest.json → HTTP ${response.status}：${(await response.text()).slice(0, 300)}`);
   });
+  if (!upload.ok) throw new Error(`上传 latest.json → HTTP ${upload.status}：${(await upload.text()).slice(0, 300)}`);
   console.log('已重新上传改写后的 latest.json。');
+
+  // 上传成功不等于生效：回读一遍，确认发布出去的就是公开下载地址（不要只看接口返回 2xx）。
+  const prefix = `https://github.com/${repo}/releases/download/${tag}/`;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const assetsAgain = await api(`/repos/${repo}/releases/${releaseId}/assets?per_page=100`, { token });
+    const rereadAsset = assetsAgain.find(asset => asset.name === 'latest.json');
+    if (rereadAsset) {
+      const reread = JSON.parse((await api(`/repos/${repo}/releases/assets/${rereadAsset.id}`, { token, accept: 'application/octet-stream', raw: true })).toString());
+      const wrong = Object.entries(reread.platforms ?? {}).filter(([, entry]) => !String(entry.url).startsWith(prefix));
+      if (wrong.length) throw new Error(`回读后发现仍有 ${wrong.length} 个平台不是公开下载地址：${wrong.map(([key]) => key).join('、')}`);
+      console.log(`回读确认：${Object.keys(reread.platforms ?? {}).length} 个平台地址都是公开下载地址。`);
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  throw new Error('上传后回读不到 latest.json——不要当作已经生效。');
 }
 
 // 只有直接运行才联网；被测试 import 时只用到上面那两个纯函数。

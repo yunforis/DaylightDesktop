@@ -43,7 +43,7 @@
 | --- | --- | --- | --- |
 | 交叉打包（Apple Silicon → Intel Mac） | `DAYLIGHT_TARGET_TRIPLE=x86_64-apple-darwin npm run desktop:prepare` | 成功；内置 `node` 经 `file` 确认为 `Mach-O 64-bit executable x86_64`（官方 `node-v22.23.3-darwin-x64`），原生模块只剩 `@napi-rs/canvas-darwin-x64`（切回 arm64 时只剩 `canvas-darwin-arm64`，无残留） | 本地测试通过 |
 | 交叉打包缓存与重试 | 连续两次同一目标 | 第二次命中 `work/node-dist-cache/`；实测遇到过 `nodejs.org` 连接超时并验证重试后成功 | 本地测试通过 |
-| 桌面专有测试 | `npm run test:desktop` | **11/11 通过**（新增：发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写） | 本地测试通过 |
+| 桌面专有测试 | `npm run test:desktop` | **14/14 通过**（含：发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写、前端产物文件名跨平台合法性、内置运行时只含目标平台原生模块、`latest.json` 地址改写与完整性校验） | 本地测试通过 |
 | GitHub Actions（首次真实运行）| `desktop.yml`，仓库 `yunforis/DaylightDesktop` | 首次运行：`macos-14` / `ubuntu-22.04` 全绿，`windows-latest` 连抓三个真实缺陷（下三行）。**修复后 `macos-14` / `ubuntu-22.04` / `windows-latest` 各 17/17 步全部通过** | **云端部署验证通过（三平台 verify）** |
 | CI 发现并修复：Windows 凭据文件权限 | `windows-latest` → 桌面专有测试 #4 | `expected 384 / actual 438`：Windows 无 POSIX 权限位，断言按平台分支改写 | 云端抓到，本地修复 |
 | CI 发现并修复：Windows `desktop:check` 静默失败 | `windows-latest` → Rust 壳层检查 | 退出码 1 且无任何输出；根因是 `env.PATH` 与 `Path` 大小写不同键共存，系统挑到了不含 cargo 的那个 | 云端抓到，本地修复 |
@@ -53,6 +53,10 @@
 | CI 发现并修复：AppImage 打包被 musl 原生模块打断 | `linux-x64` / `linux-arm64` → `构建并发布` | `failed to run linuxdeploy`（Tauri 默认日志级别丢掉了 linuxdeploy 的 stderr）。用 `--verbose` 拿到真实原因：linuxdeploy 对 AppDir 里每个 ELF 跑 `ldd`，而 `@napi-rs/canvas-linux-*-musl` 的解释器在 Ubuntu 上不存在 → `ldd` 非零退出 → linuxdeploy 抛异常。根因是这些平台包**只声明 os/cpu、没有 libc 字段**，npm 在 Linux 上把 gnu 与 musl 两份都装了进来 | 云端抓到，本地修复 |
 | 定位手段：让打包器说出外部工具的 stderr | 读 Tauri `tauri-bundler` 源码 + `--verbose` 重跑 | 打包器仅在日志级别为 Error 时丢弃输出（`return Err(GenericError("failed to run linuxdeploy"))`），级别更高时走 `output_ok()`，会把 stderr 拼进错误信息。已把 `--verbose` 固定进发布工作流，失败时另有一步打印 AppDir 现场 | 本地测试通过（源码级确认）+ 云端实测 |
 | 运行时只留目标平台的原生模块 | `npm run test:desktop` #13 + 反向对照 | linux/x64 与 linux/arm64 目标各自只剩 `canvas-linux-x64-gnu` / `canvas-linux-arm64-gnu`；**撤掉修正重新准备后该测试精确失败并点名 `canvas-linux-x64-musl`** | 本地测试通过 |
+| CI 发现并修复：并发创建劈出两份草稿 Release | 用 Release API 逐个核对产物清单 | 同一标签 `v0.1.0` 下出现**两份**草稿（创建时间差 2 秒）：一份 11 个产物（只有 macOS + Windows x64），另一份 23 个（有全部 Linux 产物却没有 Windows x64），两份 `latest.json` 各缺一半。根因：`tauri-action` 用「按标签查已有 Release」的接口找草稿，而那个接口**不返回草稿**，六个并发 job 于是各建一份 | 云端抓到，本地修复 |
+| CI 发现并修复：`latest.json` 用的是资产 API 地址 | 匿名实测 `GET api.github.com/repos/.../releases/assets/<id>` | `Accept: application/octet-stream` → 302 到真正的二进制；**普通通配 Accept（客户端更新器的行为）→ 200 + `application/json`**，拿到的是资产元数据而不是安装包。客户端会「下载」到一段 JSON，签名校验必然失败，自动更新整条链路走不通 | 云端抓到 + 本地实测请求语义，已修复 |
+| `latest.json` 地址改写与完整性校验 | `npm run test:desktop` #14 | API 地址 → `releases/download/<tag>/<文件名>`；签名与其它字段原样保留；**重复运行不再改动**（幂等）；指向不存在的资产、或形态不认识的地址一律报错；六个平台缺任何一个都能被检出 | 本地测试通过 |
+| 发布正文模板 | `sed "s/{{VERSION}}/0.1.0/g" .github/release-body.md` | 版本占位替换正确，六平台下载表与实际产物名一致 | 本地测试通过 |
 | 产物文件名与引用自检 | `npm run test:desktop` #12 + 反向对照（撤掉修正重新构建） | 修正生效时 0 个非法名、117 个 `/assets/` 引用全部存在；**撤掉修正后该测试精确失败并点名那两个文件** | 本地测试通过 |
 | Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（新增 updater / dialog 插件与 `update.rs`） | 本地测试通过 |
 | 签名安装包构建 | `TAURI_SIGNING_PRIVATE_KEY=work/updater-key/daylight.key npm run desktop:build` | 成功；产出 `Daylight.app` 284.39 MiB、`Daylight_0.1.0_aarch64.dmg` 97.48 MiB，以及**自动更新产物** `macos/Daylight.app.tar.gz`（99.06 MiB）+ `Daylight.app.tar.gz.sig` | 本地测试通过 |
