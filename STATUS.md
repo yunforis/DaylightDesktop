@@ -1,8 +1,65 @@
 # Daylight 当前状态
 
-最后更新：**2026-10-15（北京时间）**。本文件记录实际实现和验证结果；使用步骤见 [README.md](README.md)，开发约定见 [AGENTS.md](AGENTS.md)。
+最后更新：**2026-10-17（北京时间）**。本文件记录实际实现和验证结果；使用步骤见 [README.md](README.md)，开发约定见 [AGENTS.md](AGENTS.md)。
 
-## 桌面端改造（2026-10-15）
+验证等级用语（按 [AGENTS.md](AGENTS.md)）：**规划中** < **代码已实现** < **本地测试通过** < **真实服务实连成功** < **云端部署验证通过** < **生产验收通过**。
+
+## 本轮：与 Daylight 真源对齐 + 桌面端专有改造（2026-10-17）
+
+### 对齐基线
+
+- Web 真源：`/Users/auroral/ProjectDevelopment/Daylight`，提交 `5809fb1`（该工作区同步时仍有未提交改动，属并发开发中的快照；抄录时点见本节验证记录）。
+- 对齐方式：**重新基线 + 重贴桌面补丁**，由 `scripts/desktop-sync.mjs` 一条命令完成，可重复执行。它只读真源、只写本仓库，补丁锚点找不到就报错，不静默跳过。
+- 对齐后差异收敛为最小集合：
+  - `src/`：仅 `App.jsx`、`main.jsx`、`command-palette.jsx`、`attachment-viewer.jsx` 分叉；桌面专有新文件 `src/lib/desktop.js`、`src/components/pdf-canvas-viewer.jsx`。
+  - `server/`：仅 `auth.js`、`index.js`、`store.js`、`infra/config.js` 分叉；桌面专有模块 `desktop-entry.js`、`desktop-http.js`、`secure-json.js`。
+  - `shared/`、`public/`、`index.html` 与 Web 完全一致。
+
+### 决策记录
+
+- **D1 本地单用户认证（采用默认）**：启动时由原生壳层经 `/desktop/session` 注入本地 `owner@daylight.local`（admin）会话；不引入云端账号、订阅或注册后端。
+- **D2 去管理端（与默认口径有一处刻意不同）**：**前端** Landing / 登录 / 注册 / 找回密码 / 法律页 / 管理端页面与入口**全部移除**；**后端** 不删除 `/api/admin/*` 的 280 余行实现，而是在桌面模式用单点守卫统一返回 404（`index.js` 中 `app.use('/api/admin', ...)`）。
+  - 理由：桌面端 `App.jsx` 是桌面自有文件，删除前端页面零成本且不产生后续同步负担；而 `server/index.js` 是 Web 侧改动最频繁的文件，删块会让每次重新基线都要做脆弱的自动删除，换来的收益只是「本地唯一用户（本就是 admin）看不到自己账号的管理接口」，不划算。守卫方案同样做到了「管理端接口在桌面端不可达」，且可重复、可校验。管理端模块 `server/admin-assistant.js` 因此保留（仅被不可达路由引用）。
+- **阶段 7 后台任务（/api/jobs）**：桌面端**沿用本地进程内模式**，不伪造任务队列。
+  - 依据：Web 的前端本身就把「无任务队列」当作一等公民状态——`jobs-page.jsx` 对 404 显示「当前服务未启用后台任务，邮件同步结果请在邮件与执行记录中查看。」；`use-background-jobs.js` 在收到 404 时把 `supported` 置为 false 并停止轮询。桌面端 `server/index.js` 的非生产分支已有进程内 worker 与定时器（`registerWorker('mail.sync')` + `setInterval` + `refreshIdleWatcher`），同步在本地模式下是同步返回结果。
+  - 结论：引入忠实于 PG 版本的任务平台需要重写租约、快照提交、outbox（`storage/index.js` 依赖 pg pool，`jobs/repository.js` 的租约用 SQL 时间），风险与工作量都不成比例；对一个单用户本机应用，同步流程已经可用且可观测。该差异已明确标注为**本地模式**，页面文案由 Web 侧代码提供，不是桌面端特例。
+
+### 桌面端专有改动（阶段 10）
+
+- **PDF 预览跨平台统一**：`src/components/pdf-canvas-viewer.jsx` 新增，用 `pdfjs-dist` 在页面内渲染；桌面端走该组件，浏览器端保留原生查看器。原实现是 `<iframe src>` 直链，依赖各平台 WebView 内置 PDF 能力（Linux WebKitGTK 多数没有查看器）。
+- **Office 附件确定性行为**：移除原先拼接 `view.officeapps.live.com` 内嵌地址的分支（该地址要求附件有公网 URL，桌面端附件都在回环地址上，这个分支实际上永远不会生效），改为明确的「下载后用系统应用打开」。
+- **CSP 补全**：`src-tauri/tauri.conf.json` 的 CSP 增加 `img-src/media-src ... blob: data:`、`worker-src 'self' blob:`、`font-src`、`frame-src 'self'`、`connect-src 'self'`。原 CSP 只有 `default-src 'self'`，会拦截附件预览使用的 `blob:` 图片/音视频，以及 PDF.js 的 worker。
+- **打包缺失修复**：`scripts/prepare-desktop.mjs` 原先只复制 `server/` 与 `dist/`，漏了 `shared/`，而 `server/scenarios/service.js` 会 `import` `shared/scenario-templates.js` —— 安装版会直接启动失败。已修正为 `['server', 'dist', 'shared']`，并由 `desktop-tests` 中的打包运行时测试守护。
+- **语音输入**：沿用 Web 的能力探测实现 `src/lib/little-d-speech.js`（`SpeechRecognition`/`webkitSpeechRecognition` 探测 + 不支持时的明确文案），`little-d.jsx` 已改为复用它。
+- **重活不阻塞界面**：后台 Node 进程与 WebView 是不同进程，OCR/PDF 解析不会阻塞渲染；OCR 由 `tesseract.js` 自带的 worker 执行。
+- **端口回退**：固定端口被占用时回退随机端口（`server.on('error')` + `EADDRINUSE`），原生壳层解析 `DAYLIGHT_READY <port>` 后再导航。
+
+### 本轮验证记录
+
+| 项目 | 命令 | 结果 | 等级 |
+| --- | --- | --- | --- |
+| 前端构建 | `npm run build` | 通过；产物含 `pdf.worker.min-*.mjs` 与指向它的 `?url` 模块 | 本地测试通过 |
+| 桌面专有测试 | `npm run test:desktop` | **7/7 通过**（无 PG/MQ 启动并重启读回、鉴权边界、会话一次性、凭据加密、端口回退、补丁锚点、打包运行时独立启动） | 本地测试通过 |
+| 共享业务测试 | `npm test` | 547 项：481 通过 / **49 失败**；与 Web 真源**失败集合完全一致**（本次改动引入 0 项） | 本地测试通过（含已知历史失败） |
+| 后端冒烟（生产模式、无 PG/Redis/MQ、仅回环） | `bash work/smoke.sh` | 就绪、`/desktop/start` 302、`/desktop/session` 签发 token；无 cookie 403、有 cookie 无 Bearer 401、伪造 Origin 403；`/api/state`、`/api/sync/demo`、`/api/onboarding/guide`、`/api/assistant/drafts`、`/api/rag/status`、`/api/report-prompts`、`/api/scenarios`、`/api/invitations`、`/api/traces` 均 200；`/api/admin/*` 404 | 本地测试通过 |
+| 运行时打包 | `npm run desktop:prepare` | 通过；`runtime/` 含 `shared/`、`pdfjs-dist`、`undici`，**不含 `vite`**（169 个依赖） | 本地测试通过 |
+| Rust 壳层 | `npm run desktop:check` | `cargo check` 通过 | 本地测试通过 |
+| 桌面窗口 | `npm run desktop:dev` | 编译 362 crates 通过，进程真实拉起 `target/debug/daylight-desktop` | 本地测试通过（未做界面截图核对） |
+| 安装包 | `npm run desktop:build` | 见下方「安装包」小节 | 本地测试通过 |
+
+**共享业务测试的 49 项失败**：全部是同时启动真实 Express 服务、mock timer、依赖本机环境的集成测试（招聘 API、草稿发送、小 D 真实 HTTP 等），在 Web 真源上以**完全相同的集合**失败。本轮未排查，也未把它们当作门禁（CI 中该步骤 `continue-on-error: true`）。它们是历史遗留，不是桌面端改造引入。
+
+### 未验证 / 明确边界
+
+- **真实邮箱与真实模型**：本轮**未做**任何真实 IMAP/SMTP/模型实连，也未运行示例以外的提取。历史实连记录见下方 2026-10-15 及更早小节，仅作为历史证据，不代表本轮代码状态。
+- **界面渲染**：PDF.js 查看器与 Csp 改动只做了构建、产物与代码层面核对，**没有**做逐平台的可视化核对（需要真实 GUI 环境）。`iframe` 的邮件正文渲染、附件图片/音视频预览同理。
+- **Windows / Linux**：未在对应实机运行；CI 配置已就绪（三平台 verify + 四产物 bundle），但在本机**没有 GitHub remote，Actions 未实际运行过**。
+- **睡眠唤醒**：未做显式的系统唤醒事件监听。Node 的定时器在唤醒后会继续触发，属于可接受行为，但未实测。
+- **/api/jobs**：桌面端无任务列表接口（见上方决策），后台任务页显示「当前服务未启用后台任务」。
+
+## 桌面端改造（2026-10-15，历史存档）
+
+> 以下小节为历史记录原文，保留用于追溯。其中与桌面端当前默认行为不一致处已在上方更正：本版桌面端**默认不连 PostgreSQL**（`infra.postgres.enabled = false`）、默认不连 RabbitMQ，配置落盘加密。
 
 - **项目定位变更**：从 Web 应用改为纯桌面端应用（Tauri 2）。移除了 Landing 页、用户注册/登录/找回密码、管理后台、法律页等 Web 专属内容。根路径 `/` 直接重定向到 `/app` 工作区。
 - **桌面认证**：启动时自动创建本地用户 `owner@daylight.local`（admin 角色），通过 `desktop-http.js` 的 token 机制认证，无需用户注册登录。Rust 壳层使用系统 keyring 保存加密密钥。

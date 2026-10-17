@@ -15,7 +15,7 @@
     "desktop:build": "node scripts/desktop.mjs build",
     "desktop:prepare": "node scripts/prepare-desktop.mjs",
     "desktop:check": "node scripts/desktop.mjs check",
-    "test:desktop": "node --test desktop-tests/*.test.js"
+    "test:desktop": "node --test \"desktop-tests/**/*.test.mjs\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1151.0",

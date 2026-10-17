@@ -29,6 +29,10 @@ if (!fs.existsSync(path.join(WEB, 'server', 'index.js'))) {
 const OWNED = new Set([
   'src/App.jsx',            // 去登录化 / 去管理端的桌面路由
   'src/lib/desktop.js',     // 壳层链接处理 + /desktop/session 会话引导
+  'src/components/pdf-canvas-viewer.jsx', // 桌面端专属 PDF canvas 查看器
+  'server/desktop-entry.js', // 桌面进程入口（环境守卫、就绪信号、优雅关闭）
+  'server/desktop-http.js',  // 桌面 HTTP 会话中间件 + pdf.js 资源
+  'server/secure-json.js',   // 配置落盘加密
 ]);
 
 /** Web 有、桌面端明确不要的文件（去登录化与去管理端）。 */
@@ -63,16 +67,20 @@ function copyTree(from, to) {
   applied += 1;
 }
 
-/** 精确字符串替换；找不到锚点直接抛错，避免「同步成功但补丁没贴上」的静默失败。 */
+/**
+ * 精确字符串替换；找不到锚点直接抛错，避免「同步成功但补丁没贴上」的静默失败。
+ * `--check` 模式下改为校验 **Web 真源** 是否仍具备锚点：这样上游重构打断补丁时，
+ * 不写任何文件就能提前发现。
+ */
 function patch(rel, label, oldText, newText) {
-  const file = path.join(root, rel);
-  let content = fs.readFileSync(file, 'utf8');
-  if (newText && content.includes(newText) && !content.includes(oldText)) return; // 已贴过
+  const fromWeb = CHECK_ONLY && fs.existsSync(path.join(WEB, rel));
+  const file = fromWeb ? path.join(WEB, rel) : path.join(root, rel);
+  const content = fs.readFileSync(file, 'utf8');
+  if (newText && content.includes(newText)) return; // 已贴过，或上游已自带该实现
   if (!content.includes(oldText)) {
-    throw new Error(`补丁锚点未找到：${rel} → ${label}\n（Web 真源可能已改动，请检查后更新本脚本）`);
+    throw new Error(`补丁锚点未找到：${rel} → ${label}（检查来源：${fromWeb ? 'Web 真源' : '桌面仓库'}）\n（上游可能已改动，请检查后更新本脚本）`);
   }
-  content = content.replace(oldText, newText);
-  if (!CHECK_ONLY) fs.writeFileSync(file, content);
+  if (!CHECK_ONLY) fs.writeFileSync(path.join(root, rel), content.replace(oldText, newText));
   applied += 1;
 }
 
@@ -272,7 +280,81 @@ patch('server/infra/config.js', 'infra 加密写入',
   `  fs.writeFileSync(configPath, \`\${JSON.stringify(merged, null, 2)}\\n\`);`,
   `  writeSecureJson(configPath, merged);`);
 
-// 2.7 打包：运行时依赖白名单必须覆盖 server/ 的全部裸包导入
+// 2.7 前端：附件预览的桌面端确定性行为
+patch('src/components/attachment-viewer.jsx', 'PDF 查看器导入',
+  `import { fetchAuthorizedBlobUrl, fetchAuthorizedText } from '@/lib/auth-fetch';
+import { getAuthToken } from '@/lib/auth-api';
+import { RichMarkdown } from '@/components/rich-markdown';`,
+  `import { fetchAuthorizedBlobUrl, fetchAuthorizedText } from '@/lib/auth-fetch';
+import { getAuthToken } from '@/lib/auth-api';
+import { isDesktop } from '@/lib/desktop';
+import { RichMarkdown } from '@/components/rich-markdown';
+import { PdfCanvasViewer } from '@/components/pdf-canvas-viewer';`);
+
+patch('src/components/attachment-viewer.jsx', '去掉 Office 内嵌拼接',
+  `function officeEmbedUrl(url) {
+  if (!url || url.startsWith('/')) return null;
+  return \`https://view.officeapps.live.com/op/embed.aspx?src=\${encodeURIComponent(url)}\`;
+}
+
+function formatSize(size) {`,
+  `// [desktop patch] 原先这里会拼一个 Office Online 内嵌地址，但它要求附件有公网可访问 URL；
+// 桌面端附件都是回环地址，微软服务取不到，这个分支实际永远不会生效。统一改为「下载后用系统应用打开」。
+function formatSize(size) {`);
+
+patch('src/components/attachment-viewer.jsx', '去掉 useMemo 导入',
+  `import React, { useEffect, useMemo, useState } from 'react';`,
+  `import React, { useEffect, useState } from 'react';`);
+
+patch('src/components/attachment-viewer.jsx', '去掉 officeUrl memo',
+  `  const officeUrl = useMemo(
+    () => (['excel', 'ppt'].includes(kind) ? officeEmbedUrl(file?.url) : null),
+    [kind, file?.url],
+  );
+  const needsText = ['text', 'code', 'markdown'].includes(kind);`,
+  `  const needsText = ['text', 'code', 'markdown'].includes(kind);`);
+
+patch('src/components/attachment-viewer.jsx', 'PDF 走页面内渲染',
+  `          {url && !loading && !error && kind === 'pdf' && viewUrl && (
+            <iframe
+              title={file.filename || 'pdf'}
+              src={Number(file.page) > 0 ? \`\${viewUrl}#page=\${Number(file.page)}\` : viewUrl}
+              className="h-[70vh] w-full rounded-lg border bg-background"
+            />
+          )}`,
+  `          {url && !loading && !error && kind === 'pdf' && viewUrl && (
+            // [desktop patch] 各平台 WebView 的 PDF 能力不一致（Linux WebKitGTK 常没有查看器），
+            // 桌面端统一用 pdfjs 渲染；浏览器端保留原生查看器以获得更好的滚动/搜索体验。
+            isDesktop() ? (
+              <PdfCanvasViewer src={viewUrl} page={Number(file.page) || 0} />
+            ) : (
+              <iframe
+                title={file.filename || 'pdf'}
+                src={Number(file.page) > 0 ? \`\${viewUrl}#page=\${Number(file.page)}\` : viewUrl}
+                className="h-[70vh] w-full rounded-lg border bg-background"
+              />
+            )
+          )}`);
+
+patch('src/components/attachment-viewer.jsx', 'Office 改为确定行为',
+  `          {url && !loading && !error && (kind === 'excel' || kind === 'ppt') && (
+            officeUrl ? (
+              <iframe title={file.filename || 'office'} src={officeUrl} className="h-[70vh] w-full rounded-lg border bg-background" />
+            ) : (
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>该附件暂无公网地址，无法内嵌 Office 预览。请下载后本地打开。</p>
+                <Button type="button" onClick={downloadAuthorized}><Download className="size-4" />下载</Button>
+              </div>
+            )
+          )}`,
+  `          {url && !loading && !error && (kind === 'excel' || kind === 'ppt') && (
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>该格式无法在应用内预览，请下载后用系统应用（Excel / PowerPoint / WPS）打开。</p>
+              <Button type="button" onClick={downloadAuthorized}><Download className="size-4" />下载</Button>
+            </div>
+          )}`);
+
+// 2.8 打包：运行时依赖白名单必须覆盖 server/ 的全部裸包导入
 const serverBareImports = new Set();
 {
   const walk = (dir) => {
@@ -297,6 +379,9 @@ if (missingDeps.length) {
   throw new Error(`prepare-desktop.mjs 运行时白名单缺少依赖：${missingDeps.join(', ')}（安装版会启动失败）`);
 }
 
-console.log(`✅ 同步完成：写入/更新 ${applied} 个文件，保留桌面自有 ${skipped.join(', ') || '（无）'}`);
-console.log(`   移除 Web 专有文件 ${REMOVE.length} 项；补丁锚点全部命中；运行时依赖白名单覆盖 ${serverBareImports.size} 个裸包导入。`);
-if (CHECK_ONLY) console.log('   （--check 模式：未写入任何文件）');
+console.log(CHECK_ONLY
+  ? `✅ 补丁锚点校验通过：${applied} 条补丁在 Web 真源上仍可命中（未写入任何文件）。`
+  : `✅ 同步完成：写入/更新 ${applied} 个文件，保留桌面自有 ${skipped.join(', ') || '（无）'}`);
+if (!CHECK_ONLY) {
+  console.log(`   移除 Web 专有文件 ${REMOVE.length} 项；补丁锚点全部命中；运行时依赖白名单覆盖 ${serverBareImports.size} 个裸包导入。`);
+}

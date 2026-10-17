@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Download, Eye, FileAudio, FileCode, FileText, FileVideo, Image as ImageIcon,
   LoaderCircle, X,
@@ -12,7 +12,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { fetchAuthorizedBlobUrl, fetchAuthorizedText } from '@/lib/auth-fetch';
 import { getAuthToken } from '@/lib/auth-api';
+import { isDesktop } from '@/lib/desktop';
 import { RichMarkdown } from '@/components/rich-markdown';
+import { PdfCanvasViewer } from '@/components/pdf-canvas-viewer';
 
 function extOf(name = '') {
   const part = String(name).split('.').pop() || '';
@@ -55,11 +57,8 @@ export function sourceUrl(file) {
     || (file.id ? `/api/recruitment/attachments/${encodeURIComponent(file.id)}` : '');
 }
 
-function officeEmbedUrl(url) {
-  if (!url || url.startsWith('/')) return null;
-  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
-}
-
+// [desktop patch] 原先这里会拼一个 Office Online 内嵌地址，但它要求附件有公网可访问 URL；
+// 桌面端附件都是回环地址，微软服务取不到，这个分支实际永远不会生效。统一改为「下载后用系统应用打开」。
 function formatSize(size) {
   if (size == null) return '';
   if (size < 1024) return `${size} B`;
@@ -82,10 +81,6 @@ export function AttachmentPreview({ file, open, onOpenChange }) {
   const [mediaUrl, setMediaUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const officeUrl = useMemo(
-    () => (['excel', 'ppt'].includes(kind) ? officeEmbedUrl(file?.url) : null),
-    [kind, file?.url],
-  );
   const needsText = ['text', 'code', 'markdown'].includes(kind);
   const needsBlob = ['image', 'pdf', 'audio', 'video'].includes(kind);
 
@@ -177,11 +172,17 @@ export function AttachmentPreview({ file, open, onOpenChange }) {
             />
           )}
           {url && !loading && !error && kind === 'pdf' && viewUrl && (
-            <iframe
-              title={file.filename || 'pdf'}
-              src={Number(file.page) > 0 ? `${viewUrl}#page=${Number(file.page)}` : viewUrl}
-              className="h-[70vh] w-full rounded-lg border bg-background"
-            />
+            // [desktop patch] 各平台 WebView 的 PDF 能力不一致（Linux WebKitGTK 常没有查看器），
+            // 桌面端统一用 pdfjs 渲染；浏览器端保留原生查看器以获得更好的滚动/搜索体验。
+            isDesktop() ? (
+              <PdfCanvasViewer src={viewUrl} page={Number(file.page) || 0} />
+            ) : (
+              <iframe
+                title={file.filename || 'pdf'}
+                src={Number(file.page) > 0 ? `${viewUrl}#page=${Number(file.page)}` : viewUrl}
+                className="h-[70vh] w-full rounded-lg border bg-background"
+              />
+            )
           )}
           {url && !loading && !error && kind === 'audio' && viewUrl && (
             <div className="flex min-h-[40vh] items-center justify-center">
@@ -196,14 +197,10 @@ export function AttachmentPreview({ file, open, onOpenChange }) {
             </video>
           )}
           {url && !loading && !error && (kind === 'excel' || kind === 'ppt') && (
-            officeUrl ? (
-              <iframe title={file.filename || 'office'} src={officeUrl} className="h-[70vh] w-full rounded-lg border bg-background" />
-            ) : (
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>该附件暂无公网地址，无法内嵌 Office 预览。请下载后本地打开。</p>
-                <Button type="button" onClick={downloadAuthorized}><Download className="size-4" />下载</Button>
-              </div>
-            )
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>该格式无法在应用内预览，请下载后用系统应用（Excel / PowerPoint / WPS）打开。</p>
+              <Button type="button" onClick={downloadAuthorized}><Download className="size-4" />下载</Button>
+            </div>
           )}
           {url && !loading && !error && needsText && (
             kind === 'markdown' ? (

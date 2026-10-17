@@ -6,7 +6,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runtime = path.join(root, 'src-tauri/runtime');
 if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('请使用 Node 22+ 构建');
 await fs.mkdir(runtime, { recursive: true });
-for (const folder of ['server', 'dist']) {
+// server 与 shared 是后台代码的运行时依赖（server/* 通过 ../shared/* 引用共享模板），
+// dist 是前端产物（Vite 已把 public/ 打进 dist）。漏掉 shared 会让安装版直接启动失败。
+for (const folder of ['server', 'dist', 'shared']) {
   await fs.rm(path.join(runtime, folder), { recursive: true, force: true });
   await fs.cp(path.join(root, folder), path.join(runtime, folder), { recursive: true, filter: source => !source.endsWith('.test.js') && !source.endsWith('.DS_Store') });
 }
