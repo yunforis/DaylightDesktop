@@ -105,8 +105,13 @@ jobs:
         run: |
           set -euo pipefail
           body=$(sed "s/{{VERSION}}/$VERSION/g" .github/release-body.md)
+          # 查「本标签的已有 Release」时**不能只按 tag_name 匹配**：草稿的 Git 标签还没创建，
+          # GitHub 会把草稿的 tag_name 归一化成 `untagged-<hash>`（v0.1.1 实测踩到——同一个
+          # release id 先读到 v0.1.1、后读到 `untagged-31966041b60bbb551d4c`）。只按 tag_name
+          # 查会在重跑时找不到自己的草稿，于是再建一份重复草稿（正是先前那个「产物被劈成两半」
+          # 缺陷的另一个面孔）。所以草稿按 name（创建时写死为 `Daylight <版本>`）一起匹配。
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq "map(select(.tag_name == \"$TAG\")) | .[0].id // empty")
+            --jq "map(select(.tag_name == \"$TAG\" or (.draft and .name == \"Daylight $VERSION\"))) | .[0].id // empty")
           skip=false
           if [ -n "$id" ]; then
             isdraft=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id" --jq '.draft')
@@ -115,7 +120,10 @@ jobs:
               # 创建，target_commitish 是决定「发布后标签指向哪里」的唯一依据。v0.1.0 就踩过：
               # 草稿由更早一次运行创建、产物由后来这次运行构建，结果标签指向 f6e005e，而 27 个
               # 产物全部产自 0cae10b，差了两个提交。
+              # 同时把 tag_name 写回目标标签：若它已被归一化成 `untagged-<hash>`，发布时就会
+              # 创建一个名叫 `untagged-…` 的标签（v0.1.1 发布前实测发现，已手工写回）。
               gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+                -f tag_name="$TAG" \
                 -f target_commitish="$GITHUB_SHA" > /dev/null
               echo "复用已存在的草稿 Release：标签 $TAG，id=$id，target_commitish → ${GITHUB_SHA:0:7}"
             else

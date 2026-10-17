@@ -483,6 +483,19 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
     2,
     '创建与复用两条路径都必须把 target_commitish 定到本次运行的提交',
   );
+  // 查已有 Release 时不能只按 tag_name：草稿的标签还没创建时，GitHub 会把草稿的 tag_name
+  // 归一化成 `untagged-<hash>`（v0.1.1 实测踩到，同一个 release id 先读到 v0.1.1、后读到
+  // untagged-…）。只按 tag_name 查就会在重跑时找不到自己的草稿、再建一份重复草稿。
+  assert.ok(
+    release.includes('.name == \\"Daylight $VERSION\\"'),
+    'guard 必须把「draft 且 name 等于 Daylight <版本>」也算作本标签的已有 Release',
+  );
+  // 复用草稿时要把 tag_name 写回目标标签，否则发布出来的标签会叫 `untagged-…`。
+  assert.equal(
+    (release.match(/-f tag_name="\$TAG"/g) ?? []).length,
+    2,
+    '创建与复用两条路径都要写死 tag_name，避免草稿被归一化成 untagged-* 后发布出错误标签',
+  );
   // 已正式发布的 Release 不该被复用上传，否则用户下到的包会被静默替换。更进一步：
   // **发布草稿这个动作本身会创建 Git 标签**，而本工作流是 `push: tags: v*` 触发的，
   // 所以「发布」会立刻再触发一次本工作流——实测就是这一轮把已发布的 Release 重新构建、
