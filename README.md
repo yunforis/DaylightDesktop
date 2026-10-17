@@ -355,7 +355,7 @@ TAURI_SIGNING_PRIVATE_KEY="$(cat work/updater-key/daylight.key)" npm run desktop
 
 产物在 `src-tauri/target/release/bundle/`：
 
-- macOS：`macos/Daylight.app`（可直接运行）、`dmg/Daylight_0.1.0_<arch>.dmg`，以及自动更新用的 `macos/Daylight.app.tar.gz` + `.sig`
+- macOS：`macos/Daylight.app`（可直接运行）、`dmg/Daylight_<版本>_<arch>.dmg`，以及自动更新用的 `macos/Daylight.app.tar.gz` + `.sig`
 - Windows / Linux：在对应平台执行同一命令，产物在各自的 bundle 目录（含更新用的 `.sig`）
 
 安装包内已包含 Node 二进制、后台代码、前端产物与运行时依赖，终端用户无需安装任何环境。macOS 按 arm64 / x64 分别构建，不做通用二进制。打包自动更新产物需要签名私钥（`TAURI_SIGNING_PRIVATE_KEY`），缺失时会在「生成更新产物」这一步直接失败——这是刻意的，没有签名就不该发布更新。

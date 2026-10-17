@@ -1,6 +1,6 @@
 [package]
 name = "daylight-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Daylight — 邮件与日程工作空间"
 edition = "2021"
 

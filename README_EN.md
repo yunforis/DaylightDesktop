@@ -355,7 +355,7 @@ TAURI_SIGNING_PRIVATE_KEY="$(cat work/updater-key/daylight.key)" npm run desktop
 
 Artifacts appear under `src-tauri/target/release/bundle/`:
 
-- macOS: `macos/Daylight.app` (runnable directly), `dmg/Daylight_0.1.0_<arch>.dmg`, plus `macos/Daylight.app.tar.gz` + `.sig` for auto-update
+- macOS: `macos/Daylight.app` (runnable directly), `dmg/Daylight_<version>_<arch>.dmg`, plus `macos/Daylight.app.tar.gz` + `.sig` for auto-update
 - Windows / Linux: run the same command on the matching platform; artifacts land in the respective bundle directories (including updater `.sig` files)
 
 Installers already contain the Node binary, backend code, frontend assets, and runtime dependencies, so end users install nothing. macOS is built separately for arm64 and x64, without a universal binary. Producing updater artifacts requires the signing key (`TAURI_SIGNING_PRIVATE_KEY`); if it is missing, packaging fails at the "generate updater artifacts" step — deliberately, since an unsigned update must not be published.
