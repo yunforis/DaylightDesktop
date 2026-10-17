@@ -41,7 +41,7 @@ jobs:
         run: npm run desktop:prepare
       - name: 桌面专有测试
         run: npm run test:desktop
-      - name: 共享业务测试（已知 49 项历史失败，不作为门禁）
+      - name: 共享业务测试（已知 58 项历史失败，不作为门禁）
         continue-on-error: true
         run: npm test
       - name: Rust 壳层检查

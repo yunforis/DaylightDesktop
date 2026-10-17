@@ -66,6 +66,12 @@ node scripts/desktop-sync.mjs --check
 - **不得在文档、示例、日志、测试或提交里写入真实授权码、API Key、邮件正文或任何真实凭据。**
 - 严格区分“规划中”“代码已实现”“本地测试通过”“真实服务实连成功”“云端部署验证通过”“生产验收通过”。填好配置或看到“已配置”**仅表示字段已保存**。
 - 不得把预置示例结果或本地模拟接口测试说成真实邮箱、真实模型验证；不得在没有实际运行的情况下声称验证通过。
+- 对齐上游用 `node scripts/desktop-sync.mjs`（重新基线 + 重贴补丁）。**基线必须取真源已提交的 HEAD，不要直接同步真源工作目录**：真源经常有未提交的在改代码，直接同步会把写了一半的改动带进桌面端。做法：
+  ```bash
+  git -C ../Daylight archive HEAD | tar -x -C work/web-head
+  DAYLIGHT_WEB_DIR="$PWD/work/web-head" node scripts/desktop-sync.mjs --check   # 先校验锚点
+  DAYLIGHT_WEB_DIR="$PWD/work/web-head" node scripts/desktop-sync.mjs
+  ```
 - 已知的 58 项共享业务测试失败是历史遗留（启动真实服务 + mock timer 的集成测试），在 Web 真源上以完全相同的集合失败。核对方式是与真源做逐条用例状态 diff；不要把它们说成桌面端引入，也不要当成门禁。
 - 新增桌面行为时，如果它依赖上游文件（如 `Dockerfile`、测试素材），先看能否**同步进来**而不是在桌面端豁免：保持「测试结果与真源逐条一致」这个断言可验证，比维护豁免清单更省事。
 - 修改功能后按实际影响更新 `README.md` 与 `STATUS.md`；只有开发约定变化时才修改本文件。

@@ -191,6 +191,33 @@ function normalizeOverdue(value) {
   };
 }
 
+export const DEFAULT_BRIEFING = { enabled: false, time: '07:30', soundId: 'alarm', speak: true };
+
+/**
+ * 早间简报：每天固定时刻的一条「闹钟」，点开可以在 App 里听今天的安排。
+ * 它不是规则（不挂条目、不提前量），所以单独归一化，默认关闭。
+ */
+export function normalizeBriefing(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const time = parseTime(source.time);
+  return {
+    enabled: source.enabled === true,
+    time: time ? `${pad(time.hour)}:${pad(time.minute)}` : DEFAULT_BRIEFING.time,
+    soundId: trimText(source.soundId, 24) || DEFAULT_BRIEFING.soundId,
+    speak: source.speak === undefined ? DEFAULT_BRIEFING.speak : Boolean(source.speak),
+  };
+}
+
+/** 北京时间 HH:MM 的下一次发生时刻（毫秒）。今天这点已过就顺延到明天。 */
+export function nextBeijingTime(time, now = Date.now()) {
+  const parsed = parseTime(time);
+  const nowMs = toMs(now);
+  if (!parsed || !Number.isFinite(nowMs)) return NaN;
+  const dayStart = Math.floor((nowMs + BEIJING_OFFSET_MS) / DAY_MS) * DAY_MS - BEIJING_OFFSET_MS;
+  const candidate = dayStart + parsed.hour * 3_600_000 + parsed.minute * 60_000;
+  return candidate > nowMs ? candidate : candidate + DAY_MS;
+}
+
 /**
  * 归一化一条规则。模型输出、UI 表单、历史存储都走这里，
  * 缺字段补齐、越界截断、不合法的时间段回退，绝不抛错。
@@ -217,6 +244,10 @@ export function normalizeRule(input = {}) {
     window: normalizeWindow(source.window),
     overdue: normalizeOverdue(source.overdue),
     sound: source.sound === undefined ? true : Boolean(source.sound),
+    // 提示音与「闹钟级」都属于规则级设置：哪类提醒该叫醒人，用户自己分得清。
+    // soundId 是自由字符串（App 侧才知道有哪些音），空串表示跟随全局偏好。
+    soundId: trimText(source.soundId, 24),
+    alarm: Boolean(source.alarm),
   };
 }
 
@@ -248,6 +279,9 @@ export function normalizePrefs(input = {}) {
     enabled: source.enabled === undefined ? true : Boolean(source.enabled),
     window: normalizeWindow(source.window, DEFAULT_WINDOW) || DEFAULT_WINDOW,
     maxPending: clampInt(source.maxPending, 1, MAX_PENDING_LIMIT, DEFAULT_MAX_PENDING),
+    // 全局默认提示音（'' 表示系统默认）；规则可以各自覆盖。
+    soundId: trimText(source.soundId, 24),
+    briefing: normalizeBriefing(source.briefing),
     rules,
     log: normalizeLog(source.log),
     updatedAt: toMs(source.updatedAt) || 0,
@@ -266,6 +300,8 @@ export function describeRule(input) {
   parts.push(`提前 ${rule.offsets.map((minutes) => formatOffset(minutes)).join('、')} 提醒`);
   if (rule.window) parts.push(`${rule.window.start}–${rule.window.end} 之外顺延`);
   if (rule.overdue.enabled) parts.push(`过期后每 ${rule.overdue.everyDays} 天再提醒`);
+  if (rule.alarm) parts.push('按闹钟提醒（可穿过专注模式）');
+  if (rule.soundId) parts.push(`提示音：${rule.soundId}`);
   return parts.join('，');
 }
 
@@ -421,6 +457,8 @@ function makeOccurrence(rule, item, { fireAt, deadlineAt, offsetMinutes, overdue
     offsetMinutes,
     overdue: Boolean(overdue),
     sound: rule.sound !== false,
+    soundId: rule.soundId || '',
+    alarm: Boolean(rule.alarm),
   };
 }
 

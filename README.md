@@ -139,12 +139,18 @@ bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴�
 桌面端与 Web 版共享 `src/`、`server/`、`shared/`、`public/`、`scripts/`。当 Web 侧前进时：
 
 ```bash
-node scripts/desktop-sync.mjs            # 默认读 ../Daylight
+# 推荐：先导出真源「已提交的 HEAD」作为干净基线（避开真源工作区里未提交的在改代码）
+git -C ../Daylight archive HEAD | tar -x -C work/web-head
+DAYLIGHT_WEB_DIR="$PWD/work/web-head" node scripts/desktop-sync.mjs --check   # 先校验补丁锚点
+DAYLIGHT_WEB_DIR="$PWD/work/web-head" node scripts/desktop-sync.mjs
+
+node scripts/desktop-sync.mjs            # 默认读 ../Daylight（会读到其工作目录，含未提交改动）
 DAYLIGHT_WEB_DIR=/path/to/Daylight node scripts/desktop-sync.mjs
-node scripts/desktop-sync.mjs --check    # 只检查补丁锚点，不写文件
 ```
 
-脚本会：整树复制真源的共享代码 → 移除 Web 专有页面 → 逐条重贴桌面补丁（精确字符串匹配，锚点找不到立刻报错）→ 校验运行时依赖白名单覆盖了 `server/` 的全部裸包导入。
+脚本会：整树复制真源的共享代码 → 移除 Web 专有页面 → 逐条重贴桌面补丁（精确字符串替换，锚点找不到立刻报错）→ 校验运行时依赖白名单覆盖了 `server/` 的全部裸包导入。
+
+**为什么推荐导出 HEAD 而不是直接读工作目录**：真源长期处于并发开发状态，工作目录里常有写了一半的文件。直接整树复制会把这些未提交改动带进桌面端，让「桌面端等于真源哪个提交」这个问题失去答案。用 `git archive HEAD` 得到的是可复现的提交快照。
 
 `Dockerfile` 与 `docs/submission/evaluation-cases.json` 也在同步清单里，**只因为共享测试套件会读取它们**；桌面端不使用容器部署，也不参与比赛材料提交。
 

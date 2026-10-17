@@ -8,9 +8,12 @@
 
 ### 对齐基线
 
-- Web 真源：`/Users/auroral/ProjectDevelopment/Daylight`，提交 `be75dac`（该工作区仍在并发开发，同步时点见本节验证记录）。
+- Web 真源：`/Users/auroral/ProjectDevelopment/Daylight`，提交 `82d682b`（该工作区仍在并发开发，同步时点见本节验证记录）。
 - 对齐方式不变：**重新基线 + 重贴桌面补丁**，由 `scripts/desktop-sync.mjs` 一条命令完成，可重复执行。它只读真源、只写本仓库，补丁锚点找不到就报错，不静默跳过。
-- 本轮（第二轮对齐）追上的上游能力，全部在桌面端直接可用：
+- **同步口径（本轮新增约定）**：基线取真源**已提交的 HEAD**，而不是真源的工作目录。做法是先 `git -C <真源> archive HEAD | tar -x -C work/web-head`，再用 `DAYLIGHT_WEB_DIR=work/web-head node scripts/desktop-sync.mjs`。理由：真源工作区经常有未提交的在改代码（本轮同步时为 `docs/hackathon-report/*`、`src/components/event-dialog.jsx`、`src/components/studio-calendar.jsx`），直接同步会把别人写了一半的改动带进桌面端。已核对这两个组件文件与 HEAD 逐字节一致，未被带入。
+- 本轮对齐的增量很小：真源在 `be75dac` 之后又提交了 2 条，功能增量只有 `shared/reminder-rules.js`（+38 行，`3faef80`），文档增量是 `README.md`/`README_EN.md`/`DEPLOY.md`/`CONTRIBUTING.md`/`docs/assets/readme/*`（`82d682b`，桌面端有自己的一套文档，不参与同步）。`shared/reminder-rules.js` 新增了**规则级提示音 `soundId` 与闹钟级 `alarm`**、**全局提示音与早间简报 `briefing`**（`DEFAULT_BRIEFING` / `normalizeBriefing` / `nextBeijingTime`）。对齐后 `shared/` 与真源逐字节一致。
+  - 需要如实说明的范围：这两侧目前**都没有消费方**——`normalizeBriefing` / `nextBeijingTime` / `DEFAULT_BRIEFING` 除 `shared/reminder-rules.js` 自身外无任何引用（真源侧同样如此，`src/` 里搜不到 `soundId`），所以本轮同步进来的是**提醒引擎能力**，桌面端「本地测试通过（引擎归一化）」而非「界面已经能设置提示音/早间简报」。等真源把 UI 补上后重新同步即可自动获得。
+- 上一轮（第二轮对齐，基线 `be75dac`）追上的上游能力，全部在桌面端直接可用：
   - **邮件写回真实邮箱**（`server/agent.js`，默认关闭；开关未开时明确报错，不会只改本地留下不一致）；
   - **一句话提醒规则解析** `POST /api/reminders/parse`（无状态，规则存在手机端，不写业务数据）；
   - **视图作用域隔离** `server/view-scope.js`（切回单邮箱时按当前视图隔离列表）；
@@ -36,6 +39,9 @@
   - 因此**删除**上一轮自研的 `src/components/pdf-canvas-viewer.jsx`、5 条相关桌面补丁，以及后端 `/desktop/pdfjs/*` 静态目录（连带 `express`/`fs`/`path` 依赖与 cookie 豁免）。
   - 收益：少一个组件、少一个后端路由、少 5 条补丁，上游后续改进自动继承；代价：渲染尺寸改由 `ResizeObserver` 驱动，交互变成单页 + 上下页 + 缩放（上游的产品选择），桌面端跟随。
 - **D4 把 `Dockerfile` 与评测用例一起同步**：两者与桌面端运行无关，但共享测试套件会读取它们。同步进来比维护一份「桌面端豁免哪些测试」的清单更简单，也让「测试结果与真源逐条一致」这个断言保持可验证。
+- **D5 同步基线只取真源已提交的 HEAD（本轮新增，用户确认）**：`scripts/desktop-sync.mjs` 是整树复制，默认会读真源**工作目录**，因而会把真源未提交的在改代码一并带进桌面端。已发现的具体后果：上一轮提交（`ad79a6b`）里 `src/components/event-dialog.jsx`（日程弹窗双栏改版）与 `src/components/studio-calendar.jsx` 实际是真源**未提交**的 WIP，至今仍未在真源提交。
+  - 本轮起基线改为「真源 `git archive HEAD` 的导出」，那两个文件已回退到 `82d682b` 版本。选择理由（用户确认）：桌面端要能回答「等于真源哪个提交」，可复现优先于提前拿到未评审的改动；真源一旦提交，下一次同步会自动拿回。
+  - 注意这**不是**「桌面端不要这个改版」，而是「不把未提交代码当成已发布能力」。判定方法：`git -C <真源> status --porcelain`，有输出就要改用 HEAD 导出。
 
 ### 桌面端专有改动（阶段 10）
 
@@ -53,6 +59,8 @@
 | --- | --- | --- | --- |
 | 前端构建 | `npm run build` | 通过；`dist/` 8.4 MB，含 `pdf.worker.min-*.mjs`、34 个 `.bcmap`、标准字体与 4 个 `.wasm`（另有 134 个 CMap 被内联为 `data:` URL） | 本地测试通过 |
 | 补丁锚点 | `node scripts/desktop-sync.mjs --check` | 17 条补丁在 Web 真源上全部命中 | 本地测试通过 |
+| 真源增量同步（`be75dac` → `82d682b`） | `git archive HEAD` 干净基线 → `DAYLIGHT_WEB_DIR=… node scripts/desktop-sync.mjs` | 397 个文件重写、12 个 Web 专有文件移除；功能增量只有 `shared/reminder-rules.js`（+38 行）。同步后 `shared/` 逐字节一致，真源未提交的 `event-dialog.jsx`/`studio-calendar.jsx` 未被带入 | 本地测试通过 |
+| 逐条用例状态 diff | Web HEAD 干净基线 vs 桌面端各跑一次 `node --test server/*.test.js` | 两侧同为 680 / 587 通过 / 58 失败 / 35 跳过，672 条顶层用例状态 diff 为空 | 本地测试通过 |
 | 文件级对齐 | `cmp` 逐文件比对 `src/ server/ shared/ public/` | 除 3 + 4 处桌面补丁文件外与真源逐字节一致 | 本地测试通过 |
 | 共享业务测试 | `node --test server/*.test.js` | 680 项：587 通过 / **58 失败** / 35 跳过；与 Web 真源**逐条用例状态完全一致**（状态 diff 为空） | 本地测试通过（含与真源相同的历史失败） |
 | 桌面专有测试 | `npm run test:desktop` | **8/8 通过**（无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、打包运行时不含 `vite` 且能独立启动） | 本地测试通过 |
@@ -61,7 +69,7 @@
 | 后端冒烟（生产模式、无 PG/Redis/MQ、仅回环） | 真实后台 + `curl`，鉴权三层由 `npm run test:desktop` 守护 | 就绪并打印 `DAYLIGHT_READY 14377`；`/desktop/start?token=…` 302 到 `/app`；无 cookie 403；伪造 `Host: evil.example` 403 | 本地测试通过 |
 | 运行时打包 | `npm run desktop:prepare` | 通过；`runtime/` 301 MB，含 `shared/`、`pdfjs-dist`、`@napi-rs/canvas`（`server/pdf.js` 的服务端 PDF 渲染确实用到），**不含 `vite`** | 本地测试通过 |
 | Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（上一轮记录；本轮 `desktop:build` 再次完成 release 编译与打包） | 本地测试通过 |
-| 安装包 | `npm run desktop:build` | `Daylight.app` 282.53 MiB、`Daylight_0.1.0_aarch64.dmg` 96.54 MiB（macOS arm64；release 编译 2m23s） | 本地测试通过 |
+| 安装包 | `npm run desktop:build` | `Daylight.app` 282.53 MiB、`Daylight_0.1.0_aarch64.dmg` 96.54 MiB（macOS arm64；`82d682b` 基线上复打包成功） | 本地测试通过 |
 
 ### 安装包
 
