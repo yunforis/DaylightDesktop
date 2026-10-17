@@ -193,9 +193,15 @@ jobs:
 
       - run: npm ci
 
-      # macOS 签名与公证是可选的：仓库里没有配置证书时，产出的 .app 是未签名的（首次打开需要
-      # 在「系统设置 → 隐私与安全性」里放行）。下面这段只在 APPLE_CERTIFICATE 存在时才注入变量，
-      # 空变量会让 Tauri 的打包器直接报错，所以不能无条件写进 env。
+      # macOS 签名与公证：配了证书就正式签名 + 公证；**没有证书也必须至少做 ad-hoc 签名**。
+      #
+      # 不能把「未签名」理解成「只是多一个提示」：Tauri 在没有签名身份时，只留下链接器自动加的
+      # 那个 ad-hoc 签名，**不会**给 .app 生成 _CodeSignature/CodeResources。这样的包在 Apple
+      # Silicon 上被 macOS 判成「已损坏，无法打开」，用户根本装不上（v0.1.0 实测如此：挂载 DMG
+      # 后 codesign --verify 报 "code has no resources but signature indicates they must be
+      # present"，而有证书时的正式签名才不会）。ad-hoc 签名之后仍是「未验证的开发者」，用户
+      # 需要在「系统设置 → 隐私与安全性」放行一次，但那不再是「损坏」。
+      # 下面这段只在 APPLE_CERTIFICATE 存在时才注入证书变量，空变量会让打包器直接报错。
       - name: 配置 macOS 签名与公证
         if: runner.os == 'macOS'
         env:
@@ -207,7 +213,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -z "${APPLE_CERTIFICATE:-}" ]; then
-            echo "未配置 APPLE_CERTIFICATE，跳过签名与公证（产出的应用未签名）。"
+            echo "未配置 APPLE_CERTIFICATE：改为 ad-hoc 签名（包可安装，用户首次需放行一次），不做公证。"
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
             exit 0
           fi
           {
@@ -249,6 +256,37 @@ jobs:
           # 级别更高时改用 output_ok()，它会把工具 stderr 里的真实原因拼进错误信息。
           # 没有这个开关时，AppImage 打包失败在 CI 上就是一句没有任何线索的话。
           args: --target ${{ matrix.target }} --verbose
+
+      # 未签名的 macOS 包在 Apple Silicon 上是「已损坏，无法打开」——用户下载后才发现这件事，
+      # 代价是整个版本不可用（v0.1.0 就是这样）。所以在 CI 里直接对刚打出来的 .app 做一次真校验，
+      # 签名缺失时在这里就红，不会流到 Release 上。校验的是磁盘上的 bundle，而 DMG 与
+      # .app.tar.gz 都由同一个 bundle 生成，它们自然同源。
+      - name: 校验 macOS 产物已签名（未签名 = Apple Silicon 上「已损坏」）
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          # 本机构建落在 target/release，交叉构建（Intel Mac 包在 arm64 runner 上打）带三元组前缀，
+          # 所以先按 target 路径找，找不到再回落、再全树找——但不能找不到就算过。
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Daylight.app"
+          if [ ! -d "$app" ]; then
+            app="src-tauri/target/release/bundle/macos/Daylight.app"
+          fi
+          if [ ! -d "$app" ]; then
+            app=$(find src-tauri/target -maxdepth 7 -type d -name 'Daylight.app' | head -1)
+          fi
+          if [ -z "${app:-}" ] || [ ! -d "$app" ]; then
+            echo "::error::找不到任何 Daylight.app，无法校验签名"
+            find src-tauri/target -maxdepth 7 -path '*bundle*' -type d || true
+            exit 1
+          fi
+          echo "校验对象：$app"
+          if [ ! -f "$app/Contents/_CodeSignature/CodeResources" ]; then
+            echo "::error::$app 缺少 _CodeSignature/CodeResources：没有做整包签名，Apple Silicon 上会显示「已损坏，无法打开」"
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$app"
+          echo "✓ 已整包签名并通过校验"
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -E '^(Identifier|Signature|TeamIdentifier)=' || true
 
       # 打包失败时把现场打出来。linuxdeploy 这类外部工具只在 --verbose 下才会把 stderr 带进
       # 错误信息，剩下的（AppDir 结构、体积、tz 缓存里的工具）只能靠这一步。

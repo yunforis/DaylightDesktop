@@ -53,12 +53,21 @@ Installers are published through this repository's [Releases](https://github.com
 
 | Platform | Artifact | Notes |
 | --- | --- | --- |
-| macOS Apple Silicon | `.dmg` (`_aarch64`) | Not signed or notarized; allow it once under System Settings → Privacy & Security |
+| macOS Apple Silicon | `.dmg` (`_aarch64`) | Ad-hoc signed, so allow it once under System Settings → Privacy & Security; **not Developer ID signed or notarized** |
 | macOS Intel | `.dmg` (`_x64`) | Cross-built on Apple Silicon (GitHub no longer provides x64 macOS runners) |
 | Windows x64 / arm64 | NSIS `.exe` (`_x64-setup.exe` / `_arm64-setup.exe`), `.msi` | Auto-update uses NSIS; `.msi` is for manual installs |
 | Linux x64 / arm64 | `AppImage`, `.deb`, `.rpm` | Only the AppImage supports auto-update |
 
 Each platform also ships the signature files (`.sig`) used by the updater; `latest.json` is generated and checked by the release pipeline so that all six platforms are present. Artifact names, sizes, and platform coverage are governed by the actual contents of [Releases](https://github.com/yunforis/DaylightDesktop/releases).
+
+> **The macOS package in `v0.1.0` reports "the app is damaged and can't be opened" on Apple Silicon**: that build carried only the linker's automatic signature and was **never signed as a bundle** (`Contents/_CodeSignature/CodeResources` missing), so macOS refuses to load it. The download is not corrupt — its size matches the release byte for byte. This is fixed on the build side (ad-hoc signing by default, plus a CI check on the artifact), and **you need a new version to get a usable macOS package**. To use `v0.1.0` in the meantime, copy it into `/Applications` and sign it once by hand:
+>
+> ```bash
+> sudo xattr -dr com.apple.quarantine /Applications/Daylight.app
+> sudo codesign --force --deep --sign - /Applications/Daylight.app
+> ```
+>
+> Then open it normally; if it still reports an unverified developer, allow it under System Settings → Privacy & Security.
 
 - Just want to use it: download, install, then follow the [user guide](#usage)
 - Wondering how it differs from the Web version: [desktop-specific behavior](#desktop)
@@ -276,9 +285,9 @@ You can also run the `release` workflow manually from the Actions page with a ta
 | --- | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | **Yes** | The **file contents** of `work/updater-key/daylight.key`. If missing, packaging fails at the "generate updater artifacts" step — deliberately: no signature means no update should ever be published |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Optional | Key passphrase. The current key has none, so **leave it unset**: an absent value (empty string) matches a passphrase-less key, and this combination was verified to sign locally |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | Optional | macOS signing and notarization. **Packaging works without them**, but users must allow the app manually on first launch under System Settings → Privacy & Security |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | Optional | macOS Developer ID signing and notarization (needs a paid Apple Developer account). **Packaging still works without them**: the signing identity falls back to ad-hoc (`APPLE_SIGNING_IDENTITY=-`), the app is installable, and users allow it once under System Settings → Privacy & Security |
 
-The workflow injects signing variables only when `APPLE_CERTIFICATE` is non-empty (empty variables make the Tauri bundler fail), so a missing certificate does not break the build.
+The workflow injects the certificate variables only when `APPLE_CERTIFICATE` is non-empty (empty variables make the Tauri bundler fail). **Without a certificate this is not "skip signing" — it degrades to ad-hoc signing**, because Tauri with no signing identity at all does **not** produce `Contents/_CodeSignature/CodeResources` for the `.app`, and macOS then reports such a bundle as "damaged and can't be opened" on Apple Silicon — users simply cannot install it (`v0.1.0` was measured to fail exactly this way). CI therefore also verifies the freshly built `.app` (requires `_CodeSignature/CodeResources` and a passing `codesign --verify --deep --strict`). A local `npm run desktop:build` also defaults to ad-hoc signing.
 
 ### The repository must stay public
 
@@ -339,7 +348,9 @@ That is exactly how the Intel Mac build is cross-built on Apple Silicon (`x86_64
 ### Build outputs
 
 ```bash
-npm run desktop:build
+# Updater artifacts must be signed; the variable takes the key file's *contents*.
+# Passing a path makes the bundler base64-decode the path itself and fail.
+TAURI_SIGNING_PRIVATE_KEY="$(cat work/updater-key/daylight.key)" npm run desktop:build
 ```
 
 Artifacts appear under `src-tauri/target/release/bundle/`:
@@ -392,16 +403,16 @@ npm run desktop:check # Rust shell check
 bash work/smoke.sh    # backend smoke test (production mode / no PG / loopback only / auth boundaries)
 ```
 
-- **Desktop-specific tests** cover: startup and restart without PG/Redis/MQ, the three-layer auth boundary, one-time sessions, credentials encrypted at rest, port fallback, patch-anchor self-checks, offline pdf.js assets and rendering a self-produced PDF, one-to-one mapping between the release matrix and bundled Node architectures, updater configuration plus the native-side flow, Windows PATH key casing, cross-platform legality of frontend asset filenames, a bundled runtime containing only the target platform's native modules, `latest.json` URL rewriting with six-platform completeness, and a packaging runtime (without `vite`) starting standalone. **14 tests, all passing.**
+- **Desktop-specific tests** cover: startup and restart without PG/Redis/MQ, the three-layer auth boundary, one-time sessions, credentials encrypted at rest, port fallback, patch-anchor self-checks, offline pdf.js assets and rendering a self-produced PDF, one-to-one mapping between the release matrix and bundled Node architectures, **whole-bundle macOS signing (an unsigned bundle is reported as "damaged" on Apple Silicon)**, updater configuration plus the native-side flow, Windows PATH key casing, cross-platform legality of frontend asset filenames, a bundled runtime containing only the target platform's native modules, `latest.json` URL rewriting with six-platform completeness, and a packaging runtime (without `vite`) starting standalone. **15 tests, all passing.**
 - **Shared business tests** total **680**: 587 pass / 58 fail / 35 skipped, **identical case by case** to the Web source of truth (this round's sync introduced zero differences). The failures are legacy integration tests that start a real Express server with mocked timers, not something the desktop fork introduced; the step is `continue-on-error` in `.github/workflows/desktop.yml`.
-- **CI gate:** `.github/workflows/desktop.yml` runs verify on Linux / Windows / macOS (including the 13 mandatory desktop tests and `cargo check`); all three platforms are currently green.
+- **CI gate:** `.github/workflows/desktop.yml` runs verify on Linux / Windows / macOS (including the 14 mandatory desktop tests and `cargo check`); all three platforms are currently green.
 - Every write-based test uses an isolated data directory under `work/` and never touches user data.
 
 ### Known boundaries
 
 - **Six-platform packaging and a real public release are verified; on-device launch is not:** installers for all six targets have been **built for real** on GitHub-hosted runners (macOS `.dmg`/`.app.tar.gz`, Windows NSIS `-setup.exe`/`.msi`, Linux `AppImage`/`.deb`/`.rpm`, each with `.sig`). Every release-pipeline defect found along the way has been fixed with tests: concurrent duplicate Release creation, `latest.json` pointing at an authenticated asset API URL, a reused draft keeping a stale `target_commitish` (so the tag did not match the artifacts), and the subtlest one — **publishing a draft creates the Git tag, which re-triggered this very workflow and rewrote the published artifacts** (it swapped the Linux assets for fresh builds and left `latest.json` mid-run with 12 keys pointing at the asset API, so clients downloaded JSON). After the fixes, a full round finished green (version guard + all six platform jobs + `latest.json` rewrite) and **`v0.1.0` was published on 2026-10-18 (Beijing time)** with the tag on the build commit `467ddd2`; all 18 `latest.json` keys are public URLs, the six required platforms are present, all 12 referenced artifacts carry a `.sig`, the public update endpoint is anonymously reachable (HTTP 200) and downloads real binaries, and the publish-triggered second workflow run was measured at 11 seconds, ending in "skipped" without touching a single artifact. However, **the app has never been launched on a real Windows or Linux machine**: `src-tauri/src/main.rs` and `scripts/prepare-desktop.mjs` contain genuine platform branches and the dependency list records prebuilt packages for every platform. This is therefore **implemented plus build- and release-verified**, not **verified on device**. Full records in [STATUS.md](STATUS.md).
 - **Auto-update is not verified end to end:** locally we verified that the app's embedded public key accepts the signed updater artifact and rejects a 1-byte tamper (with a negative control), but the full **download → verify → replace installation → restart** chain needs two real published versions, which this round did not do. On Linux it additionally depends on the AppImage form.
-- **macOS installers are unsigned and not notarized:** local and CI builds produce unsigned packages that require manual approval on first launch. With `APPLE_*` secrets configured, signing and notarization become automatic, at which point a paid Apple Developer account is required.
+- **macOS packages are ad-hoc signed but not Developer ID signed or notarized:** without `APPLE_*` certificates the build degrades to ad-hoc signing — which is **required**, because a bundle with no signing identity at all is reported as "damaged and can't be opened" on Apple Silicon (`v0.1.0` was measured to hit exactly that; see the download note above). Ad-hoc signing makes the app usable, but users still allow it once under System Settings → Privacy & Security. With `APPLE_*` secrets configured, signing and notarization become automatic, at which point a paid Apple Developer account is required. The new CI check on the build side **has not run on GitHub Actions yet** (the next release is the first to execute it); this round verified locally that the artifacts really are whole-bundle signed, in both the DMG and the updater archive, and that they install and launch.
 - **A public release exists, but end-to-end updating is still unverified:** `v0.1.0` is published (2026-10-18 Beijing time) and the public update endpoint is anonymously reachable; the **download → verify → replace installation → restart** chain needs **two** published versions, and this round published only the first.
 - **Single-user local application:** no multi-tenancy, no admin console, no cloud account. The backend listens on loopback only, and **one data directory must not be written by multiple backend processes at once** (JSON plus in-process coordination).
 - **No persistent background job queue in local mode:** long synchronizations complete within the request, and the UI follows progress through status polling and traces.
@@ -422,7 +433,7 @@ DaylightDesktop/
 │   └── index.js                # Web / browser dev entry
 ├── shared/                     # Shared templates and definitions
 ├── scripts/                    # Sync, runtime preparation, desktop dev/build scripts
-├── desktop-tests/              # Desktop-specific tests (14)
+├── desktop-tests/              # Desktop-specific tests (15)
 ├── src-tauri/                  # Rust shell, Tauri config, bundled Node runtime, bundle resources
 │   ├── src/                    # main.rs, update.rs, ...
 │   ├── tauri.conf.json         # Window, bundle, update endpoint and public key
@@ -442,7 +453,7 @@ DaylightDesktop/
 | --- | --- | --- |
 | **Install & update** | Six-platform installers built in CI; `v0.1.0` published; updater framework and trust chain implemented | Publish a second version and verify download → verify → replace → restart once |
 | **On-device verification** | macOS development and packaging verified locally | Launch on real Windows / Linux machines and run the main flows |
-| **Signing & notarization** | Unsigned packages install (with a manual allow on first launch) | Configure an Apple Developer account and complete macOS signing/notarization |
+| **Signing & notarization** | Ad-hoc signed packages install (with a manual allow on first launch) | Configure an Apple Developer account and complete macOS signing/notarization |
 | **Feature parity** | Business code shared with the Web version and synced per round | Follow upstream evolution while keeping per-case test status identical |
 | **Desktop experience** | Tray, single instance, window state, offline PDF, port fallback | Wake handling, offline fonts, more real-device details |
 | **Data & multi-device** | Local JSON storage, encrypted credentials | Optional encrypted local backups and a migration path between machines |

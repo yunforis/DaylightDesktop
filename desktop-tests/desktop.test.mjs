@@ -508,6 +508,54 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
   assert.match(release, /needs:\s*\[guard,\s*build\]/, 'finalize 必须在六个平台都成功后才跑，避免发布残缺的 latest.json');
 });
 
+/**
+ * macOS 包必须做过**整包签名**，否则 Apple Silicon 上根本装不上。
+ *
+ * 这不是「用户体验差一点」的问题：Tauri 在没有签名身份时，只留下链接器自动加在那个 Mach-O 上的
+ * ad-hoc 签名，不会生成 `Contents/_CodeSignature/CodeResources`。这样的 .app 从 DMG 里拷出来
+ * 会被 macOS 直接判成「已损坏，无法打开。你应该将它移到废纸篓」——v0.1.0 就是这么翻车的
+ * （`codesign --verify` 报 "code has no resources but signature indicates they must be present"，
+ * 下载体积与 Release 完全一致，问题在包本身而不在下载）。
+ *
+ * 所以这里守两条：没有证书时必须退化成 ad-hoc 签名（能用，首次需放行一次），以及 CI 里必须有一道
+ * 对**刚打出来的** .app 的真校验——这道校验才是让同类问题在流水线上就红、而不是等用户下载的关口。
+ */
+test('macOS 包必须整包签名（未签名 = Apple Silicon 上「已损坏」）', () => {
+  const release = readText('.github', 'workflows', 'release.yml');
+
+  // 没有证书时的退化路径：不能只是「跳过」，必须给出 ad-hoc 身份。
+  assert.match(
+    release,
+    /echo "APPLE_SIGNING_IDENTITY=-" >> "\$GITHUB_ENV"/,
+    '未配置证书时必须退化为 ad-hoc 签名（APPLE_SIGNING_IDENTITY=-），否则产出的 .app 在 Apple Silicon 上显示「已损坏」',
+  );
+  const signStep = release.slice(release.indexOf('配置 macOS 签名与公证'), release.indexOf('构建并发布'));
+  assert.match(signStep, /未配置 APPLE_CERTIFICATE/, '签名步骤必须区分「有证书」与「没证书」两条路径');
+  // 有证书时仍然走正式签名 + 公证，ad-hoc 不能被写成无条件覆盖。
+  assert.match(signStep, /APPLE_CERTIFICATE<<APPLE_CERT_EOF/, '有证书时必须照旧注入证书做正式签名与公证');
+
+  // 本地构建（npm run desktop:build）同样要带上 ad-hoc 身份，否则开发者本地重打出来的包也一样装不上。
+  const desktop = readText('scripts', 'desktop.mjs');
+  assert.match(desktop, /env\.APPLE_SIGNING_IDENTITY = '-'/, '本地 macOS 构建必须默认 ad-hoc 签名');
+  assert.match(
+    desktop,
+    /!env\.APPLE_SIGNING_IDENTITY/,
+    '只在没有显式身份时才填 ad-hoc，配了 Developer ID 时不能被覆盖成 ad-hoc',
+  );
+
+  // CI 必须校验刚打出来的 bundle，而不是相信「打包成功就等于包能用」。
+  // 锚点用校验步骤里那句具体路径：上面解释性注释里也会提到 _CodeSignature/CodeResources。
+  const verifyIndex = release.indexOf('$app/Contents/_CodeSignature/CodeResources');
+  assert.ok(verifyIndex > 0, 'CI 必须校验产物里存在 _CodeSignature/CodeResources');
+  assert.ok(
+    verifyIndex > release.indexOf('tauri-apps/tauri-action@v1'),
+    '校验必须发生在打包之后，校验的是刚打出来的 .app',
+  );
+  const verifyStep = release.slice(release.lastIndexOf('- name:', verifyIndex), release.indexOf('\n\n', verifyIndex));
+  assert.match(verifyStep, /codesign --verify --deep --strict/, '必须对产物跑一次真的签名校验');
+  assert.match(verifyStep, /if:\s*runner\.os == 'macOS'/, '签名校验只对 macOS 有意义');
+});
+
 test('自动更新：签名公钥、发布源与原生侧流程都已接好', () => {
   const conf = JSON.parse(readText('src-tauri', 'tauri.conf.json'));
   assert.equal(conf.bundle.createUpdaterArtifacts, true, '必须生成更新产物与签名，否则客户端无法自动更新');

@@ -53,12 +53,21 @@
 
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
-| macOS Apple Silicon | `.dmg`（`_aarch64`） | 未做签名与公证，首次打开需在「系统设置 → 隐私与安全性」放行 |
+| macOS Apple Silicon | `.dmg`（`_aarch64`） | 已做 ad-hoc 签名，首次打开需在「系统设置 → 隐私与安全性」放行一次；**未做 Developer ID 签名与公证** |
 | macOS Intel | `.dmg`（`_x64`） | 在 Apple Silicon 上交叉构建（GitHub 已不提供 x64 的 macOS runner） |
 | Windows x64 / arm64 | NSIS `.exe`（`_x64-setup.exe` / `_arm64-setup.exe`）、`.msi` | 自动更新用 NSIS；`.msi` 供手动安装 |
 | Linux x64 / arm64 | `AppImage`、`.deb`、`.rpm` | 仅 AppImage 支持自动更新 |
 
 每个平台的打包产物同时包含自动更新用的签名文件（`.sig`）；`latest.json` 由发布流水线统一生成并校验六个平台是否齐全。产物名称、大小与平台覆盖以 [Releases](https://github.com/yunforis/DaylightDesktop/releases) 实际内容为准。
+
+> **`v0.1.0` 的 macOS 包在 Apple Silicon 上会显示「已损坏，无法打开」**：那一版的 macOS 产物只带链接器自动加的签名、**没有整包签名**（缺 `Contents/_CodeSignature/CodeResources`），macOS 因此拒绝加载它。这不是下载损坏——文件大小与 Release 完全一致。已在构建侧修掉（默认 ad-hoc 签名 + CI 校验产物），**要拿到可用的 macOS 包需要发新版本**。暂时想用 `v0.1.0` 的话，装到 `/Applications` 后手动补一次签名：
+>
+> ```bash
+> sudo xattr -dr com.apple.quarantine /Applications/Daylight.app
+> sudo codesign --force --deep --sign - /Applications/Daylight.app
+> ```
+>
+> 之后正常打开；若仍提示「未验证的开发者」，在「系统设置 → 隐私与安全性」里点「仍要打开」。
 
 - 只想用：下载安装 → [开始使用](#usage)
 - 想知道桌面端和 Web 版差在哪：[桌面端专有行为](#desktop)
@@ -276,9 +285,9 @@ git push origin v0.1.0
 | --- | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | **必需** | `work/updater-key/daylight.key` 的**文件内容**。缺失时打包会在「生成更新产物」这步直接失败——这是刻意的，没有签名不该发布更新 |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 可选 | 私钥口令。当前密钥未设口令，**不要填**：让它保持不存在（表达式为空串）与「无口令密钥」是匹配的，本机已实测这一组合能正常签名 |
-| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | 可选 | macOS 签名与公证。**不配也能出包**，但用户首次打开需要在「系统设置 → 隐私与安全性」里手动放行 |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | 可选 | macOS 正式签名与公证（需要付费的 Apple 开发者账号）。**不配也能出包**：签名身份会自动退化为 ad-hoc（`APPLE_SIGNING_IDENTITY=-`），包能安装，用户首次打开需在「系统设置 → 隐私与安全性」里放行一次 |
 
-工作流只在 `APPLE_CERTIFICATE` 非空时才注入签名变量（空变量会让 Tauri 打包器报错），所以没配证书时不会因此失败。
+工作流只在 `APPLE_CERTIFICATE` 非空时才注入证书变量（空变量会让 Tauri 打包器报错）；**没有证书时不是「跳过签名」，而是退化为 ad-hoc 签名**——Tauri 在完全没有签名身份时**不会**给 `.app` 生成 `Contents/_CodeSignature/CodeResources`，这样的包在 Apple Silicon 上会被 macOS 判成「已损坏，无法打开」，用户根本装不上（`v0.1.0` 实测如此）。CI 另有一道对刚打出来的 `.app` 的真校验（要求存在 `_CodeSignature/CodeResources` 且 `codesign --verify --deep --strict` 通过）。本机 `npm run desktop:build` 同样默认 ad-hoc 签名。
 
 ### 仓库必须保持公开
 
@@ -339,7 +348,9 @@ Intel Mac 的包正是这样在 Apple Silicon 上交叉构建的（`x86_64-apple
 ### 打包产物
 
 ```bash
-npm run desktop:build
+# 更新产物必须签名；变量要的是密钥文件的「内容」
+# 写成路径会让打包器把它当密钥解 base64 而失败
+TAURI_SIGNING_PRIVATE_KEY="$(cat work/updater-key/daylight.key)" npm run desktop:build
 ```
 
 产物在 `src-tauri/target/release/bundle/`：
@@ -392,16 +403,16 @@ npm run desktop:check # Rust 壳层检查
 bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴权边界）
 ```
 
-- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写、前端产物文件名跨平台合法性、内置运行时只含目标平台原生模块、`latest.json` 地址改写与六平台完整性、打包运行时（不含 `vite`）能独立启动。共 **14 项**，全部通过。
+- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、发布矩阵与内置 Node 架构映射一一对应、**macOS 整包签名（未整包签名 = Apple Silicon 上「已损坏」）**、自动更新配置与原生侧流程、Windows PATH 键名大小写、前端产物文件名跨平台合法性、内置运行时只含目标平台原生模块、`latest.json` 地址改写与六平台完整性、打包运行时（不含 `vite`）能独立启动。共 **15 项**，全部通过。
 - **共享业务测试**共 **680 项**：587 通过 / 58 失败 / 35 跳过，与 Web 真源**逐条用例状态完全一致**（本轮对齐引入 0 项差异）。失败项是同时启动真实 Express 服务、mock timer 的历史集成测试，不是桌面端引入；`.github/workflows/desktop.yml` 中该步骤 `continue-on-error`。
-- **CI 门禁**：`.github/workflows/desktop.yml` 在 Linux / Windows / macOS 三个平台跑 verify（含 13 项必须通过的桌面专有测试与 `cargo check`），当前三平台全绿。
+- **CI 门禁**：`.github/workflows/desktop.yml` 在 Linux / Windows / macOS 三个平台跑 verify（含 14 项必须通过的桌面专有测试与 `cargo check`），当前三平台全绿。
 - 所有写盘测试使用 `work/` 下的独立数据目录，不触碰用户数据。
 
 ### 已知边界
 
 - **六平台出包与正式发布都已在真实 CI 上验证通过，实机启动未验证**：六种目标的安装包已在 GitHub 托管的 runner 上**真实构建成功**（含 macOS 的 `.dmg`/`.app.tar.gz`、Windows 的 NSIS `-setup.exe`/`.msi`、Linux 的 `AppImage`/`.deb`/`.rpm`，以及各自的 `.sig`）。发布流水线在草稿阶段暴露的缺陷都已修复并补了测试：并发创建重复 Release、`latest.json` 指向需鉴权的 asset API 地址、复用草稿时 `target_commitish` 停留在旧提交（标签会与产物对不上）、以及**「发布草稿本身会创建 Git 标签、从而再触发一次本工作流」把已发布产物重写一遍**（最后一个最隐蔽：实测把 Linux 资产换成了新构建的，`latest.json` 被中途改写成 12 个键指向 asset API 地址，客户端会「下载」到一段 JSON）。修复后完整一轮（`校验版本` + 六个平台 job + `修整 latest.json`）全部 success，Release 收齐六平台产物与 `latest.json`，**`v0.1.0` 已于 2026-10-18（北京时间）正式发布**，标签指向构建提交 `467ddd2`，实测 `latest.json` 的 18 个平台键全部是公开下载地址、六个必需平台齐全、12 个被引用的产物都有 `.sig`，公开更新地址匿名可达（HTTP 200）且取样下载到的是二进制；发布触发的第二次工作流运行实测在 11 秒内以「跳过」结束，产物与 `latest.json` 一字未改。但**应用本身没有在真实 Windows / Linux 机器上启动过**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包。因此这是**代码已实现 + 构建与发布通过**，不是**实机跑通**。完整记录见 [STATUS.md](STATUS.md)。
 - **自动更新未做端到端验证**：本机已实测「更新产物签名能被应用内嵌公钥接受、篡改 1 字节即被拒绝」（含反向对照），但**下载 → 校验 → 替换安装文件 → 重启**这一整条链路需要发布两个真实版本才能验证，本轮未做。Linux 上还额外依赖 AppImage 形态。
-- **macOS 安装包未做签名与公证**：本机与 CI 默认产出未签名包，首次打开需要手动放行。配好 `APPLE_*` Secrets 后即可自动签名公证，那时需要 Apple 开发者账号（付费）。
+- **macOS 包已做 ad-hoc 签名，但未做 Developer ID 正式签名与公证**：没有 `APPLE_*` 证书时，构建会退化为 ad-hoc 签名——这是**必需**的，因为完全没有签名身份的 `.app` 在 Apple Silicon 上会被判成「已损坏，无法打开」（`v0.1.0` 实测踩过，见上方下载说明）。ad-hoc 之后包能用，但首次打开仍需在「系统设置 → 隐私与安全性」手动放行一次。配好 `APPLE_*` Secrets 后即可自动正式签名与公证，那时需要 Apple 开发者账号（付费）。构建侧新增的那道 CI 校验**还没有在 GitHub Actions 上真实运行过**（下一次发布才会跑到），本轮只在本机验证了「产物确实带整包签名、DMG 与更新包里都是、且能安装启动」。
 - **正式版本已发布，端到端更新仍未验证**：`v0.1.0` 已发布（2026-10-18 北京时间），公开更新地址匿名可达；但「下载 → 校验 → 替换安装文件 → 重启」需要**两个**已发布版本才能验证，本轮只发布了第一个。
 - **单用户本机应用**：没有多租户、没有管理后台、没有云端账号。后台只监听回环地址；同一数据目录**不能**给多个后台进程同时写入（JSON + 进程内协调）。
 - **本地模式不提供持久化后台任务队列**：长同步在请求内完成，页面通过状态轮询与 trace 观察进度。
@@ -422,7 +433,7 @@ DaylightDesktop/
 │   └── index.js                # Web / 浏览器开发入口
 ├── shared/                     # 跨端模板与公共定义
 ├── scripts/                    # 同步、准备运行时与桌面开发/构建脚本
-├── desktop-tests/              # 桌面专有测试（14 项）
+├── desktop-tests/              # 桌面专有测试（15 项）
 ├── src-tauri/                  # Rust 壳层、Tauri 配置、内置 Node 运行时与打包资源
 │   ├── src/                    # main.rs / update.rs 等
 │   ├── tauri.conf.json         # 窗口、bundle、更新端点与公钥
@@ -442,7 +453,7 @@ DaylightDesktop/
 | --- | --- | --- |
 | **安装与更新** | 六平台安装包已在 CI 真实构建，`v0.1.0` 已发布；自动更新框架与信任链已实现 | 发布第二个版本，做一次真实的下载 → 校验 → 替换 → 重启验证 |
 | **实机验证** | macOS 本机开发与打包验证通过 | 在真实 Windows / Linux 机器上启动并走通主要流程 |
-| **签名与公证** | 未签名包可安装（首开需放行） | 配置 Apple 开发者账号，完成 macOS 签名与公证 |
+| **签名与公证** | ad-hoc 签名包可安装（首开需放行一次） | 配置 Apple 开发者账号，完成 macOS 正式签名与公证 |
 | **功能对齐** | 与 Web 版共享业务代码，逐轮同步 | 跟随 Web 侧演进，保持逐条用例状态一致 |
 | **桌面体验** | 托盘、单实例、窗口记忆、离线 PDF、端口回退 | 系统唤醒处理、离线字体、更多平台实机细节 |
 | **数据与多端** | 本机 JSON 存储、加密凭据 | 可选的本地加密备份与多机迁移路径 |

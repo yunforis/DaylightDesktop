@@ -43,6 +43,12 @@ if (Number(process.versions.node.split('.')[0]) < 22) {
     process.exit(check.status ?? 1);
   }
   if (!['dev', 'build'].includes(action)) throw new Error(`未知命令 ${action}`);
+  // macOS 上默认做 ad-hoc 签名。没有签名身份的 .app 只有链接器自动加的那点签名，**没有**
+  // _CodeSignature/CodeResources，在 Apple Silicon 上会被 macOS 判成「已损坏，无法打开」——
+  // 不是「多一个提示」，是根本装不上（v0.1.0 实测如此）。配置了真正的身份时以环境变量为准。
+  if (action === 'build' && process.platform === 'darwin' && !env.APPLE_SIGNING_IDENTITY) {
+    env.APPLE_SIGNING_IDENTITY = '-';
+  }
   const cli = path.join(root, 'node_modules/@tauri-apps/cli/tauri.js');
   const child = spawn(process.execPath, [cli, action, ...(action === 'dev' ? ['--config', 'src-tauri/tauri.dev.conf.json'] : []), ...process.argv.slice(3)], { stdio: 'inherit', env });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));
