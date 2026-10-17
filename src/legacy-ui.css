@@ -1,0 +1,11 @@
+.spin{animation:spin 1.2s linear infinite}
+.button{display:inline-flex;gap:8px;justify-content:center;align-items:center;padding:11px 17px;border-radius:7px;font-size:11px;font-weight:500;min-height:39px;white-space:nowrap;transition:background .15s}
+.button.primary{background:var(--green);color:#fff;box-shadow:0 2px 3px #204d3e0c}
+.button.secondary{background:white;border:1px solid #dfe4d9;color:#6c7864}
+.icon-button{width:29px;height:29px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:#87917e}
+.modal-backdrop{position:fixed;inset:0;background:#213b3160;backdrop-filter:blur(5px);z-index:30;display:flex;align-items:center;justify-content:center;padding:25px;animation:fadeIn .18s ease-out}
+.modal{background:#fcfdf9;border:1px solid #e1e6d9;border-radius:17px;width:510px;max-height:90vh;overflow:auto;box-shadow:0 25px 85px #19312425}
+.modal-header{display:flex;justify-content:space-between;align-items:flex-start;padding:26px 29px 23px;border-bottom:1px solid #e7ebdf}
+.text-button{display:inline-flex;align-items:center;gap:7px;font-size:10px;padding:4px 0;color:#81936e}
+@keyframes spin{to{transform:rotate(360deg)}}
+:root{--green:#5f8a4e}

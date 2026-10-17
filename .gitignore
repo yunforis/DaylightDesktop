@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/
+work/
+*.log
+server/.DS_Store
+
+.DS_Store
+**/.DS_Store
+
+src-tauri/target/
+src-tauri/runtime/
+src-tauri/binaries/
+.env*

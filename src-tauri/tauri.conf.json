@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Daylight",
+  "version": "0.1.0",
+  "identifier": "com.daylight.desktop",
+  "build": {
+    "frontendDist": "../desktop-shell",
+    "beforeBuildCommand": "npm run build && npm run desktop:prepare"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": { "runtime/": "runtime/" },
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "category": "Productivity",
+    "shortDescription": "邮件、日程与智能招聘的本地工作空间",
+    "macOS": { "minimumSystemVersion": "12.0", "entitlements": "Entitlements.plist" },
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" } },
+    "linux": { "deb": { "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1", "libsecret-1-0"] } }
+  }
+}

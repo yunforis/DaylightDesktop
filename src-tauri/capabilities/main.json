@@ -1,0 +1,7 @@
+{
+  "identifier": "main",
+  "description": "Only the local Daylight window can open web links; no shell or arbitrary file access.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:*/*"] },
+  "permissions": ["core:default", { "identifier": "opener:allow-open-url", "allow": [{"url":"https://*"},{"url":"http://*"},{"url":"mailto:*"}]}]
+}

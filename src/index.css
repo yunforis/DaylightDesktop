@@ -1,0 +1,1571 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Default: studio-admin style neutral black/white */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Accent themes: surface, sidebar, radius, atmosphere — not just primary */
+:root {
+  --atmosphere-a: transparent;
+  --atmosphere-b: transparent;
+  --atmosphere-c: transparent;
+  --atmosphere-base: transparent;
+  --surface-glow: transparent;
+  --cal-work: oklch(0.45 0.02 0);
+  --cal-personal: oklch(0.55 0.02 0);
+}
+
+html[data-accent="green"] {
+  --radius: 0.85rem;
+  --background: oklch(0.975 0.018 155);
+  --foreground: oklch(0.22 0.045 155);
+  --card: oklch(0.99 0.01 155);
+  --card-foreground: oklch(0.22 0.045 155);
+  --popover: oklch(0.995 0.008 155);
+  --popover-foreground: oklch(0.22 0.045 155);
+  --primary: oklch(0.42 0.11 155);
+  --primary-foreground: oklch(0.98 0.01 155);
+  --secondary: oklch(0.93 0.035 155);
+  --secondary-foreground: oklch(0.28 0.06 155);
+  --muted: oklch(0.94 0.028 155);
+  --muted-foreground: oklch(0.45 0.05 155);
+  --accent: oklch(0.91 0.045 155);
+  --accent-foreground: oklch(0.26 0.06 155);
+  --border: oklch(0.86 0.035 155);
+  --input: oklch(0.88 0.03 155);
+  --ring: oklch(0.55 0.09 155);
+  --sidebar: oklch(0.955 0.03 155);
+  --sidebar-foreground: oklch(0.24 0.05 155);
+  --sidebar-primary: oklch(0.42 0.11 155);
+  --sidebar-primary-foreground: oklch(0.98 0.01 155);
+  --sidebar-accent: oklch(0.9 0.05 155);
+  --sidebar-accent-foreground: oklch(0.26 0.06 155);
+  --sidebar-border: oklch(0.84 0.04 155);
+  --sidebar-ring: oklch(0.55 0.09 155);
+  --chart-1: oklch(0.55 0.12 155);
+  --chart-2: oklch(0.62 0.1 180);
+  --chart-3: oklch(0.48 0.08 130);
+  --atmosphere-a: oklch(0.9 0.06 155 / 0.55);
+  --atmosphere-b: oklch(0.94 0.04 120 / 0.4);
+  --atmosphere-c: oklch(0.92 0.05 180 / 0.35);
+  --atmosphere-base: oklch(0.975 0.018 155);
+  --surface-glow: oklch(0.7 0.08 155 / 0.12);
+  --cal-work: oklch(0.48 0.1 155);
+  --cal-personal: oklch(0.58 0.08 95);
+}
+html[data-accent="green"].dark {
+  --background: oklch(0.16 0.03 155);
+  --foreground: oklch(0.95 0.02 155);
+  --card: oklch(0.2 0.035 155);
+  --card-foreground: oklch(0.95 0.02 155);
+  --popover: oklch(0.2 0.035 155);
+  --popover-foreground: oklch(0.95 0.02 155);
+  --primary: oklch(0.74 0.12 155);
+  --primary-foreground: oklch(0.18 0.04 155);
+  --secondary: oklch(0.26 0.04 155);
+  --secondary-foreground: oklch(0.94 0.02 155);
+  --muted: oklch(0.26 0.04 155);
+  --muted-foreground: oklch(0.72 0.04 155);
+  --accent: oklch(0.28 0.05 155);
+  --accent-foreground: oklch(0.94 0.02 155);
+  --border: oklch(0.32 0.04 155);
+  --input: oklch(0.3 0.04 155);
+  --ring: oklch(0.65 0.1 155);
+  --sidebar: oklch(0.18 0.035 155);
+  --sidebar-foreground: oklch(0.95 0.02 155);
+  --sidebar-primary: oklch(0.74 0.12 155);
+  --sidebar-primary-foreground: oklch(0.18 0.04 155);
+  --sidebar-accent: oklch(0.26 0.05 155);
+  --sidebar-accent-foreground: oklch(0.94 0.02 155);
+  --sidebar-border: oklch(0.3 0.04 155);
+  --atmosphere-a: oklch(0.28 0.06 155 / 0.45);
+  --atmosphere-b: oklch(0.24 0.05 130 / 0.3);
+  --atmosphere-c: oklch(0.26 0.05 180 / 0.28);
+  --atmosphere-base: oklch(0.16 0.03 155);
+  --surface-glow: oklch(0.55 0.1 155 / 0.15);
+}
+
+html[data-accent="blue"] {
+  --radius: 0.5rem;
+  --background: oklch(0.975 0.02 245);
+  --foreground: oklch(0.22 0.05 250);
+  --card: oklch(0.99 0.012 245);
+  --card-foreground: oklch(0.22 0.05 250);
+  --popover: oklch(0.995 0.01 245);
+  --popover-foreground: oklch(0.22 0.05 250);
+  --primary: oklch(0.45 0.14 250);
+  --primary-foreground: oklch(0.98 0.01 250);
+  --secondary: oklch(0.93 0.04 245);
+  --secondary-foreground: oklch(0.28 0.07 250);
+  --muted: oklch(0.94 0.03 245);
+  --muted-foreground: oklch(0.46 0.06 250);
+  --accent: oklch(0.91 0.05 245);
+  --accent-foreground: oklch(0.26 0.07 250);
+  --border: oklch(0.86 0.04 245);
+  --input: oklch(0.88 0.035 245);
+  --ring: oklch(0.55 0.12 250);
+  --sidebar: oklch(0.95 0.035 245);
+  --sidebar-foreground: oklch(0.24 0.055 250);
+  --sidebar-primary: oklch(0.45 0.14 250);
+  --sidebar-primary-foreground: oklch(0.98 0.01 250);
+  --sidebar-accent: oklch(0.9 0.055 245);
+  --sidebar-accent-foreground: oklch(0.26 0.07 250);
+  --sidebar-border: oklch(0.84 0.045 245);
+  --sidebar-ring: oklch(0.55 0.12 250);
+  --chart-1: oklch(0.55 0.16 250);
+  --chart-2: oklch(0.6 0.12 210);
+  --chart-3: oklch(0.5 0.1 280);
+  --atmosphere-a: oklch(0.88 0.07 250 / 0.5);
+  --atmosphere-b: oklch(0.93 0.045 220 / 0.4);
+  --atmosphere-c: oklch(0.91 0.05 280 / 0.32);
+  --atmosphere-base: oklch(0.975 0.02 245);
+  --surface-glow: oklch(0.65 0.1 250 / 0.12);
+  --cal-work: oklch(0.48 0.12 250);
+  --cal-personal: oklch(0.58 0.1 200);
+}
+html[data-accent="blue"].dark {
+  --background: oklch(0.15 0.035 250);
+  --foreground: oklch(0.95 0.02 245);
+  --card: oklch(0.2 0.04 250);
+  --card-foreground: oklch(0.95 0.02 245);
+  --popover: oklch(0.2 0.04 250);
+  --popover-foreground: oklch(0.95 0.02 245);
+  --primary: oklch(0.72 0.13 250);
+  --primary-foreground: oklch(0.18 0.05 250);
+  --secondary: oklch(0.26 0.045 250);
+  --secondary-foreground: oklch(0.94 0.02 245);
+  --muted: oklch(0.26 0.045 250);
+  --muted-foreground: oklch(0.72 0.04 245);
+  --accent: oklch(0.28 0.055 250);
+  --accent-foreground: oklch(0.94 0.02 245);
+  --border: oklch(0.32 0.05 250);
+  --input: oklch(0.3 0.045 250);
+  --ring: oklch(0.62 0.12 250);
+  --sidebar: oklch(0.17 0.04 250);
+  --sidebar-foreground: oklch(0.95 0.02 245);
+  --sidebar-primary: oklch(0.72 0.13 250);
+  --sidebar-primary-foreground: oklch(0.18 0.05 250);
+  --sidebar-accent: oklch(0.26 0.055 250);
+  --sidebar-accent-foreground: oklch(0.94 0.02 245);
+  --sidebar-border: oklch(0.3 0.05 250);
+  --atmosphere-a: oklch(0.28 0.07 250 / 0.45);
+  --atmosphere-b: oklch(0.24 0.05 220 / 0.3);
+  --atmosphere-c: oklch(0.26 0.06 280 / 0.28);
+  --atmosphere-base: oklch(0.15 0.035 250);
+  --surface-glow: oklch(0.55 0.12 250 / 0.15);
+}
+
+html[data-accent="orange"] {
+  --radius: 0.95rem;
+  --background: oklch(0.98 0.022 70);
+  --foreground: oklch(0.26 0.05 50);
+  --card: oklch(0.995 0.012 70);
+  --card-foreground: oklch(0.26 0.05 50);
+  --popover: oklch(0.995 0.01 70);
+  --popover-foreground: oklch(0.26 0.05 50);
+  --primary: oklch(0.58 0.16 50);
+  --primary-foreground: oklch(0.99 0.01 70);
+  --secondary: oklch(0.94 0.045 70);
+  --secondary-foreground: oklch(0.32 0.07 50);
+  --muted: oklch(0.95 0.035 70);
+  --muted-foreground: oklch(0.5 0.06 50);
+  --accent: oklch(0.92 0.055 65);
+  --accent-foreground: oklch(0.3 0.07 50);
+  --border: oklch(0.88 0.045 65);
+  --input: oklch(0.9 0.04 65);
+  --ring: oklch(0.65 0.13 55);
+  --sidebar: oklch(0.965 0.035 70);
+  --sidebar-foreground: oklch(0.28 0.055 50);
+  --sidebar-primary: oklch(0.58 0.16 50);
+  --sidebar-primary-foreground: oklch(0.99 0.01 70);
+  --sidebar-accent: oklch(0.92 0.06 60);
+  --sidebar-accent-foreground: oklch(0.3 0.07 50);
+  --sidebar-border: oklch(0.86 0.05 60);
+  --sidebar-ring: oklch(0.65 0.13 55);
+  --chart-1: oklch(0.65 0.16 50);
+  --chart-2: oklch(0.7 0.12 85);
+  --chart-3: oklch(0.55 0.14 30);
+  --atmosphere-a: oklch(0.9 0.08 60 / 0.55);
+  --atmosphere-b: oklch(0.94 0.05 90 / 0.4);
+  --atmosphere-c: oklch(0.92 0.06 40 / 0.3);
+  --atmosphere-base: oklch(0.98 0.022 70);
+  --surface-glow: oklch(0.75 0.12 55 / 0.14);
+  --cal-work: oklch(0.58 0.14 50);
+  --cal-personal: oklch(0.62 0.1 90);
+}
+html[data-accent="orange"].dark {
+  --background: oklch(0.16 0.03 50);
+  --foreground: oklch(0.96 0.02 70);
+  --card: oklch(0.21 0.035 50);
+  --card-foreground: oklch(0.96 0.02 70);
+  --popover: oklch(0.21 0.035 50);
+  --popover-foreground: oklch(0.96 0.02 70);
+  --primary: oklch(0.76 0.14 55);
+  --primary-foreground: oklch(0.2 0.05 50);
+  --secondary: oklch(0.27 0.04 50);
+  --secondary-foreground: oklch(0.95 0.02 70);
+  --muted: oklch(0.27 0.04 50);
+  --muted-foreground: oklch(0.74 0.04 70);
+  --accent: oklch(0.3 0.05 50);
+  --accent-foreground: oklch(0.95 0.02 70);
+  --border: oklch(0.33 0.045 50);
+  --input: oklch(0.31 0.04 50);
+  --ring: oklch(0.68 0.12 55);
+  --sidebar: oklch(0.18 0.035 50);
+  --sidebar-foreground: oklch(0.96 0.02 70);
+  --sidebar-primary: oklch(0.76 0.14 55);
+  --sidebar-primary-foreground: oklch(0.2 0.05 50);
+  --sidebar-accent: oklch(0.28 0.05 50);
+  --sidebar-accent-foreground: oklch(0.95 0.02 70);
+  --sidebar-border: oklch(0.32 0.045 50);
+  --atmosphere-a: oklch(0.3 0.07 55 / 0.4);
+  --atmosphere-b: oklch(0.26 0.05 80 / 0.28);
+  --atmosphere-c: oklch(0.28 0.06 35 / 0.25);
+  --atmosphere-base: oklch(0.16 0.03 50);
+  --surface-glow: oklch(0.6 0.12 55 / 0.14);
+}
+
+html[data-accent="rose"] {
+  --radius: 1.05rem;
+  --background: oklch(0.98 0.018 15);
+  --foreground: oklch(0.24 0.05 15);
+  --card: oklch(0.995 0.01 15);
+  --card-foreground: oklch(0.24 0.05 15);
+  --popover: oklch(0.995 0.008 15);
+  --popover-foreground: oklch(0.24 0.05 15);
+  --primary: oklch(0.52 0.16 15);
+  --primary-foreground: oklch(0.99 0.01 15);
+  --secondary: oklch(0.94 0.04 15);
+  --secondary-foreground: oklch(0.3 0.07 15);
+  --muted: oklch(0.95 0.03 15);
+  --muted-foreground: oklch(0.48 0.06 15);
+  --accent: oklch(0.92 0.05 15);
+  --accent-foreground: oklch(0.28 0.07 15);
+  --border: oklch(0.88 0.04 15);
+  --input: oklch(0.9 0.035 15);
+  --ring: oklch(0.6 0.12 15);
+  --sidebar: oklch(0.96 0.03 15);
+  --sidebar-foreground: oklch(0.26 0.055 15);
+  --sidebar-primary: oklch(0.52 0.16 15);
+  --sidebar-primary-foreground: oklch(0.99 0.01 15);
+  --sidebar-accent: oklch(0.91 0.055 15);
+  --sidebar-accent-foreground: oklch(0.28 0.07 15);
+  --sidebar-border: oklch(0.86 0.045 15);
+  --sidebar-ring: oklch(0.6 0.12 15);
+  --chart-1: oklch(0.58 0.16 15);
+  --chart-2: oklch(0.62 0.12 350);
+  --chart-3: oklch(0.55 0.1 40);
+  --atmosphere-a: oklch(0.9 0.07 15 / 0.5);
+  --atmosphere-b: oklch(0.94 0.045 350 / 0.38);
+  --atmosphere-c: oklch(0.92 0.05 40 / 0.28);
+  --atmosphere-base: oklch(0.98 0.018 15);
+  --surface-glow: oklch(0.7 0.1 15 / 0.12);
+  --cal-work: oklch(0.52 0.14 15);
+  --cal-personal: oklch(0.58 0.1 350);
+}
+html[data-accent="rose"].dark {
+  --background: oklch(0.15 0.03 15);
+  --foreground: oklch(0.96 0.015 15);
+  --card: oklch(0.2 0.035 15);
+  --card-foreground: oklch(0.96 0.015 15);
+  --popover: oklch(0.2 0.035 15);
+  --popover-foreground: oklch(0.96 0.015 15);
+  --primary: oklch(0.74 0.14 15);
+  --primary-foreground: oklch(0.2 0.05 15);
+  --secondary: oklch(0.26 0.04 15);
+  --secondary-foreground: oklch(0.95 0.015 15);
+  --muted: oklch(0.26 0.04 15);
+  --muted-foreground: oklch(0.74 0.04 15);
+  --accent: oklch(0.29 0.05 15);
+  --accent-foreground: oklch(0.95 0.015 15);
+  --border: oklch(0.32 0.045 15);
+  --input: oklch(0.3 0.04 15);
+  --ring: oklch(0.65 0.12 15);
+  --sidebar: oklch(0.17 0.035 15);
+  --sidebar-foreground: oklch(0.96 0.015 15);
+  --sidebar-primary: oklch(0.74 0.14 15);
+  --sidebar-primary-foreground: oklch(0.2 0.05 15);
+  --sidebar-accent: oklch(0.27 0.05 15);
+  --sidebar-accent-foreground: oklch(0.95 0.015 15);
+  --sidebar-border: oklch(0.3 0.045 15);
+  --atmosphere-a: oklch(0.3 0.07 15 / 0.42);
+  --atmosphere-b: oklch(0.26 0.05 350 / 0.28);
+  --atmosphere-c: oklch(0.28 0.055 40 / 0.24);
+  --atmosphere-base: oklch(0.15 0.03 15);
+  --surface-glow: oklch(0.55 0.12 15 / 0.14);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --font-display: "Sora", "Space Grotesk", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Noto Sans SC", "Sora", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    margin: 0;
+    min-height: 100vh;
+    font-family: var(--font-body);
+  }
+  button, input, textarea, select { font: inherit; }
+}
+
+/* 主题切换过渡：只作用于关键表面，避免全局 * 动画卡顿 */
+html.theme-ready {
+  color-scheme: light dark;
+}
+
+@supports (view-transition-name: root) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.35s;
+    animation-timing-function: ease;
+  }
+}
+
+html.theme-ready body,
+html.theme-ready .landing-page,
+html.theme-ready .auth-shell,
+html.theme-ready .landing-surface,
+html.theme-ready .landing-band,
+html.theme-ready .landing-footer,
+html.theme-ready header,
+html.theme-ready footer,
+html.theme-ready .bg-background,
+html.theme-ready .bg-card,
+html.theme-ready .bg-muted,
+html.theme-ready .border-border {
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+/* Landing / Auth 跟随全局主题（含 dark / accent），与工作区一致 */
+.landing-page,
+.auth-shell {
+  font-family: var(--font-body);
+  --cal-work: oklch(0.52 0.09 155);
+  --cal-personal: oklch(0.55 0.1 45);
+}
+
+.dark .landing-page,
+.dark .auth-shell {
+  --cal-work: oklch(0.7 0.1 155);
+  --cal-personal: oklch(0.72 0.1 45);
+}
+
+.landing-page h1,
+.landing-page h2,
+.landing-page h3,
+.auth-shell h1,
+.auth-shell h2 {
+  font-family: var(--font-display);
+}
+
+/* —— Landing：Codex 式居中大气构图 —— */
+.landing-page {
+  position: relative;
+  min-height: 100svh;
+  color: var(--foreground);
+  background: transparent;
+  overflow-x: clip;
+}
+
+.landing-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, oklch(0.92 0.04 210 / 0.9), transparent 58%),
+    radial-gradient(900px 520px at 12% 28%, oklch(0.95 0.03 85 / 0.55), transparent 50%),
+    radial-gradient(800px 480px at 88% 18%, oklch(0.93 0.035 195 / 0.5), transparent 52%),
+    linear-gradient(180deg, oklch(0.985 0.01 210) 0%, oklch(0.99 0.005 100) 42%, oklch(0.98 0.008 210) 100%);
+  transition: opacity 0.45s ease, background 0.45s ease;
+}
+
+.dark .landing-atmosphere {
+  background:
+    radial-gradient(1100px 640px at 50% -8%, oklch(0.28 0.05 220 / 0.55), transparent 56%),
+    radial-gradient(760px 440px at 18% 30%, oklch(0.24 0.04 85 / 0.28), transparent 48%),
+    radial-gradient(720px 400px at 85% 20%, oklch(0.26 0.045 200 / 0.32), transparent 50%),
+    linear-gradient(180deg, oklch(0.14 0.02 240) 0%, oklch(0.12 0.015 250) 45%, oklch(0.11 0.01 240) 100%);
+}
+
+/* Accent 主题：Landing / 工作区共用氛围层 */
+html[data-accent] .landing-atmosphere,
+.workspace-atmosphere {
+  background:
+    radial-gradient(1100px 640px at 48% -12%, var(--atmosphere-a), transparent 58%),
+    radial-gradient(820px 480px at 10% 30%, var(--atmosphere-b), transparent 50%),
+    radial-gradient(760px 440px at 92% 16%, var(--atmosphere-c), transparent 52%),
+    linear-gradient(180deg, var(--atmosphere-base) 0%, color-mix(in oklab, var(--atmosphere-base) 70%, transparent) 55%, transparent 100%);
+}
+
+.workspace-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.workspace-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+html:not([data-accent]) .workspace-atmosphere {
+  display: none;
+}
+
+.workspace-shell > *:not(.workspace-atmosphere) {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-accent] [data-slot="sidebar-inset"] {
+  background:
+    radial-gradient(900px 420px at 100% 0%, var(--surface-glow), transparent 55%),
+    var(--background);
+}
+
+html[data-accent] [data-slot="sidebar"] {
+  box-shadow: inset -1px 0 0 color-mix(in oklab, var(--sidebar-border) 80%, transparent);
+}
+
+html[data-accent] .sticky.top-0.border-b {
+  background: color-mix(in oklab, var(--background) 78%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.landing-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(14px);
+  background: color-mix(in oklab, var(--background) 55%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+.landing-nav-inner {
+  margin: 0 auto;
+  display: flex;
+  height: 4rem;
+  width: 100%;
+  max-width: 68rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1.5rem;
+}
+
+.landing-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.landing-mark {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.65rem;
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.landing-nav-links {
+  display: none;
+  align-items: center;
+  gap: 1.75rem;
+  font-size: 0.9rem;
+  color: color-mix(in oklab, var(--foreground) 62%, transparent);
+}
+
+.landing-nav-links a {
+  text-decoration: none;
+  color: inherit;
+  transition: color 0.2s ease;
+}
+
+.landing-nav-links a:hover {
+  color: var(--foreground);
+}
+
+@media (min-width: 768px) {
+  .landing-nav-links { display: flex; }
+}
+
+.landing-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.landing-link-quiet {
+  margin-inline: 0.35rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.9rem;
+  color: color-mix(in oklab, var(--foreground) 68%, transparent);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.landing-link-quiet:hover { color: var(--foreground); }
+
+.landing-btn-solid {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-weight: 560;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease, background-color 0.35s ease, color 0.35s ease;
+}
+
+.landing-btn-solid:hover { opacity: 0.92; transform: translateY(-1px); }
+
+.landing-btn-ghost {
+  border-radius: 999px !important;
+  background: color-mix(in oklab, var(--foreground) 6%, transparent) !important;
+  color: var(--foreground) !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.landing-btn-ghost:hover {
+  background: color-mix(in oklab, var(--foreground) 10%, transparent) !important;
+}
+
+.landing-btn-lg {
+  height: 3rem;
+  padding: 0 1.35rem;
+  font-size: 0.95rem;
+}
+
+.landing-hero {
+  display: flex;
+  min-height: min(92svh, 56rem);
+  align-items: center;
+  justify-content: center;
+  padding: 5.5rem 1.5rem 4rem;
+}
+
+.landing-hero-inner {
+  width: 100%;
+  max-width: 44rem;
+  text-align: center;
+}
+
+.landing-hero-mark {
+  margin: 0 auto 1.5rem;
+  display: flex;
+  width: 3.5rem;
+  height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  background: color-mix(in oklab, var(--background) 70%, transparent);
+  box-shadow: 0 18px 50px -28px color-mix(in oklab, var(--foreground) 45%, transparent);
+  color: var(--foreground);
+}
+
+.landing-hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(3.4rem, 9vw, 5.6rem);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  color: var(--foreground);
+}
+
+.landing-hero-lead {
+  margin: 1.35rem auto 0;
+  max-width: 20em;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.6vw, 1.85rem);
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
+  color: var(--foreground);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+.landing-hero-sub {
+  margin: 0.9rem auto 0;
+  max-width: 22em;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+
+.landing-page p,
+.landing-page h2,
+.landing-page h3,
+.landing-section-head p,
+.landing-capability p,
+.landing-step p {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.landing-hero-cta {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.7rem;
+}
+
+.landing-trust-strip {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 56rem;
+  padding: 0 1.5rem 4.5rem;
+  text-align: center;
+}
+
+.landing-trust-label {
+  margin: 0 0 1.25rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+
+.landing-trust-marks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5rem 2.25rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: color-mix(in oklab, var(--foreground) 42%, transparent);
+}
+
+.landing-section {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 64rem;
+  padding: 5.5rem 1.5rem;
+}
+
+.landing-section-soft {
+  max-width: none;
+  padding-inline: 0;
+  background: color-mix(in oklab, var(--foreground) 3%, transparent);
+  border-block: 1px solid color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+.landing-section-soft > .landing-section-head,
+.landing-section-soft > .landing-steps {
+  margin-inline: auto;
+  max-width: 64rem;
+  padding-inline: 1.5rem;
+}
+
+.landing-section-head {
+  max-width: 40rem;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.landing-eyebrow {
+  margin: 0 0 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--foreground) 48%, transparent);
+}
+
+.landing-section-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.85rem, 3.5vw, 2.65rem);
+  font-weight: 620;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.landing-section-head p {
+  margin: 1rem 0 0;
+  font-size: 1.02rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
+.landing-capability-list {
+  margin-top: 3.25rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 900px) {
+  .landing-capability-list { grid-template-columns: repeat(3, 1fr); gap: 1.75rem; }
+}
+
+.landing-capability {
+  display: grid;
+  gap: 1rem;
+  padding: 0.25rem 0.15rem;
+}
+
+.landing-capability-index {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: color-mix(in oklab, var(--foreground) 38%, transparent);
+}
+
+.landing-capability h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+
+.landing-capability p {
+  margin: 0.7rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
+.landing-steps {
+  margin-top: 3rem;
+  display: grid;
+  gap: 1.75rem;
+}
+
+@media (min-width: 800px) {
+  .landing-steps { grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+}
+
+.landing-step {
+  padding-top: 1.25rem;
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.landing-step > span {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: color-mix(in oklab, var(--foreground) 42%, transparent);
+}
+
+.landing-step h3 {
+  margin: 0.85rem 0 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.landing-step p {
+  margin: 0.65rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
+.landing-download-grid {
+  margin: 2.75rem auto 0;
+  display: grid;
+  max-width: 48rem;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .landing-download-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 900px) {
+  .landing-download-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.landing-download-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.35rem;
+  padding: 0.85rem 1.05rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  background: color-mix(in oklab, var(--background) 55%, transparent);
+  color: color-mix(in oklab, var(--foreground) 62%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.25s ease,
+    color 0.25s ease,
+    background-color 0.25s ease,
+    transform 0.2s ease,
+    box-shadow 0.25s ease;
+}
+
+.landing-download-item:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklab, var(--foreground) 28%, transparent);
+  transform: translateY(-1px);
+}
+
+.landing-download-item.is-preferred {
+  color: var(--foreground);
+  font-weight: 650;
+  border-color: var(--foreground);
+  background: color-mix(in oklab, var(--background) 80%, transparent);
+  box-shadow: 0 14px 40px -28px color-mix(in oklab, var(--foreground) 55%, transparent);
+}
+
+.landing-download-label {
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+}
+
+.landing-download-badge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: color-mix(in oklab, var(--foreground) 70%, transparent);
+}
+
+.landing-download-web {
+  margin-top: 1.75rem;
+  display: flex;
+  justify-content: center;
+}
+
+.landing-section-close {
+  padding-bottom: 6rem;
+}
+
+.landing-close-panel {
+  margin: 0 auto;
+  max-width: 36rem;
+  text-align: center;
+}
+
+.landing-close-panel h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.85rem, 3.5vw, 2.65rem);
+  font-weight: 620;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.landing-close-panel > p:not(.landing-eyebrow) {
+  margin: 1rem 0 0;
+  font-size: 1.02rem;
+  line-height: 1.7;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
+.landing-footer {
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+  background: color-mix(in oklab, var(--background) 72%, transparent);
+  color: var(--foreground);
+}
+
+.landing-footer-grid {
+  margin: 0 auto;
+  display: grid;
+  width: 100%;
+  max-width: 64rem;
+  gap: 2rem;
+  padding: 3rem 1.5rem 2.5rem;
+}
+
+@media (min-width: 768px) {
+  .landing-footer-grid {
+    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 2.5rem;
+  }
+}
+
+.landing-footer-brand p {
+  margin: 0.9rem 0 0;
+  max-width: 16rem;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: color-mix(in oklab, var(--foreground) 55%, transparent);
+}
+
+.landing-footer h3 {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.landing-footer-grid a {
+  display: block;
+  margin-top: 0.55rem;
+  font-size: 0.9rem;
+  color: color-mix(in oklab, var(--foreground) 55%, transparent);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.landing-footer-grid a:hover { color: var(--foreground); }
+
+.landing-footer-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 64rem;
+  padding: 1.1rem 1.5rem 1.6rem;
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 7%, transparent);
+  font-size: 0.78rem;
+  color: color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+
+@media (min-width: 640px) {
+  .landing-footer-bottom {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.landing-rise { animation: landing-rise 0.75s ease-out both; }
+.landing-rise-delay-1 { animation: landing-rise 0.75s 0.05s ease-out both; }
+.landing-rise-delay-2 { animation: landing-rise 0.8s 0.1s ease-out both; }
+.landing-rise-delay-3 { animation: landing-rise 0.8s 0.16s ease-out both; }
+.landing-rise-delay-4 { animation: landing-rise 0.85s 0.22s ease-out both; }
+.landing-rise-delay-5 { animation: landing-rise 0.85s 0.28s ease-out both; }
+
+/* 认证页左侧品牌栏固定深色，避免跟随 dark 主题反色导致文字看不清 */
+.auth-shell .auth-brand {
+  background: #121412;
+  color: #f4f6f1;
+}
+
+.dark .auth-shell .auth-brand {
+  background: #0c0d0c;
+  color: #f4f6f1;
+}
+
+/* Calendar category colors + flat FullCalendar skin (studio-admin style) */
+.studio-calendar {
+  --cal-work: oklch(0.52 0.09 155);
+  --cal-personal: oklch(0.55 0.1 45);
+  --fc-border-color: color-mix(in oklab, var(--foreground) 8%, transparent);
+  /* classic 主题默认边框偏深，与月视图统一为浅灰细线 */
+  --fc-classic-border: color-mix(in oklab, var(--foreground) 8%, transparent);
+  --fc-classic-strong-border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --fc-page-bg-color: var(--background);
+  --fc-neutral-bg-color: transparent;
+  --fc-list-event-hover-bg-color: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --fc-today-bg-color: transparent;
+  --fc-now-indicator-color: var(--destructive);
+  --fc-event-bg-color: transparent;
+  --fc-event-border-color: transparent;
+  --fc-event-text-color: var(--foreground);
+  --fc-neutral-text-color: var(--muted-foreground);
+  --fc-small-font-size: 0.6875rem;
+  font-size: 0.8125rem;
+}
+.dark .studio-calendar {
+  --cal-work: oklch(0.7 0.1 155);
+  --cal-personal: oklch(0.72 0.1 45);
+}
+
+/* FullCalendar v7 根节点不再是 .fc，改用 .studio-calendar 作用域 */
+.studio-calendar [role="table"] {
+  border: none !important;
+  height: 100%;
+}
+
+.studio-calendar [role="columnheader"],
+.studio-calendar [role="cell"],
+.studio-calendar [role="row"] {
+  border-color: var(--fc-border-color) !important;
+  box-shadow: none !important;
+}
+
+.studio-calendar [role="columnheader"] {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+
+.studio-calendar .fc-daylight-cell-top {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.3rem 0.4rem 0.15rem;
+  min-height: 1.85rem;
+}
+
+.studio-calendar .fc-daylight-day-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.3rem;
+  border-radius: 0.3rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.studio-calendar .fc-daylight-cell-top.is-other .fc-daylight-day-num {
+  font-weight: 500;
+  opacity: 0.55;
+}
+
+.studio-calendar .fc-daylight-day-num.is-today {
+  min-width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-weight: 600;
+}
+
+.studio-calendar .fc-daylight-add {
+  position: absolute;
+  top: 0.28rem;
+  right: 2rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  border-radius: 0.35rem;
+  background: var(--background);
+  color: var(--foreground);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+  cursor: pointer;
+}
+
+.studio-calendar .fc-daylight-add:hover {
+  background: color-mix(in oklab, var(--foreground) 6%, var(--background));
+  border-color: color-mix(in oklab, var(--foreground) 22%, transparent);
+}
+
+.studio-calendar .fc-daylight-add:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: 2px solid color-mix(in oklab, var(--foreground) 35%, transparent);
+  outline-offset: 1px;
+}
+
+/* 悬停 / 键盘聚焦：日期格高亮，并显示右上角 ➕ */
+.studio-calendar [role="cell"]:has(.fc-daylight-cell-top) {
+  cursor: default;
+  transition: background-color 0.12s ease;
+}
+
+.studio-calendar [role="cell"]:has(.fc-daylight-cell-top):hover,
+.studio-calendar [role="cell"]:has(.fc-daylight-cell-top):focus-within {
+  background: color-mix(in oklab, var(--foreground) 4.5%, transparent) !important;
+}
+
+.studio-calendar [role="cell"]:has(.fc-daylight-cell-top):hover .fc-daylight-add,
+.studio-calendar [role="cell"]:has(.fc-daylight-cell-top):focus-within .fc-daylight-add {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.studio-calendar [role="listitem"] {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  margin: 1px 4px !important;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+}
+
+.studio-calendar [role="listitem"]:hover {
+  background: color-mix(in oklab, var(--foreground) 5%, transparent) !important;
+}
+
+.studio-calendar .fc-daylight-dot { background: currentColor; }
+.studio-calendar .fc-daylight-row.is-work,
+.studio-calendar .fc-daylight-block.is-work { color: var(--cal-work); }
+.studio-calendar .fc-daylight-row.is-personal,
+.studio-calendar .fc-daylight-block.is-personal { color: var(--cal-personal); }
+.studio-calendar .fc-daylight-pill.is-work { background: var(--cal-work); }
+.studio-calendar .fc-daylight-pill.is-personal { background: var(--cal-personal); }
+.studio-calendar .fc-daylight-block.is-work {
+  background: color-mix(in oklab, var(--cal-work) 16%, transparent);
+  border-left: 2px solid var(--cal-work);
+  border-radius: 0.3rem;
+  color: var(--foreground);
+}
+.studio-calendar .fc-daylight-block.is-personal {
+  background: color-mix(in oklab, var(--cal-personal) 16%, transparent);
+  border-left: 2px solid var(--cal-personal);
+  border-radius: 0.3rem;
+  color: var(--foreground);
+}
+
+/* 周/日：studio-admin 风格实心色块 */
+.studio-calendar .fc-daylight-block.fc-daylight-solid {
+  border: none !important;
+  border-radius: 0.45rem;
+  box-shadow: none;
+}
+.studio-calendar [role="listitem"]:has(.fc-daylight-solid),
+.studio-calendar a:has(.fc-daylight-solid),
+.studio-calendar [class*="event"]:has(.fc-daylight-solid) {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  margin: 1px 2px !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 0.45rem;
+}
+
+.studio-calendar [class*="now-indicator"] {
+  border-color: var(--destructive);
+}
+
+/* 日 / 周 / 年：与月视图同一套细线边框与扁平皮肤（覆盖 classic 粗黑线） */
+.studio-calendar table,
+.studio-calendar tbody,
+.studio-calendar thead,
+.studio-calendar tr,
+.studio-calendar th,
+.studio-calendar td,
+.studio-calendar [role="grid"],
+.studio-calendar [role="rowgroup"],
+.studio-calendar [role="row"],
+.studio-calendar [role="cell"],
+.studio-calendar [role="columnheader"],
+.studio-calendar [role="rowheader"],
+.studio-calendar [class*="slot"],
+.studio-calendar [class*="divider"],
+.studio-calendar [class*="frame"],
+.studio-calendar [class*="scrollgrid"],
+.studio-calendar [class*="Scrollgrid"] {
+  border-color: var(--fc-border-color) !important;
+  box-shadow: none !important;
+}
+
+.studio-calendar [role="rowheader"],
+.studio-calendar [class*="slot"] {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  background: transparent !important;
+}
+
+.studio-calendar [class*="timegrid"] [role="rowheader"],
+.studio-calendar [class*="timeGrid"] [role="rowheader"] {
+  font-variant-numeric: tabular-nums;
+  padding-inline-end: 0.5rem !important;
+  border-right: 1px solid var(--fc-border-color) !important;
+}
+
+.studio-calendar [class*="timegrid"] [role="cell"],
+.studio-calendar [class*="timeGrid"] [role="cell"],
+.studio-calendar [class*="timegrid"] [role="row"],
+.studio-calendar [class*="timeGrid"] [role="row"] {
+  border-color: var(--fc-border-color) !important;
+  background: transparent !important;
+}
+
+.studio-calendar [class*="timegrid"] [role="columnheader"],
+.studio-calendar [class*="timeGrid"] [role="columnheader"] {
+  border-bottom: 1px solid var(--fc-border-color) !important;
+  background: transparent !important;
+  padding-block: 0.45rem !important;
+}
+
+.studio-calendar [class*="timegrid"] [class*="all-day"],
+.studio-calendar [class*="timeGrid"] [class*="all-day"],
+.studio-calendar [class*="timegrid"] [class*="allday"],
+.studio-calendar [class*="timeGrid"] [class*="allday"] {
+  border-color: var(--fc-border-color) !important;
+  background: color-mix(in oklab, var(--foreground) 2%, transparent) !important;
+}
+
+.studio-calendar .fc-daylight-block {
+  border-radius: 0.4rem;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* 去掉 classic 主题在 timed 事件上的白底描边外壳 */
+.studio-calendar [role="listitem"]:has(.fc-daylight-block),
+.studio-calendar [role="listitem"]:has(.fc-daylight-pill),
+.studio-calendar a:has(.fc-daylight-block),
+.studio-calendar a:has(.fc-daylight-pill),
+.studio-calendar [class*="event"]:has(.fc-daylight-block),
+.studio-calendar [class*="event"]:has(.fc-daylight-pill) {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  margin: 1px 3px !important;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+.studio-calendar [role="listitem"]:has(.fc-daylight-block) .fc-daylight-block,
+.studio-calendar a:has(.fc-daylight-block) .fc-daylight-block {
+  min-height: 100%;
+}
+
+.studio-calendar [role="cell"]:has(.fc-daylight-block):hover {
+  background: color-mix(in oklab, var(--foreground) 3%, transparent);
+}
+
+/* 年视图（FC React v7）：role=list 月卡网格 + 点状日程 */
+.studio-calendar.is-year-view .fc-year-host,
+.studio-calendar.is-year-view .fc-year-host > * {
+  height: 100%;
+}
+
+.studio-calendar.is-year-view [role="list"].fc-safe-tiles,
+.studio-calendar.is-year-view [role="list"] {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-content: flex-start !important;
+  gap: 0.75rem !important;
+  padding: 0.65rem !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  background: color-mix(in oklab, var(--foreground) 2.5%, var(--background)) !important;
+  border-radius: 0.75rem;
+}
+
+.studio-calendar.is-year-view [role="listitem"] {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.studio-calendar.is-year-view [role="listitem"] > [role="table"],
+.studio-calendar.is-year-view [role="listitem"] > [data-date] {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0.45rem 0.5rem 0.55rem !important;
+  border: 1px solid var(--fc-border-color) !important;
+  border-radius: 0.75rem !important;
+  background: color-mix(in oklab, var(--background) 88%, transparent) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.studio-calendar [class*="multimonth"],
+.studio-calendar [class*="multiMonth"] {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.85rem !important;
+  padding: 0.5rem 0.35rem 0.85rem !important;
+  box-sizing: border-box;
+  background: color-mix(in oklab, var(--foreground) 2.5%, var(--background)) !important;
+  border-radius: 0.75rem;
+  width: 100% !important;
+}
+
+.studio-calendar [class*="multimonth-month"],
+.studio-calendar [class*="multiMonth"] [data-date],
+.studio-calendar [class*="multimonth"] [data-date] {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0.45rem 0.5rem 0.55rem !important;
+  border: 1px solid var(--fc-border-color) !important;
+  border-radius: 0.75rem !important;
+  background: color-mix(in oklab, var(--background) 88%, transparent) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: none !important;
+}
+
+.studio-calendar [class*="multimonth"] [role="table"],
+.studio-calendar [class*="multiMonth"] [role="table"],
+.studio-calendar [class*="multimonth"] table,
+.studio-calendar [class*="multiMonth"] table {
+  width: 100% !important;
+  border: none !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  background: transparent !important;
+  table-layout: fixed !important;
+}
+
+.studio-calendar [class*="multimonth"] [role="table"] td,
+.studio-calendar [class*="multimonth"] [role="table"] th,
+.studio-calendar [class*="multiMonth"] [role="table"] td,
+.studio-calendar [class*="multiMonth"] [role="table"] th,
+.studio-calendar [class*="multimonth"] table td,
+.studio-calendar [class*="multimonth"] table th {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.studio-calendar [class*="multimonth"] [class*="title"],
+.studio-calendar [class*="multiMonth"] [class*="title"],
+.studio-calendar [class*="multimonth"] h2,
+.studio-calendar [class*="multiMonth"] h2,
+.studio-calendar [class*="multimonth"] h3,
+.studio-calendar [class*="multiMonth"] h3 {
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  color: var(--foreground) !important;
+  text-align: left !important;
+  padding: 0.15rem 0.2rem 0.45rem !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.studio-calendar [class*="multimonth"] [role="columnheader"],
+.studio-calendar [class*="multiMonth"] [role="columnheader"] {
+  font-size: 0.62rem !important;
+  font-weight: 500 !important;
+  color: var(--muted-foreground) !important;
+  padding-block: 0.2rem 0.35rem !important;
+  text-align: center !important;
+  border: none !important;
+  border-bottom: 1px solid var(--fc-border-color) !important;
+}
+
+.studio-calendar [class*="multimonth"] [role="cell"],
+.studio-calendar [class*="multiMonth"] [role="cell"] {
+  vertical-align: top !important;
+  border: none !important;
+  padding: 0.08rem 0 !important;
+  min-height: 2.15rem;
+}
+
+.studio-calendar [class*="multimonth"] [role="cell"]:has(.fc-daylight-cell-top),
+.studio-calendar [class*="multiMonth"] [role="cell"]:has(.fc-daylight-cell-top) {
+  min-height: 2.15rem;
+}
+
+.studio-calendar [class*="multimonth"] .fc-daylight-cell-top,
+.studio-calendar [class*="multiMonth"] .fc-daylight-cell-top,
+.studio-calendar .fc-daylight-cell-top.is-year {
+  min-height: 1.15rem;
+  padding: 0.08rem 0;
+  justify-content: center;
+}
+
+.studio-calendar [class*="multimonth"] .fc-daylight-day-num,
+.studio-calendar [class*="multiMonth"] .fc-daylight-day-num {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  border-radius: 999px;
+}
+
+.studio-calendar [class*="multimonth"] .fc-daylight-day-num.is-today,
+.studio-calendar [class*="multiMonth"] .fc-daylight-day-num.is-today {
+  min-width: 1.35rem;
+  height: 1.35rem;
+}
+
+.studio-calendar [class*="multimonth"] .fc-daylight-add,
+.studio-calendar [class*="multiMonth"] .fc-daylight-add {
+  display: none !important;
+}
+
+.studio-calendar [class*="multimonth"] [role="listitem"],
+.studio-calendar [class*="multiMonth"] [role="listitem"],
+.studio-calendar [class*="multimonth"] [class*="event"],
+.studio-calendar [class*="multiMonth"] [class*="event"],
+.studio-calendar [class*="multimonth"] a:has(.fc-daylight-year-dot),
+.studio-calendar [class*="multiMonth"] a:has(.fc-daylight-year-dot) {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 1px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.studio-calendar .fc-daylight-year-dot {
+  display: block;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  margin: 0.05rem auto 0;
+  background: var(--cal-work);
+}
+
+.studio-calendar [class*="multimonth"] [class*="more"],
+.studio-calendar [class*="multiMonth"] [class*="more"] {
+  font-size: 0.55rem !important;
+  color: var(--muted-foreground) !important;
+  text-align: center;
+  padding: 0 !important;
+}
+
+/* 日视图事件块：去掉 classic 白底描边，保留分类色条 */
+.studio-calendar [role="listitem"]:has(.fc-daylight-block.is-work),
+.studio-calendar [role="listitem"]:has(.fc-daylight-block.is-personal) {
+  background: transparent !important;
+}

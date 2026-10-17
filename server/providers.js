@@ -1,0 +1,86 @@
+/** Shared catalog for mailbox + model presets shown in settings. */
+
+export const mailboxProviders = [
+  { id: 'qq', name: 'QQ 邮箱', imapHost: 'imap.qq.com', smtpHost: 'smtp.qq.com', smtpPort: 465 },
+  { id: 'foxmail', name: 'Foxmail / QQ 企业邮箱', imapHost: 'imap.exmail.qq.com', smtpHost: 'smtp.exmail.qq.com', smtpPort: 465 },
+  { id: '163', name: '网易 163', imapHost: 'imap.163.com', smtpHost: 'smtp.163.com', smtpPort: 465 },
+  { id: '126', name: '网易 126', imapHost: 'imap.126.com', smtpHost: 'smtp.126.com', smtpPort: 465 },
+  { id: 'yeah', name: '网易 yeah.net', imapHost: 'imap.yeah.net', smtpHost: 'smtp.yeah.net', smtpPort: 465 },
+  { id: 'gmail', name: 'Gmail', imapHost: 'imap.gmail.com', smtpHost: 'smtp.gmail.com', smtpPort: 465 },
+  { id: 'outlook', name: 'Outlook / Hotmail', imapHost: 'outlook.office365.com', smtpHost: 'smtp-mail.outlook.com', smtpPort: 587 },
+  { id: 'office365', name: 'Microsoft 365 / Exchange', imapHost: 'outlook.office365.com', smtpHost: 'smtp.office365.com', smtpPort: 587 },
+  { id: 'icloud', name: 'iCloud 邮箱', imapHost: 'imap.mail.me.com', smtpHost: 'smtp.mail.me.com', smtpPort: 587 },
+  { id: 'yahoo', name: 'Yahoo Mail', imapHost: 'imap.mail.yahoo.com', smtpHost: 'smtp.mail.yahoo.com', smtpPort: 465 },
+  { id: 'zoho', name: 'Zoho Mail', imapHost: 'imap.zoho.com', smtpHost: 'smtp.zoho.com', smtpPort: 465 },
+  { id: 'custom', name: '其他邮箱 / 自定义 IMAP·SMTP', imapHost: '', smtpHost: '', smtpPort: 465 },
+].map((provider) => ({
+  ...provider,
+  imapPort: 993,
+  imapSecure: true,
+  smtpSecure: provider.smtpPort === 465,
+}));
+
+/** tokenPrice* 为可选参考单价（元/百万 Token），随预设填入设置，可改；不是账单。 */
+export const modelProviders = [
+  {
+    id: 'deepseek', name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat',
+    docs: 'https://platform.deepseek.com/api_keys',
+    tokenPriceIn: 1, tokenPriceOut: 2, tokenPriceCachedIn: 0.1,
+  },
+  {
+    id: 'openai', name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini',
+    docs: 'https://platform.openai.com/api-keys',
+    tokenPriceIn: 1.1, tokenPriceOut: 4.4,
+  },
+  {
+    id: 'qwen', name: '通义千问（兼容模式）',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus',
+    docs: 'https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key',
+    tokenPriceIn: 0.8, tokenPriceOut: 2,
+  },
+  {
+    id: 'moonshot', name: 'Moonshot / Kimi',
+    baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k',
+    docs: 'https://platform.moonshot.cn/console/api-keys',
+    tokenPriceIn: 12, tokenPriceOut: 12,
+  },
+  {
+    id: 'zhipu', name: '智谱 GLM',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash',
+    docs: 'https://open.bigmodel.cn/usercenter/apikeys',
+    tokenPriceIn: 0.1, tokenPriceOut: 0.1,
+  },
+  {
+    id: 'openrouter', name: 'OpenRouter 中转',
+    baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini',
+    docs: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'siliconflow', name: '硅基流动中转',
+    baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3',
+    docs: 'https://cloud.siliconflow.cn/account/ak',
+  },
+  {
+    id: 'custom', name: '自定义 / 其他 OpenAI 兼容中转',
+    baseUrl: '', model: '',
+    docs: '',
+  },
+];
+
+export const FIELD_HELP = {
+  email: '填写完整邮箱地址，例如 name@qq.com。该地址同时用于 IMAP 登录与 SMTP 发信。',
+  authorizationCode: '不是网页登录密码。QQ/163 等需在邮箱设置里开启 IMAP/SMTP 并生成授权码；Gmail 使用应用专用密码；Outlook 需允许基本认证的账号。',
+  imapHost: '收信服务器主机名，由邮箱服务商提供。选择预设后会自动填入，自定义邮箱请对照服务商文档。',
+  smtpHost: '发信服务器主机名。回复草稿时使用，通常与 IMAP 同属一家服务商。',
+  fetchLimit: '「最近 N 封」模式下每次同步只读取收件箱最近 N 封（1–200）。联调建议先设 3–5。',
+  fetchMode: '最近 N 封按 UID 从新到旧截取；按日期范围则用 IMAP SINCE（及可选 BEFORE）筛选后再读取。',
+  fetchRange: '预设会换算成北京时间的起始日。自定义时填写开始/结束日期。',
+  syncStrategy: '定时轮询按间隔检查；IDLE 在支持的服务器上保持连接，有新邮件再同步，失败时自动退回轮询。',
+  baseUrl: 'OpenAI 兼容接口的 Base URL，不要带完整 /chat/completions 也可以；程序会自动拼接。中转站填写其文档给出的地址。',
+  apiKey: '模型服务商或中转站发放的密钥。页面不会回显已保存的 Key；留空保存表示继续使用原 Key。',
+  model: '服务商控制台中的准确模型 ID，且账户需有调用权限。需支持 JSON Object 输出。',
+  tokenPrice: '可选，与当前 API Key / 模型配置一起保存。单位：人民币元 / 百万 Token，用于估算费用，不是账单；改价不追溯历史调用。切换提供商预设会填入参考价，可按实际改。',
+  extractionPrompt: '系统提示词会在每次模型提取时重新从本地读取。保存后无需重启服务即可用于下一封未处理邮件。',
+};

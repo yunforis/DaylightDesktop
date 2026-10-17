@@ -1,0 +1,16 @@
+# 本机云原生依赖：PostgreSQL / Redis 可用本机服务；RabbitMQ 用 Compose 一键启动。
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: daylight-rabbit
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: daylight
+      RABBITMQ_DEFAULT_PASS: daylight
+    volumes:
+      - daylight_rabbit_data:/var/lib/rabbitmq
+
+volumes:
+  daylight_rabbit_data:
