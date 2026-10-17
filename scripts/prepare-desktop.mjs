@@ -15,6 +15,31 @@ for (const folder of ['server', 'dist', 'shared']) {
   await fs.cp(path.join(root, folder), path.join(runtime, folder), { recursive: true, filter: source => !source.endsWith('.test.js') && !source.endsWith('.DS_Store') });
 }
 
+// 打进安装包的文件名必须是 Windows 也认的名字。
+//
+// Windows 不允许文件名以点或空格结尾（也不允许 CON/PRN/AUX/NUL/COM1..9/LPT1..9 这些保留名），
+// 而这里是在 macOS / Linux 上构建的——本地一切正常，用户在 Windows 上才会装出一个资源缺失的包。
+// Vite 的默认资源命名就踩过这个坑：`LICENSE_JBIG2` 这类没有扩展名的文件会被命名成
+// `LICENSE_JBIG2-C_izpuvI.`（`vite.config.js` 里已经修掉），Tauri 打包时报
+// `resource path ... doesn't exist`。这个检查便宜，就放在复制之后、打包之前。
+{
+  const illegal = [];
+  const walk = async dir => {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { await walk(full); continue; }
+      const reserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
+      if (/[ .]$/.test(entry.name) || /[<>:"|?*]/.test(entry.name) || reserved.test(entry.name)) {
+        illegal.push(path.relative(runtime, full).split(path.sep).join('/'));
+      }
+    }
+  };
+  await walk(runtime);
+  if (illegal.length) {
+    throw new Error(`以下文件名在 Windows 上非法（不能以点/空格结尾、不能含 <>:"|?*、不能用保留设备名）：\n${illegal.slice(0, 20).map(n => `  ${n}`).join('\n')}${illegal.length > 20 ? `\n  …共 ${illegal.length} 个` : ''}`);
+  }
+}
+
 /**
  * 打包目标。默认等于本机（开发用）；交叉打包时由 `DAYLIGHT_TARGET_TRIPLE` 指定 Rust target triple，
  * 因为我们把 Node 二进制一起打进安装包——**内置 Node 的架构必须和安装包架构一致**，

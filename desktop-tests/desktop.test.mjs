@@ -576,3 +576,60 @@ test('Windows 环境变量大小写：PATH 按不敏感方式读写，cargo 缺�
   );
   assert.match(tests, /function inheritPath/, '测试里应保留 inheritPath 辅助函数');
 });
+
+test('前端产物文件名在 Windows 上也合法，且资源引用都能落到实际文件', async (t) => {
+  // 事故复盘：Vite 的默认资源命名是 `assets/[name]-[hash].[ext]`，对**没有扩展名**的文件
+  // `[ext]` 是空串，于是产出以点结尾的名字（pdfjs-dist 的 LICENSE_JBIG2 →
+  // assets/LICENSE_JBIG2-C_izpuvI.）。这在 POSIX 上合法、在 Windows 上非法，本地与 macOS CI
+  // 全绿，直到 windows-latest 才以 `resource path ... doesn't exist` 暴露出来。
+  // 这里把「文件名必须跨平台合法」与「引用必须存在」变成可以在任何平台检查的断言。
+  const illegalName = name => /[ .]$/.test(name) || /[<>:"|?*]/.test(name) || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i.test(name);
+  const offenders = [];
+  const walk = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (illegalName(entry.name)) offenders.push(path.relative(ROOT, full).split(path.sep).join('/'));
+    }
+  };
+
+  // 1) Vite 配置仍带着「去掉结尾的点」的修正
+  const viteConfig = readText('vite.config.js');
+  assert.match(viteConfig, /assetFileNames/, 'vite.config.js 必须保留资源命名修正，否则会重新产出以点结尾的文件');
+  assert.match(viteConfig, /extname\(original\) === ''/, 'vite.config.js 必须对没有扩展名的资源省掉那个点');
+  assert.match(readText('scripts', 'prepare-desktop.mjs'), /在 Windows 上非法/, 'prepare-desktop.mjs 必须保留打包前的文件名合法性检查');
+
+  // 2) 前端产物里不能有 Windows 非法文件名
+  const dist = path.join(ROOT, 'dist');
+  if (!fs.existsSync(path.join(dist, 'assets'))) {
+    t.skip('尚未执行 npm run build，跳过前端产物文件名验证');
+    return;
+  }
+  walk(dist);
+  assert.deepEqual(offenders, [], `Windows 上非法的文件名：${offenders.join(', ')}`);
+
+  // 3) 产物里引用到的 /assets/xxx 必须真的存在（改名后引用没跟着改就会在这里暴露）
+  const referenced = new Set();
+  for (const name of fs.readdirSync(path.join(dist, 'assets'))) {
+    if (!/\.(js|css)$/.test(name)) continue;
+    const text = fs.readFileSync(path.join(dist, 'assets', name), 'utf8');
+    for (const match of text.matchAll(/['"`(](\/assets\/[A-Za-z0-9_.@%+-]+)/g)) referenced.add(match[1]);
+  }
+  assert.ok(referenced.size > 0, '产物里应当能解析出资源引用');
+  const missing = [...referenced].filter(ref => !fs.existsSync(path.join(dist, ref.slice(1))));
+  assert.deepEqual(missing, [], `产物引用了不存在的资源：${missing.slice(0, 10).join(', ')}`);
+
+  // 4) 如果已经执行过 desktop:prepare，内置运行时里同样不能有非法文件名
+  if (fs.existsSync(path.join(RUNTIME, 'dist', 'assets'))) {
+    const runtimeOffenders = [];
+    const walkRuntime = dir => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walkRuntime(full);
+        else if (illegalName(entry.name)) runtimeOffenders.push(path.relative(ROOT, full).split(path.sep).join('/'));
+      }
+    };
+    walkRuntime(path.join(RUNTIME, 'dist'));
+    assert.deepEqual(runtimeOffenders, [], `内置运行时里存在 Windows 非法文件名：${runtimeOffenders.slice(0, 10).join(', ')}`);
+  }
+});

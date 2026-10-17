@@ -34,6 +34,7 @@ node scripts/desktop-sync.mjs --check
 
 - 脚本会整树复制真源的 `src/`、`server/`、`shared/`、`public/`、`scripts/`、`index.html`，以及共享测试要读取的素材（`Dockerfile`、`docs/resume-test`、`docs/invoice-test`、`docs/submission/evaluation-cases.json`），移除 Web 专有页面，再**逐条精确重贴桌面补丁**。锚点找不到会直接报错，不静默跳过。
 - **桌面自有文件不会被覆盖**：`src/App.jsx`、`src/lib/desktop.js`、`server/desktop-entry.js`、`server/desktop-http.js`、`server/secure-json.js`、`src-tauri/**`、`scripts/desktop*.mjs`、`scripts/prepare-desktop.mjs`、`desktop-tests/**`、`work/**`。
+- `vite.config.js` 与 `package.json` **不在同步清单里（既不在复制目录，也不在自有列表）**，所以它们实际上是桌面端各自的文件、不会被同步覆盖——改它们不需要写补丁。`vite.config.js` 里带着一项与桌面端强相关的修正：Vite 默认的资源命名 `assets/[name]-[hash].[ext]` 会让**没有扩展名**的文件产出以点结尾的名字（Windows 非法），必须保留 `assetFileNames` 这个函数。见 [STATUS.md](STATUS.md) 的本轮记录。
 - 新增桌面补丁时，必须同时写进 `scripts/desktop-sync.mjs`，并在 `desktop-tests` 的锚点自检测试中加一条断言。否则下次同步会静默丢失该补丁。
 - 同步后必须重跑：`npm run build`、`npm run test:desktop`、`node --test server/*.test.js`，并与 Web 真源做**逐条用例状态**的 diff（不是只比失败集合），确认没有新增差异。
 - 运行时依赖白名单在 `scripts/prepare-desktop.mjs`。`server/` 里新增任何裸包 `import` 都要加进去，否则安装版会启动失败（同步脚本会自动校验这一点）。
