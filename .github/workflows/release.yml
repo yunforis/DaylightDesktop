@@ -86,9 +86,6 @@ jobs:
     name: ${{ matrix.name }}
     needs: guard
     runs-on: ${{ matrix.os }}
-    # TEMP-DIAG：只为定位 Linux AppImage 打包失败，本次只跑 Linux 两个目标。
-    # 定位完成后必须删掉这一行。
-    if: ${{ matrix.name == 'linux-x64' || matrix.name == 'linux-arm64' }}
     strategy:
       # 一个平台失败不影响其他平台；失败的平台在 Release 里就是缺这个产物，其余照常可用。
       fail-fast: false
