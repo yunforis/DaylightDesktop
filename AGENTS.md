@@ -73,8 +73,11 @@ node scripts/desktop-sync.mjs --check
   - 业务逻辑改动 → `node --test server/*.test.js`，并与 Web 真源做逐条用例状态 diff，确认没有新增差异。
   - 桌面专有行为（会话、鉴权、加密、端口、打包、补丁）→ `npm run test:desktop`。
   - 前端或构建改动 → `npm run build`；壳层改动 → `npm run desktop:check`；打包改动 → `npm run desktop:prepare`（交叉目标加 `DAYLIGHT_TARGET_TRIPLE=<triple>`）。
-  - CI / 发布流水线改动 → 至少做静态校验（YAML 可解析、矩阵与 `TRIPLES` 一一对应、`npm ci` 与锁文件一致）；**GitHub Actions 未在本机运行过，不得写成「流水线验证通过」**。
+  - CI / 发布流水线改动 → 至少做静态校验（YAML 可解析、矩阵与 `TRIPLES` 一一对应、`npm ci` 与锁文件一致）；**没在 GitHub Actions 上跑过就不得写成「流水线验证通过」**。
   - 端到端冒烟 → 拉起真实后台（`npm run desktop:dev`，或生产模式 `server/desktop-entry.js`）后用真实浏览器走一遍；鉴权三层与启动闭环已由 `npm run test:desktop` 守护。
+- **Windows 与 macOS/Linux 有几处真实差异，不要在 Mac 上「验证通过」后就当全平台通过**（都是 CI 在 `windows-latest` 上抓出来的）：
+  - **PATH 的键名是 `Path`**。`{ ...process.env }` 得到的是普通对象（大小写敏感），写 `env.PATH = ...` 会新增一个键，环境块里同时出现 `Path` 与 `PATH`，系统挑一个用——曾因此让 `desktop:check` 静默失败（退出码 1、**没有任何输出**）。必须按键名不敏感定位后赋值（见 `scripts/desktop.mjs` 的 `PATH_KEY`）。这个差异在 macOS 上复刻不出来，只能靠 `windows-latest` 上的真实运行。
+  - **没有 POSIX 权限位**：`fs.chmod` / `mode: 0o600` 被忽略，`fs.stat().mode` 恒为 `0o666`。涉及文件权限的断言必须按平台分支，并写明 Windows 的实际保护来自凭据库主密钥与 `%APPDATA%` 目录继承的 ACL，不要为了「看起来通过」而删掉断言。
 - 为新增桌面行为补充有意义的验证，不要为低影响的可逆改动添加机械测试。
 - **不得在文档、示例、日志、测试或提交里写入真实授权码、API Key、邮件正文或任何真实凭据。**
 - 严格区分“规划中”“代码已实现”“本地测试通过”“真实服务实连成功”“云端部署验证通过”“生产验收通过”。填好配置或看到“已配置”**仅表示字段已保存**。

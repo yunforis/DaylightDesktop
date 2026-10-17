@@ -39,6 +39,13 @@ function temporaryDataDir(label) {
   return fs.mkdtempSync(path.join(WORK, `desktop-test-${label}-`));
 }
 
+// Windows 上 PATH 的键名是 `Path`，`process.env.PATH` 在 Windows 上取不到值。
+// 按键名不敏感的方式取，避免构造出一个没有 PATH 的子进程环境。
+function inheritPath(env = process.env) {
+  const key = Object.keys(env).find(name => name.toUpperCase() === 'PATH') ?? 'PATH';
+  return { [key]: env[key] ?? '' };
+}
+
 function startBackend({
   dataDir,
   token = randomBytes(32).toString('hex'),
@@ -52,7 +59,7 @@ function startBackend({
   const child = spawn(nodeBin, args, {
     cwd,
     env: {
-      PATH: process.env.PATH,
+      ...inheritPath(),
       HOME: process.env.HOME,
       DAYLIGHT_DATA_DIR: dataDir,
       DAYLIGHT_DESKTOP: '1',
@@ -523,4 +530,41 @@ test('打包运行时（src-tauri/runtime）不含 vite，且能独立启动后�
     await stopBackend(state);
     throw error;
   }
+});
+
+test('Windows 环境变量大小写：PATH 按不敏感方式读写，cargo 缺失不得静默失败', async () => {
+  const launcher = fs.readFileSync(path.join(ROOT, 'scripts', 'desktop.mjs'), 'utf8');
+  // 只检查代码本身：上面那段解释「为什么不能这么写」的注释里就会出现这个写法，
+  // 直接全文匹配会把说明文字当成违规。
+  const launcherCode = launcher.split('\n').map(line => line.replace(/\/\/.*$/, '')).join('\n');
+  // 这条断言是 CI 抓出来的：windows-latest 上 `env.PATH = ...` 会新增一个键而不是改现有的
+  // `Path`，两个大小写不同的 PATH 同时进环境块，系统挑到了不含 cargo 的那个，
+  // `desktop:check` 静默退出 1（没有任何输出）。
+  //
+  // 为什么只做静态断言、不做行为验证：键名大小写差异只在 Windows 上存在。macOS/Linux 的
+  // 环境块是真·大小写敏感，`process.env.PATH` 与 `process.env.Path` 是两个不同变量，
+  // 复刻不出「系统在重复键里挑一个」这个行为；硬造一个探针只会验证探针自己。
+  // 真正的行为验证就是 windows-latest 上那条 `npm run desktop:check`。
+  assert.ok(
+    !/env\.PATH\s*=/.test(launcherCode),
+    'scripts/desktop.mjs 不得直接写 env.PATH：Windows 上键名是 Path，会产生两个同名变量',
+  );
+  assert.match(
+    launcherCode,
+    /toUpperCase\(\) === 'PATH'/,
+    'scripts/desktop.mjs 必须按键名不敏感的方式定位 PATH',
+  );
+  assert.match(
+    launcherCode,
+    /if \(check\.error\)/,
+    'cargo 启动失败（ENOENT）时必须报出原因，不能只给一个退出码',
+  );
+
+  // 测试自身构造子进程环境时踩的是同一个坑：Windows 上 process.env.PATH 是 undefined。
+  const tests = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  assert.ok(
+    !tests.includes(['PATH', ':', ' ', 'process.env.PATH'].join('')),
+    '测试里构造子进程环境要按键名不敏感的方式取 PATH',
+  );
+  assert.match(tests, /function inheritPath/, '测试里应保留 inheritPath 辅助函数');
 });

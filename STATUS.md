@@ -43,7 +43,10 @@
 | --- | --- | --- | --- |
 | 交叉打包（Apple Silicon → Intel Mac） | `DAYLIGHT_TARGET_TRIPLE=x86_64-apple-darwin npm run desktop:prepare` | 成功；内置 `node` 经 `file` 确认为 `Mach-O 64-bit executable x86_64`（官方 `node-v22.23.3-darwin-x64`），原生模块只剩 `@napi-rs/canvas-darwin-x64`（切回 arm64 时只剩 `canvas-darwin-arm64`，无残留） | 本地测试通过 |
 | 交叉打包缓存与重试 | 连续两次同一目标 | 第二次命中 `work/node-dist-cache/`；实测遇到过 `nodejs.org` 连接超时并验证重试后成功 | 本地测试通过 |
-| 桌面专有测试 | `npm run test:desktop` | **10/10 通过**（新增 2 项：发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程） | 本地测试通过 |
+| 桌面专有测试 | `npm run test:desktop` | **11/11 通过**（新增：发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写） | 本地测试通过 |
+| GitHub Actions（首次真实运行）| `desktop.yml`，仓库 `yunforis/DaylightDesktop` 提交 `e849eb8` / `472e4f3` | `macos-14` **全绿 17/17 步**、`ubuntu-22.04` **全绿 17/17 步**（含桌面专有测试与 `cargo check`）；`windows-latest` 抓到两个真实缺陷（下两行） | **云端部署验证通过（macOS / Linux）** |
+| CI 发现并修复：Windows 凭据文件权限 | `windows-latest` → 桌面专有测试 #4 | `expected 384 / actual 438`：Windows 无 POSIX 权限位，断言按平台分支改写 | 云端抓到，本地修复 |
+| CI 发现并修复：Windows `desktop:check` 静默失败 | `windows-latest` → Rust 壳层检查 | 退出码 1 且无任何输出；根因是 `env.PATH` 与 `Path` 大小写不同键共存，系统挑到了不含 cargo 的那个 | 云端抓到，本地修复 |
 | Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（新增 updater / dialog 插件与 `update.rs`） | 本地测试通过 |
 | 签名安装包构建 | `TAURI_SIGNING_PRIVATE_KEY=work/updater-key/daylight.key npm run desktop:build` | 成功；产出 `Daylight.app` 284.39 MiB、`Daylight_0.1.0_aarch64.dmg` 97.48 MiB，以及**自动更新产物** `macos/Daylight.app.tar.gz`（99.06 MiB）+ `Daylight.app.tar.gz.sig` | 本地测试通过 |
 | **更新包签名校验（正向）** | 复刻 `tauri-plugin-updater` 的 `verify_signature` 流程（`minisign-verify`），用 `tauri.conf.json` 里的**公钥**校验打包产出的 103,867,487 字节 `.app.tar.gz` | 校验通过；trusted comment 里的 `version:0.1.0` 与公告版本一致 | 本地测试通过 |
@@ -57,8 +60,9 @@
 
 ### 未验证 / 明确边界
 
-- **发布流水线尚未真正跑完整**：`desktop.yml`（三平台 verify）在 2026-10-17 首次真实运行，**macOS `macos-14` 全绿（17/17 步）**，Windows 因一条断言在 CI 上暴露的问题失败（详见下方），Linux 的桌面专有测试通过后在后续步骤继续。`.github/workflows/release.yml` 的六平台矩阵**仍未运行过**（要等第一次打标签）。ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随仓库可见性与账号类型变化。
+- **发布流水线尚未真正跑完整**：`desktop.yml`（三平台 verify）在 2026-10-17 首次真实运行。**`macos-14` 与 `ubuntu-22.04` 均已全绿（各 17/17 步，含桌面专有测试与 `cargo check`）**；`windows-latest` 抓到两个真实问题（见下条），修复后仍在等重新运行的结果。`.github/workflows/release.yml` 的六平台矩阵**仍未运行过**（要等第一次打标签），ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随仓库可见性与账号类型变化。因此本仓库的 CI 证据等级是「**macOS / Linux 云端部署验证通过（verify 流水线）**」，Windows 尚在验证中。
 - **Windows 上凭据文件没有 POSIX 权限位**：`server/secure-json.js` 写盘请求 `mode: 0o600`，Windows 会忽略它，Node 读回来恒是 `0o666`（CI 实测 `expected 384 / actual 438`）。这一侧的实际保护是「主密钥存进 Windows 凭据管理器」+「`%APPDATA%` 目录继承的 ACL」，都无法用 `fs.stat` 断言。`desktop-tests` 已改为按平台分支断言，并在注释里写明原因，不假装 Windows 上也验证了 0600。
+- **Windows 上 PATH 的键名是 `Path`，曾导致 `desktop:check` 静默失败**：`scripts/desktop.mjs` 里写的是 `env.PATH = ...`，而 `env` 是从 `process.env` 展开出的普通对象（大小写敏感），于是新增了一个键而不是改已有的 `Path`，交给子进程的环境块里同时存在 `Path` 与 `PATH`，系统挑到了不含 cargo 的那个——`spawnSync('cargo')` 找不到可执行文件，`npm run desktop:check` 只给出退出码 1、**全程没有任何输出**（CI 日志里唯一线索就是这一行）。已改为按键名不敏感地定位 PATH，并在 `cargo` 启动失败时明确报出原因；`desktop-tests` 里有静态断言守住写法。**这个差异只在 Windows 上存在**：macOS/Linux 的环境块是真·大小写敏感，复刻不出「系统在重复键里挑一个」的行为，所以本机无法行为验证，只能靠 `windows-latest` 上的真实运行。
 - **自动更新未做端到端验证**：已验证「签名能被应用内嵌公钥接受、篡改即拒绝」，但**下载 → 校验 → 替换安装文件 → 重启**这条完整链路需要先发布两个真实版本才能验证。Linux 上还额外依赖 AppImage 形态（`.deb` 装的版本不会自动更新）。
 - **`tauri.conf.json` 里的公钥与 `work/updater-key/` 的私钥是本轮新生成的**，此前没有更新密钥。若私钥丢失，客户端会拒绝后续所有更新，只能让用户手动重装——`work/updater-key/` 需要自行备份（不进仓库）。
 - **macOS 未签名未公证**：本轮与 CI 默认产出未签名包，首次打开需要在「系统设置 → 隐私与安全性」手动放行。配好 `APPLE_*` Secrets 后可自动签名公证，需要 Apple 开发者账号。
