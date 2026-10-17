@@ -5,8 +5,12 @@ name: release
 #   1) 推一个版本标签：  git tag v0.1.0 && git push origin v0.1.0
 #   2) Actions 页面手动运行本工作流，填一个标签；勾上 draft 则只产出**草稿** Release，
 #      用来在不公开的前提下验证六平台能不能都出包。草稿确认无误后，**直接在 Releases
-#      页面发布这份草稿**即可；注意 guard 会幂等复用同一标签下已存在的 Release，
+#      页面发布这份草稿**即可；注意 guard 会幂等复用同一标签下已存在的草稿，
 #      所以「取消勾选 draft 再跑一次」并不会把已有草稿改成正式发布。
+#
+# 再触发一次是**正常的**：在 Releases 页面发布草稿会创建 Git 标签，而本工作流是
+# `push: tags: v*` 触发的，于是发布完会立刻再跑一次。那一次由 guard 判定「该标签已正式
+# 发布」→ 整体跳过（空操作，不重建、不改 latest.json），所以是预期的绿灯。
 on:
   push:
     tags: ['v*']
@@ -38,6 +42,7 @@ jobs:
       tag: ${{ steps.check.outputs.tag }}
       draft: ${{ steps.flags.outputs.draft }}
       releaseId: ${{ steps.release.outputs.releaseId }}
+      skip: ${{ steps.release.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -102,22 +107,29 @@ jobs:
           body=$(sed "s/{{VERSION}}/$VERSION/g" .github/release-body.md)
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq "map(select(.tag_name == \"$TAG\")) | .[0].id // empty")
+          skip=false
           if [ -n "$id" ]; then
-            # 已经正式发布的 Release 不允许再被复用上传：标签一旦发布，用户下到的包就不该在
-            # 无人察觉的情况下被替换。要重发只能提升版本号、打新标签（顺带也避免把「同一个
-            # 版本的产物」换成两批不同的东西）。
             isdraft=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id" --jq '.draft')
-            if [ "$isdraft" != "true" ]; then
-              echo "::error::标签 $TAG 的 Release 已经正式发布，产物不可再替换。请提升版本号后重新发标签。"
-              exit 1
+            if [ "$isdraft" = "true" ]; then
+              # 复用草稿时**必须**把 target_commitish 拉到本次运行的提交：草稿阶段 Git 标签还没
+              # 创建，target_commitish 是决定「发布后标签指向哪里」的唯一依据。v0.1.0 就踩过：
+              # 草稿由更早一次运行创建、产物由后来这次运行构建，结果标签指向 f6e005e，而 27 个
+              # 产物全部产自 0cae10b，差了两个提交。
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+                -f target_commitish="$GITHUB_SHA" > /dev/null
+              echo "复用已存在的草稿 Release：标签 $TAG，id=$id，target_commitish → ${GITHUB_SHA:0:7}"
+            else
+              # 已经正式发布 → 本轮什么都不做。
+              #
+              # 为什么必须有这条：**发布草稿这个动作本身会创建 Git 标签**，而本工作流是
+              # `push: tags: v*` 触发的，于是「发布」会立刻再触发一次本工作流。如果那时还去
+              # 重建，就会把已经发出去的产物和 latest.json 重写一遍——实测就是这么坏的：
+              # 发布 4 分钟后第二轮跑起来，把 Linux 资产换成新构建的，latest.json 被中途重写成
+              # 12 个键指向 asset API 地址，客户端会「下载」到一段 JSON。已发布的产物不可替换。
+              skip=true
+              echo "标签 $TAG 的 Release 已经正式发布，跳过本次构建（已发布的产物不可替换）。"
+              gh api "repos/$GITHUB_REPOSITORY/releases/$id" --jq '"  " + .html_url'
             fi
-            # 复用草稿时**必须**把 target_commitish 拉到本次运行的提交：草稿阶段 Git 标签还没
-            # 创建，target_commitish 是决定「发布后标签指向哪里」的唯一依据。v0.1.0 就踩过：
-            # 草稿由更早一次运行创建、产物由后来这次运行构建，结果标签指向 f6e005e，而 27 个
-            # 产物全部产自 0cae10b，差了两个提交。
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
-              -f target_commitish="$GITHUB_SHA" > /dev/null
-            echo "复用已存在的草稿 Release：标签 $TAG，id=$id，target_commitish → ${GITHUB_SHA:0:7}"
           else
             id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
               -f tag_name="$TAG" \
@@ -135,10 +147,15 @@ jobs:
             exit 1
           fi
           echo "releaseId=$id" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.name }}
     needs: guard
+    # 标签下的 Release 若已正式发布，guard 会给出 skip=true：这一轮整体跳过，什么都不动。
+    # （发布草稿这个动作会创建 Git 标签，而本工作流是 `push: tags: v*` 触发的，所以「发布」
+    # 立刻会再跑一次本工作流——那一次必须是空操作，不能重建已发出的产物。）
+    if: needs.guard.outputs.skip != 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       # 一个平台失败不影响其他平台；失败的平台在 Release 里就是缺这个产物，其余照常可用。
@@ -268,6 +285,8 @@ jobs:
   finalize:
     name: 修整 latest.json
     needs: [guard, build]
+    # build 被跳过（skip=true）时本作业也会自动跳过：这条路不需要再修整 latest.json。
+    if: needs.guard.outputs.skip != 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

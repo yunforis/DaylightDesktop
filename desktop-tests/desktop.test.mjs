@@ -483,8 +483,23 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
     2,
     '创建与复用两条路径都必须把 target_commitish 定到本次运行的提交',
   );
-  // 已正式发布的 Release 不该被复用上传，否则用户下到的包会被静默替换。
-  assert.match(release, /已经正式发布/, 'guard 必须拒绝复用已正式发布的 Release');
+  // 已正式发布的 Release 不该被复用上传，否则用户下到的包会被静默替换。更进一步：
+  // **发布草稿这个动作本身会创建 Git 标签**，而本工作流是 `push: tags: v*` 触发的，
+  // 所以「发布」会立刻再触发一次本工作流——实测就是这一轮把已发布的 Release 重新构建、
+  // 中途重写 latest.json（12 个键变成 asset API 地址，客户端会下到一段 JSON）。
+  // 因此已发布时必须是**整体跳过**（空操作），而不是「继续跑然后失败」。
+  assert.match(release, /已经正式发布/, 'guard 必须识别「同标签的 Release 已正式发布」');
+  assert.match(release, /skip=true/, 'guard 必须把「本轮跳过」作为输出传给下游');
+  assert.match(
+    release,
+    /if:\s*needs\.guard\.outputs\.skip\s*!=\s*'true'/,
+    'build / finalize 必须能按 guard 的 skip 输出整体跳过',
+  );
+  assert.equal(
+    (release.match(/if:\s*needs\.guard\.outputs\.skip\s*!=\s*'true'/g) ?? []).length,
+    2,
+    'build 与 finalize 两个作业都要按 skip 跳过',
+  );
 
   // 收尾作业：tauri-action 写的 latest.json 用的是资产 API 地址，客户端拿到的会是 JSON 元数据
   // 而不是安装包，必须改写成公开下载地址；顺带卡住「哪个平台没传上来」。
