@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 import { prepareMeeting } from './feishu.js';
 import { findConflicts, suggestTimeSlots } from './conflicts.js';
 import { withAssistantMeetingMailboxLock } from './assistant-meetings-store.js';
+import { isProductionRuntime } from './runtime-mode.js';
+import { isRegisteredMailbox } from './mailbox-identity.js';
+import { getRequestUserId } from './request-context.js';
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const stamp = () => new Date().toISOString();
@@ -105,6 +108,12 @@ export async function createAssistantMeeting(mailboxId, args, settings, dependen
   if (!text(mailboxId)) throw new Error('请先选择当前邮箱。');
   const mailbox = settings?.mailboxes?.find((item) => item.id === mailboxId);
   if (!mailbox) throw Object.assign(new Error('邮箱不存在或无权访问。'), { status: 404 });
+  if (isProductionRuntime() && mailbox.pendingSetup === true) {
+    throw Object.assign(new Error('请先在设置中保存并配置自己的邮箱，再创建会议。'), { status: 400, code: 'MAILBOX_SETUP_REQUIRED' });
+  }
+  if (isProductionRuntime() && !isRegisteredMailbox(mailboxId, settings, getRequestUserId())) {
+    throw Object.assign(new Error('邮箱不存在或无权访问。'), { status: 404 });
+  }
   if (!text(mailbox.email)) throw new Error('请先配置当前邮箱地址，才能准备会议邀约草稿。');
   const actions = dependencies.createAssistantDraft && dependencies.normalizeAssistantRecipients
     ? dependencies : await import('./assistant-actions.js');

@@ -29,7 +29,8 @@ export async function callJsonModel(settings, messages, { context, label = '模�
   if (new URL(endpoint).hostname === 'api.deepseek.com' && ['deepseek-flash', 'deepseek-v4-pro'].includes(settings.model)) request.thinking = { type: 'disabled' };
   const tool = { name: 'llm.chat_completions', arguments: { endpoint, model: settings.model, message_count: messages.length,
     input_characters: messages.reduce((sum, message) => sum + String(message.content).length, 0), timeout_ms: timeoutMs }, result_summary: null };
-  const span = context?.startSpan('model', label, { llm_request: true, cost_cny: null, cost_status: 'usage_missing',
+  // 调用方可能只带身份上下文（HTTP 请求上下文没有 startSpan），没有追踪记录器时照常调用模型。
+  const span = context?.startSpan?.('model', label, { llm_request: true, cost_cny: null, cost_status: 'usage_missing',
     thought: '将当前业务所需资料交给配置的模型，返回结构化结果；日志只记录调用元数据。', tool_calls: [tool] });
   const signal = AbortSignal.timeout(timeoutMs);
   try {

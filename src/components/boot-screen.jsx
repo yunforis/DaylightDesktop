@@ -25,8 +25,8 @@ export function BootScreen({
         }}
       />
       <div className={cn('relative z-[1] flex flex-col items-center gap-4 px-6', compact && 'gap-3')}>
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm animate-in fade-in zoom-in-95 duration-500">
-          <span className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">D</span>
+        <div className="flex size-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] animate-in fade-in zoom-in-95 duration-500">
+          <img src="/logo.png" alt="" aria-hidden draggable={false} className="h-11 w-11 object-contain" />
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground animate-in fade-in slide-in-from-bottom-1 duration-700">
           <LoaderCircle className="size-4 animate-spin" />

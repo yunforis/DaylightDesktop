@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { getRequestMailboxId, request, setRequestMailboxId } from '@/lib/api';
+import { getRequestMailboxId, request, setRequestMailboxId, setRequestScope } from '@/lib/api';
 import { syncChanges, withConflicts } from '@/lib/domain';
 import { isActiveJob, useBackgroundJobs } from '@/hooks/use-background-jobs';
 
@@ -14,6 +14,13 @@ function viewQuery(viewMode) {
     return { state: `/state?tag=${tag}`, traces: '/traces?scope=all' };
   }
   return { state: '/state', traces: '/traces' };
+}
+
+/** 视图范围参数：和 viewQuery 同口径，供单条记录的读写在混合视图下定位归属邮箱。 */
+function viewScopeParams(viewScope) {
+  if (viewScope === 'all') return { scope: 'all' };
+  if (String(viewScope).startsWith('tag:')) return { tag: viewScope.slice(4) };
+  return null;
 }
 
 export function WorkspaceProvider({ children }) {
@@ -57,6 +64,7 @@ export function WorkspaceProvider({ children }) {
       mailboxEpoch.current += 1;
     }
     if (writeMailboxId) setRequestMailboxId(writeMailboxId);
+    setRequestScope(viewScopeParams(calendar.viewScope));
     setState(calendar);
     setLoadError('');
     if (logs.status === 'fulfilled') {
@@ -74,7 +82,12 @@ export function WorkspaceProvider({ children }) {
   const reload = useCallback(async () => {
     const epoch = mailboxEpoch.current;
     const urls = viewQuery(viewModeRef.current);
-    const [calendar, logs] = await Promise.allSettled([request(urls.state), request(urls.traces)]);
+    // viewQuery 已经带上正确的 scope/tag；禁止沿用混合视图残留的 requestScope，
+    // 否则切回单邮箱时 /state 仍会被拼成 ?scope=all，列表继续显示全部邮件。
+    const [calendar, logs] = await Promise.allSettled([
+      request(urls.state, 'GET', undefined, { scope: false }),
+      request(urls.traces, 'GET', undefined, { scope: false }),
+    ]);
     if (calendar.status === 'rejected') {
       if (epoch === mailboxEpoch.current) setLoadError(calendar.reason.message);
       throw calendar.reason;
@@ -96,21 +109,39 @@ export function WorkspaceProvider({ children }) {
     localStorage.setItem(VIEW_KEY, next);
     viewModeRef.current = next;
     setViewModeState(next);
+    // 立刻切换检索范围，避免后续请求仍带着「全部邮箱」的 scope。
+    setRequestScope(viewScopeParams(next));
     mailboxEpoch.current += 1;
     setSelectedEmailId(null);
     setSelectedEmailMailboxId(null);
+    setHighlightQuote('');
+    // 先清空列表，避免混合数据在新视图加载完成前继续展示。
+    setState((current) => {
+      if (!current) return current;
+      const mixed = next === 'all' || String(next).startsWith('tag:');
+      return {
+        ...current,
+        emails: [],
+        events: [],
+        tasks: [],
+        mailboxId: mixed ? 'all' : (current.settings?.activeMailboxId || current.mailboxId),
+        viewScope: mixed ? next : 'active',
+      };
+    });
     await reload();
   }
 
   function resetMailboxContext(mailboxId) {
     mailboxEpoch.current += 1;
     setRequestMailboxId(mailboxId);
+    setRequestScope(null);
     setState(null);
     setSelectedEmailId(null);
     setSelectedEmailMailboxId(null);
     setSelectedTraceId(null);
     setSyncResult(null);
     setEventModal(null);
+    setHighlightQuote('');
     setTraceData({ traces: [], sync: {} });
     const url = new URL(window.location.href);
     url.searchParams.delete('email');
@@ -369,7 +400,10 @@ export function WorkspaceProvider({ children }) {
     async function poll() {
       const epoch = mailboxEpoch.current;
       const urls = viewQuery(viewModeRef.current);
-      const [calendar, logs] = await Promise.allSettled([request(urls.state), request(urls.traces)]);
+      const [calendar, logs] = await Promise.allSettled([
+        request(urls.state, 'GET', undefined, { scope: false }),
+        request(urls.traces, 'GET', undefined, { scope: false }),
+      ]);
       if (stopped) return;
       if (epoch === mailboxEpoch.current && calendar.status === 'fulfilled') applyData(calendar.value, logs);
       timer = setTimeout(poll, isSyncing ? 700 : 5000);
@@ -377,6 +411,12 @@ export function WorkspaceProvider({ children }) {
     timer = setTimeout(poll, isSyncing ? 100 : 5000);
     return () => { stopped = true; clearTimeout(timer); };
   }, [isSyncing, state?.settings.activeMailboxId, viewMode, applyData]);
+
+  // 登录后补齐尚未入库的历史邮件，避免知识库只覆盖新同步的信。
+  useEffect(() => {
+    if (!state?.settings?.activeMailboxId) return;
+    request('/rag/ensure', 'POST', {}).catch(() => {});
+  }, [state?.settings?.activeMailboxId]);
 
   useEffect(() => {
     const current = traceData.sync;

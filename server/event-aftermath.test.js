@@ -15,6 +15,13 @@ const {
   generateEventReport, deleteReport, MATERIAL_KINDS,
 } = await import('./event-aftermath.js');
 
+// 材料跟随日程所在邮箱：这里显式声明邮箱，附件前缀与存储邮箱才是同一个。
+saveSettings({
+  ...readSettings(),
+  mailboxes: [{ id: 'mb1', email: 'aftermath@qq.com', authorizationCode: '' }],
+  activeMailboxId: 'mb1',
+});
+
 function seedEvent() {
   saveStore({
     events: [{
@@ -72,6 +79,12 @@ test('可上传文字感受与文件材料，并预览读取', async () => {
 
   removeMaterial('evt-aftermath-1', note.id);
   assert.equal(listMaterials('evt-aftermath-1').materials.length, 1);
+});
+
+test('材料按日程归属邮箱读写：换成别的邮箱就按「日程不存在」拒绝', () => {
+  seedEvent();
+  assert.equal(listMaterials('evt-aftermath-1', { mailboxId: 'mb1' }).materials.length, 0);
+  assert.throws(() => listMaterials('evt-aftermath-1', { mailboxId: 'mb2' }), /日程不存在/);
 });
 
 test('按模板与要求调用模型生成报告并落库', async (t) => {

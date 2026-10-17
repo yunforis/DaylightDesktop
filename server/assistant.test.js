@@ -302,17 +302,25 @@ test('模型未返回工具前失败正常报错，官方 DeepSeek flash 禁思�
 });
 
 test('模型响应正文卡住也会结束等待，未写入数据且可再次正常请求', async (t) => {
-  let attempts = 0;
+  let stalled = 0;
+  let served = 0;
+  let releaseFlush;
+  const firstStallFlushed = new Promise((resolve) => { releaseFlush = resolve; });
   const server = http.createServer(async (req, res) => {
-    for await (const part of req) { /* Consume invented request. */ }
-    attempts++;
+    let body = '';
+    for await (const part of req) body += part;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    if (attempts === 1) {
+    // 按请求内容而不是到达顺序区分：并发跑测试时首个请求可能在抵达服务器前就被客户端
+    // 超时放弃，用顺序判断会让「重试」误入卡住分支，把用例拖到 60 秒才失败。
+    if (body.includes('本地超时测试')) {
+      stalled += 1;
       res.flushHeaders();
       res.write('{"choices":');
-    } else {
-      res.end(JSON.stringify({ choices: [{ message: answer }] }));
+      releaseFlush();
+      return;
     }
+    served += 1;
+    res.end(JSON.stringify({ choices: [{ message: answer }] }));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => {
@@ -320,11 +328,17 @@ test('模型响应正文卡住也会结束等待，未写入数据且可再次�
     return new Promise((resolve) => server.close(resolve));
   });
   writeJson('settings', { ...settings, baseUrl: `http://127.0.0.1:${server.address().port}/v1` });
-  await assert.rejects(runAssistantChat({ messages: [{ role: 'user', content: '本地超时测试' }] }, { timeoutMs: 80 }),
-    (error) => error.status === 504 && /已停止等待/.test(error.message));
+  const stalledCall = runAssistantChat({ messages: [{ role: 'user', content: '本地超时测试' }] }, { timeoutMs: 500 });
+  // 先确认服务器已经开始写这段卡住的正文，再等客户端超时，避免和本机连接建立抢时间。
+  await Promise.race([
+    firstStallFlushed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('卡住响应的请求未在超时前到达测试服务器')), 5000).unref()),
+  ]);
+  await assert.rejects(stalledCall, (error) => error.status === 504 && /已停止等待/.test(error.message));
   assert.deepEqual(readCalendar().tasks, []);
   assert.equal((await chat('重试本地合成请求')).reply, answer.content);
-  assert.equal(attempts, 2);
+  assert.equal(stalled, 1, '卡住的响应只应发生一次');
+  assert.equal(served, 1, '重试必须拿到一次正常响应');
 });
 
 test('邮件及会议能力仅提供起草和建会工具，模型伪造发送工具不能发信', async (t) => {
@@ -455,4 +469,76 @@ test('请求登记的异步等待期间切换邮箱及模型，真实助手仍�
   assert.equal(requests[0].body.model, 'fixture-model');
   assert.equal(requests[0].options.headers.Authorization, 'Bearer invented-assistant-model-key');
   assert.equal(fs.existsSync(path.join(directory, 'mailboxes', 'second', 'assistant-drafts.json')), false);
+});
+
+async function seedKnowledgeEvidence() {
+  const { replaceChunks } = await import('./rag/store.js');
+  await replaceChunks('default', 'att-evidence', [{
+    id: 'chunk-evidence',
+    mailboxId: 'default',
+    candidateId: null,
+    attachmentId: 'att-evidence',
+    filename: '合成证据.pdf',
+    page: 1,
+    chunkIndex: 0,
+    content: '合成证据：Kubernetes 部署演练记录，只用本地测试数据。',
+    embedding: null,
+  }]);
+}
+
+test('正常回答检索过知识库时，证据片段随回答返回，供界面展示', async (t) => {
+  await seedKnowledgeEvidence();
+  const requests = modelScript(t, [calls(['search_knowledge', { query: 'Kubernetes 部署' }]), answer]);
+  const result = await chat('帮我找 Kubernetes 部署记录');
+  assert.equal(result.interrupted, undefined);
+  assert.ok(result.citations?.length >= 1, '正常路径必须返回证据片段');
+  assert.equal(result.citations[0].attachmentId, 'att-evidence');
+  assert.match(result.citations[0].quote, /Kubernetes/);
+  assert.equal(result.citations[0].filename, '合成证据.pdf');
+  // 不把整段原文塞进回答，模型只看摘要
+  assert.match(requests[0].body.messages[0].content, /证据片段由界面展示/);
+});
+
+test('被工具轮数上限打断时，检索到的证据片段仍随回答返回，不静默丢失', async (t) => {
+  await seedKnowledgeEvidence();
+  const rounds = [calls(['search_knowledge', { query: 'Kubernetes 部署' }])];
+  while (rounds.length < 6) rounds.push(calls(['get_current_time', {}]));
+  modelScript(t, rounds);
+  const result = await chat('帮我找 Kubernetes 部署记录');
+  assert.equal(result.interrupted, true);
+  assert.ok(result.citations?.length >= 1, '打断路径也必须返回证据片段');
+  assert.match(result.citations[0].quote, /Kubernetes/);
+  assert.equal(result.citations[0].filename, '合成证据.pdf');
+});
+
+test('混合视图：小 D 的知识检索覆盖视图里的多个邮箱，并带回片段所属邮箱', async (t) => {
+  const configured = { ...settings, mailboxes: [...settings.mailboxes, { id: 'second', email: 'second@example.invalid' }] };
+  writeJson('settings', configured);
+  writeJson('calendar', emptyStore(), 'second');
+  const { replaceChunks } = await import('./rag/store.js');
+  await replaceChunks('second', 'mailbody:fixture-notice', [{
+    id: 'chunk-mix-notice',
+    mailboxId: 'second',
+    candidateId: null,
+    attachmentId: 'mailbody:fixture-notice',
+    filename: '【改期通知】合成测试邮件',
+    page: 1,
+    chunkIndex: 0,
+    content: '【改期通知】合成测试：面试时间调整到 10 月 21 日 10:30。',
+    embedding: null,
+  }]);
+
+  const requests = modelScript(t, [calls(['search_knowledge', { query: '改期通知' }]), answer]);
+  const result = await runAssistantChat({ messages: [{ role: 'user', content: '帮我找改期通知' }] },
+    { mailboxId: 'default', mailboxIds: ['default', 'second'] });
+  assert.match(requests[0].body.messages[0].content, /混合视图/, '要告诉模型本轮覆盖多个邮箱');
+  assert.ok(result.citations?.some((item) => item.mailboxId === 'second'),
+    '混合视图要能查到非当前邮箱里的片段');
+  assert.equal(result.citations.find((item) => item.mailboxId === 'second').filename, '【改期通知】合成测试邮件');
+
+  // 不带范围时保持原样：只检索当前邮箱，不看别的邮箱。
+  const alone = modelScript(t, [calls(['search_knowledge', { query: '改期通知' }]), answer]);
+  const singleResult = await runAssistantChat({ messages: [{ role: 'user', content: '帮我找改期通知' }] }, { mailboxId: 'default' });
+  assert.equal(singleResult.citations?.some((item) => item.mailboxId === 'second') || false, false);
+  assert.doesNotMatch(alone[0].body.messages[0].content, /混合视图/);
 });

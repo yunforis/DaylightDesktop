@@ -32,10 +32,10 @@ node scripts/desktop-sync.mjs      # 默认读 ../Daylight，可用 DAYLIGHT_WEB
 node scripts/desktop-sync.mjs --check
 ```
 
-- 脚本会整树复制真源的 `src/`、`server/`、`shared/`、`public/`、`scripts/`、`index.html` 与文档测试素材，移除 Web 专有页面，再**逐条精确重贴桌面补丁**。锚点找不到会直接报错，不静默跳过。
-- **桌面自有文件不会被覆盖**：`src/App.jsx`、`src/lib/desktop.js`、`src/components/pdf-canvas-viewer.jsx`、`src-tauri/**`、`scripts/desktop*.mjs`、`scripts/prepare-desktop.mjs`、`desktop-tests/**`、`work/**`。
+- 脚本会整树复制真源的 `src/`、`server/`、`shared/`、`public/`、`scripts/`、`index.html`，以及共享测试要读取的素材（`Dockerfile`、`docs/resume-test`、`docs/invoice-test`、`docs/submission/evaluation-cases.json`），移除 Web 专有页面，再**逐条精确重贴桌面补丁**。锚点找不到会直接报错，不静默跳过。
+- **桌面自有文件不会被覆盖**：`src/App.jsx`、`src/lib/desktop.js`、`server/desktop-entry.js`、`server/desktop-http.js`、`server/secure-json.js`、`src-tauri/**`、`scripts/desktop*.mjs`、`scripts/prepare-desktop.mjs`、`desktop-tests/**`、`work/**`。
 - 新增桌面补丁时，必须同时写进 `scripts/desktop-sync.mjs`，并在 `desktop-tests` 的锚点自检测试中加一条断言。否则下次同步会静默丢失该补丁。
-- 同步后必须重跑：`npm run build`、`npm run test:desktop`、`npm test`，并与 Web 的失败集合比对，确认**没有新增失败**。
+- 同步后必须重跑：`npm run build`、`npm run test:desktop`、`node --test server/*.test.js`，并与 Web 真源做**逐条用例状态**的 diff（不是只比失败集合），确认没有新增差异。
 - 运行时依赖白名单在 `scripts/prepare-desktop.mjs`。`server/` 里新增任何裸包 `import` 都要加进去，否则安装版会启动失败（同步脚本会自动校验这一点）。
 
 ## 桌面端实现约定
@@ -58,13 +58,14 @@ node scripts/desktop-sync.mjs --check
 ## 验证与文档
 
 - 按改动影响选择验证：
-  - 业务逻辑改动 → `npm test`，并与 Web 真源的失败集合对比，确认没有新增失败。
+  - 业务逻辑改动 → `node --test server/*.test.js`，并与 Web 真源做逐条用例状态 diff，确认没有新增差异。
   - 桌面专有行为（会话、鉴权、加密、端口、打包、补丁）→ `npm run test:desktop`。
   - 前端或构建改动 → `npm run build`；壳层改动 → `npm run desktop:check`；打包改动 → `npm run desktop:prepare`。
-  - 端到端冒烟 → `bash work/smoke.sh`。
+  - 端到端冒烟 → 拉起真实后台（`npm run desktop:dev`，或生产模式 `server/desktop-entry.js`）后用真实浏览器走一遍；鉴权三层与启动闭环已由 `npm run test:desktop` 守护。
 - 为新增桌面行为补充有意义的验证，不要为低影响的可逆改动添加机械测试。
 - **不得在文档、示例、日志、测试或提交里写入真实授权码、API Key、邮件正文或任何真实凭据。**
 - 严格区分“规划中”“代码已实现”“本地测试通过”“真实服务实连成功”“云端部署验证通过”“生产验收通过”。填好配置或看到“已配置”**仅表示字段已保存**。
 - 不得把预置示例结果或本地模拟接口测试说成真实邮箱、真实模型验证；不得在没有实际运行的情况下声称验证通过。
-- 已知的 49 项共享业务测试失败是历史遗留（启动真实服务 + mock timer 的集成测试），在 Web 真源上以完全相同的集合失败。可以记录，但不要把它们说成桌面端引入，也不要当成门禁。
+- 已知的 58 项共享业务测试失败是历史遗留（启动真实服务 + mock timer 的集成测试），在 Web 真源上以完全相同的集合失败。核对方式是与真源做逐条用例状态 diff；不要把它们说成桌面端引入，也不要当成门禁。
+- 新增桌面行为时，如果它依赖上游文件（如 `Dockerfile`、测试素材），先看能否**同步进来**而不是在桌面端豁免：保持「测试结果与真源逐条一致」这个断言可验证，比维护豁免清单更省事。
 - 修改功能后按实际影响更新 `README.md` 与 `STATUS.md`；只有开发约定变化时才修改本文件。

@@ -215,7 +215,7 @@ export function CommandPalette() {
         tab: 'model',
         label: '设置 · 知识检索（RAG）',
         keywords: 'rag 检索 embedding 向量 分块 简历原文 知识库',
-        hint: settings.ragEnabled === false ? '已关闭' : (settings.ragEmbeddings ? '关键词 + Embedding' : '关键词检索'),
+        hint: settings.ragEnabled === false ? '已关闭' : (settings.ragEmbeddings === false ? '关键词检索' : '关键词 + 向量'),
         searchText: `RAG ${settings.embeddingModel || ''}`,
       },
       {

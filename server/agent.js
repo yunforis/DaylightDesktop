@@ -300,6 +300,203 @@ export function mailboxMessageIdentity(settings, { uidValidity, uid, scope, proc
   return scoped;
 }
 
+// ── 写回真实邮箱 ──────────────────────────────────────────────
+// 邮件记录里不单独存 IMAP uid，写回时必须从持久化的 id 还原定位信息（格式见 mailboxMessageIdentity）。
+// 这一层只负责「定位」和「执行」，是否允许写由调用方按邮箱开关判断。
+
+/** 归档 / 废纸篓的目标文件夹：先按 IMAP SPECIAL-USE 找，再按常见命名兜底。 */
+const MAIL_FOLDER_CANDIDATES = {
+  archive: { specialUse: '\\archive', names: ['archive', 'archives', '存档', '归档', '所有邮件', 'all mail'] },
+  trash: { specialUse: '\\trash', names: ['trash', 'deleted', 'deleted messages', 'deleted items', '已删除', '废纸篓', '垃圾箱'] },
+};
+
+const folderFlags = (folder) => {
+  if (folder?.flags instanceof Set) return [...folder.flags];
+  return Array.isArray(folder?.flags) ? folder.flags : [];
+};
+
+/** IMAP flags → 本地镜像字段。真邮箱的已读 / 星标状态统一从这里翻译。 */
+function messageFlagsOf(message) {
+  const marks = folderFlags(message).map((flag) => String(flag).toLowerCase());
+  return { seen: marks.includes('\\seen'), flagged: marks.includes('\\flagged') };
+}
+
+/**
+ * 从邮件 id 还原 IMAP 定位信息。两种历史格式：
+ *   imap-v2:<scope>:<address>:<folder>:<uidValidity>:<uid>
+ *   qq|imap:<address>:<uidValidity>:<uid>      旧格式，只在 INBOX 里
+ * 解析不出来返回 null；调用方必须当成失败，绝不猜 uid。
+ */
+export function parseMailboxMessageRef(id) {
+  const parts = String(id || '').split(':');
+  const numeric = (value) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  };
+  if (parts.length === 6 && parts[0] === 'imap-v2') {
+    const uidValidity = numeric(parts[4]);
+    const uid = numeric(parts[5]);
+    if (!uidValidity || !uid) return null;
+    let address = parts[2];
+    try { address = decodeURIComponent(address); } catch { /* 保留原样 */ }
+    return { format: 'imap-v2', address, folder: parts[3] || 'INBOX', uidValidity, uid };
+  }
+  if (parts.length === 4 && (parts[0] === 'qq' || parts[0] === 'imap')) {
+    const uidValidity = numeric(parts[2]);
+    const uid = numeric(parts[3]);
+    if (!uidValidity || !uid) return null;
+    return { format: 'legacy', address: parts[1], folder: 'INBOX', uidValidity, uid };
+  }
+  return null;
+}
+
+/** 在一份 IMAP 文件夹列表里找归档 / 废纸篓。纯函数，便于单测。 */
+export function resolveMailFolder(folders, kind) {
+  const candidate = MAIL_FOLDER_CANDIDATES[kind];
+  if (!candidate) return null;
+  const list = (Array.isArray(folders) ? folders : []).filter((folder) => folder && folder.path);
+  const special = list.find((folder) => {
+    const marks = [folder.specialUse, ...folderFlags(folder)].filter(Boolean).map((value) => String(value).toLowerCase());
+    return marks.includes(candidate.specialUse);
+  });
+  if (special) return special.path;
+  const names = new Set(candidate.names);
+  const byName = list.find((folder) => names.has(String(folder.path).toLowerCase()) || names.has(String(folder.name || '').toLowerCase()));
+  return byName ? byName.path : null;
+}
+
+/**
+ * 把「用户点了一个动作」翻译成 IMAP 写回指令 + 本地镜像补丁。
+ * 纯函数（不连网、不读写），便于单测；真正的 IMAP 调用由 writeBackMailboxMessage 做。
+ * 写回开关关闭时直接抛错——不允许静默降级成「只改本地」。
+ */
+export function resolveMailWriteBack({ action, folder, folders = [], reference, writeBack = {}, now = new Date() }) {
+  if (writeBack?.enabled !== true) {
+    throw Object.assign(new Error('这个邮箱还没开启「写回真实邮箱」。到设置 → 邮箱里打开后再试，本地记录不会先改。'), {
+      status: 400, code: 'MAIL_WRITE_BACK_DISABLED',
+    });
+  }
+  const at = now.toISOString();
+  const move = (target) => ({ call: { ref: reference, action: 'move', target }, patch: { folder: target } });
+  switch (action) {
+    case 'read': return { call: { ref: reference, action: 'flags', add: ['\\Seen'] }, patch: { seen: true } };
+    case 'unread': return { call: { ref: reference, action: 'flags', remove: ['\\Seen'] }, patch: { seen: false } };
+    case 'flag': return { call: { ref: reference, action: 'flags', add: ['\\Flagged'] }, patch: { flagged: true } };
+    case 'unflag': return { call: { ref: reference, action: 'flags', remove: ['\\Flagged'] }, patch: { flagged: false } };
+    case 'archive': {
+      const target = folder || writeBack.archiveFolder || resolveMailFolder(folders, 'archive');
+      if (!target) throw Object.assign(new Error('没找到归档文件夹，请到设置 → 邮箱里指定一个。'), { status: 400, code: 'MAIL_FOLDER_NOT_FOUND' });
+      return { ...move(target), patch: { folder: target, archivedAt: at } };
+    }
+    case 'trash': {
+      const target = folder || writeBack.trashFolder || resolveMailFolder(folders, 'trash');
+      if (!target) throw Object.assign(new Error('没找到废纸篓文件夹，请到设置 → 邮箱里指定一个。'), { status: 400, code: 'MAIL_FOLDER_NOT_FOUND' });
+      return { ...move(target), patch: { folder: target, trashedAt: at } };
+    }
+    case 'move': {
+      if (!folder) throw Object.assign(new Error('没有指定目标文件夹。'), { status: 400, code: 'MAIL_FOLDER_REQUIRED' });
+      return move(folder);
+    }
+    default:
+      throw Object.assign(new Error(`不支持的动作：${action}`), { status: 400, code: 'MAIL_ACTION_UNSUPPORTED' });
+  }
+}
+
+function imapWriteError(error, settings, mailbox) {
+  if (['MAIL_WRITE_BACK_DISABLED', 'MAIL_FOLDER_NOT_FOUND', 'MAIL_FOLDER_REQUIRED', 'MAIL_ACTION_UNSUPPORTED', 'MAIL_REF_UNKNOWN'].includes(error?.code)) return error;
+  return Object.assign(new Error(`写回邮箱失败：${formatMailboxTestError(error, { ...settings, imapHost: mailbox.imapHost })}`), {
+    status: error?.status || 400, code: error?.code || 'MAIL_WRITE_FAILED', cause: error,
+  });
+}
+
+/** 读一次文件夹列表（IMAP LIST），给设置页选归档 / 废纸篓目录用。 */
+export async function listMailboxFolders(settings, { clientFactory = (options) => new ImapFlow(options) } = {}) {
+  const mailbox = normalizeMailbox(settings);
+  const client = createImapClient(settings, mailbox, clientFactory);
+  let connected = false;
+  try {
+    await client.connect();
+    connected = true;
+    const folders = [];
+    for await (const item of client.list()) {
+      if (!item?.path) continue;
+      folders.push({
+        path: item.path,
+        name: item.name || item.path,
+        specialUse: typeof item.specialUse === 'string' ? item.specialUse : (Array.isArray(item.specialUse) ? item.specialUse[0] : ''),
+        flags: folderFlags(item),
+      });
+    }
+    return folders;
+  } catch (error) {
+    throw Object.assign(new Error(formatMailboxTestError(error, { ...settings, imapHost: mailbox.imapHost })), { status: 400, cause: error });
+  } finally {
+    await closeImapClient(client, connected);
+  }
+}
+
+/** 读一批 uid 的 flags（\Seen / \Flagged），把真邮箱的已读状态镜像回本地。 */
+export async function readMailboxFlags(settings, uids, { clientFactory = (options) => new ImapFlow(options) } = {}) {
+  const wanted = [...new Set((Array.isArray(uids) ? uids : []).map(Number)
+    .filter((uid) => Number.isInteger(uid) && uid > 0))];
+  if (!wanted.length) return new Map();
+  const mailbox = normalizeMailbox(settings);
+  const client = createImapClient(settings, mailbox, clientFactory);
+  let connected = false;
+  let lock;
+  const result = new Map();
+  try {
+    await client.connect();
+    connected = true;
+    lock = await client.getMailboxLock('INBOX');
+    if (client.mailbox.exists) {
+      for await (const message of client.fetch(wanted.join(','), { uid: true, flags: true }, { uid: true })) {
+        result.set(message.uid, messageFlagsOf(message));
+      }
+    }
+    return result;
+  } catch (error) {
+    throw Object.assign(new Error(formatMailboxTestError(error, { ...settings, imapHost: mailbox.imapHost })), { status: 400, cause: error });
+  } finally {
+    try { lock?.release(); } catch { /* ignore */ }
+    await closeImapClient(client, connected);
+  }
+}
+
+/**
+ * 写回真邮箱，只接受两种指令：
+ *   flags：加 / 去 \Seen、\Flagged（随时能改回来）
+ *   move ：移动到指定文件夹（归档、废纸篓、手动移动都是它）
+ * 失败就抛错——调用方必须如实告诉用户，不能假装成功。
+ */
+export async function writeBackMailboxMessage(settings, { ref, action, target, add = [], remove = [] }, { clientFactory = (options) => new ImapFlow(options) } = {}) {
+  if (!ref?.uid) {
+    throw Object.assign(new Error('无法定位这封邮件在邮箱里的位置，已跳过写回。'), { status: 400, code: 'MAIL_REF_UNKNOWN' });
+  }
+  const mailbox = normalizeMailbox(settings);
+  const client = createImapClient(settings, mailbox, clientFactory);
+  let connected = false;
+  let lock;
+  try {
+    await client.connect();
+    connected = true;
+    lock = await client.getMailboxLock(ref.folder || 'INBOX');
+    if (action === 'move') {
+      if (!target) throw Object.assign(new Error('没有指定目标文件夹。'), { status: 400, code: 'MAIL_FOLDER_REQUIRED' });
+      await client.messageMove(String(ref.uid), target, { uid: true });
+      return { ok: true, folder: target };
+    }
+    if (add.length) await client.messageFlagsAdd(String(ref.uid), add, { uid: true });
+    if (remove.length) await client.messageFlagsRemove(String(ref.uid), remove, { uid: true });
+    return { ok: true, folder: ref.folder || 'INBOX' };
+  } catch (error) {
+    throw imapWriteError(error, settings, mailbox);
+  } finally {
+    try { lock?.release(); } catch { /* ignore */ }
+    await closeImapClient(client, connected);
+  }
+}
+
 export async function readMailboxEmails(settings, { onProgress = () => {}, recorder, processedIds = new Set(), identityScope,
   clientFactory = (options) => new ImapFlow(options), retryMode = 'manual' } = {}) {
   const mailbox = normalizeMailbox(settings);
@@ -346,9 +543,10 @@ export async function readMailboxEmails(settings, { onProgress = () => {}, recor
       total = candidateUids.length;
       onProgress({ stage: '检查邮件 ID', received: 0, total });
       if (candidateUids.length) {
-        for await (const message of client.fetch(candidateUids.join(','), { uid: true, internalDate: true }, { uid: true })) {
+        for await (const message of client.fetch(candidateUids.join(','), { uid: true, internalDate: true, flags: true }, { uid: true })) {
           const id = messageId(message.uid);
-          if (processedIds.has(id)) emails.push({ id, receivedAt: message.internalDate.toISOString() });
+          const marks = messageFlagsOf(message);
+          if (processedIds.has(id)) emails.push({ id, receivedAt: message.internalDate.toISOString(), ...marks });
           else pendingUids.push(message.uid);
           onProgress({ stage: '检查邮件 ID', received: ++checked, total });
         }
@@ -358,9 +556,10 @@ export async function readMailboxEmails(settings, { onProgress = () => {}, recor
       const first = Math.max(1, client.mailbox.exists - limit + 1);
       total = client.mailbox.exists - first + 1;
       onProgress({ stage: '检查邮件 ID', received: 0, total });
-      for await (const message of client.fetch(`${first}:*`, { uid: true, internalDate: true })) {
+      for await (const message of client.fetch(`${first}:*`, { uid: true, internalDate: true, flags: true })) {
         const id = messageId(message.uid);
-        if (processedIds.has(id)) emails.push({ id, receivedAt: message.internalDate.toISOString() });
+        const marks = messageFlagsOf(message);
+        if (processedIds.has(id)) emails.push({ id, receivedAt: message.internalDate.toISOString(), ...marks });
         else pendingUids.push(message.uid);
         onProgress({ stage: '检查邮件 ID', received: ++checked, total });
       }
@@ -371,7 +570,7 @@ export async function readMailboxEmails(settings, { onProgress = () => {}, recor
       return emails.reverse();
     }
     const sourceRange = pendingUids.join(',');
-    const iterator = client.fetch(sourceRange, { source: true, uid: true, internalDate: true }, { uid: true })[Symbol.asyncIterator]();
+    const iterator = client.fetch(sourceRange, { source: true, uid: true, internalDate: true, flags: true }, { uid: true })[Symbol.asyncIterator]();
     while (true) {
       onProgress({ stage: '读取邮件原文', received: emails.length, total });
       const fetchStart = new Date().toISOString();
@@ -417,6 +616,7 @@ export async function readMailboxEmails(settings, { onProgress = () => {}, recor
           receivedAt: (parsed.date || message.internalDate).toISOString(),
           body: parsed.text || parsed.html?.replace(/<[^>]*>/g, ' ') || '',
           html: typeof parsed.html === 'string' ? parsed.html.slice(0, 200_000) : '',
+          ...messageFlagsOf(message),
           attachments };
         Object.defineProperty(email, '_textAttachments', { value: parsed.attachments || [] });
         Object.defineProperty(email, '_pdfAttachments', { value: (parsed.attachments || []).filter((item) => item.contentType === 'application/pdf' || /\.pdf$/i.test(item.filename || '')) });

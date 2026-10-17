@@ -33,6 +33,8 @@ export function enqueueMail({ tenantId, ownerId, mailboxId, idempotencyKey, trig
   if (!ownerId || tenantId !== ownerId) throw Object.assign(new Error('任务身份无效'), { status: 403 });
   const mailbox = readSettings().mailboxes.find(item => item.id === mailboxId && (item.ownerUserId || item.userId) === ownerId);
   if (!mailbox) throw Object.assign(new Error('邮箱不存在'), { status: 404 });
+  if (mailbox.pendingSetup === true) throw Object.assign(new Error('请先在设置中保存并配置自己的邮箱，再同步邮件。'),
+    { status: 400, code: 'MAILBOX_SETUP_REQUIRED' });
   return jobs.enqueue({ tenantId, ownerId, mailboxId, kind: 'mailbox.sync', idempotencyKey, payload: { trigger } });
 }
 export async function enqueuePlan({ ownerId, workbenchId, itemId, useModel, idempotencyKey }, jobs = jobRepository()) {
@@ -40,7 +42,10 @@ export async function enqueuePlan({ ownerId, workbenchId, itemId, useModel, idem
   const workbench = findWorkbench(data, workbenchId);
   if (!data.items.some(item => item.id === itemId && item.workbenchId === workbenchId)) throw Object.assign(new Error('事项不存在'), { status: 404 });
   const mailboxId = workbench.mailboxIds?.[0];
-  if (!readSettings().mailboxes.some(box => box.id === mailboxId && (box.ownerUserId || box.userId) === ownerId)) throw Object.assign(new Error('工作台邮箱不存在'), { status: 403 });
+  const mailbox = readSettings().mailboxes.find(box => box.id === mailboxId && (box.ownerUserId || box.userId) === ownerId);
+  if (!mailbox) throw Object.assign(new Error('工作台邮箱不存在'), { status: 403 });
+  if (mailbox.pendingSetup === true) throw Object.assign(new Error('请先在设置中保存并配置自己的邮箱，再分析工作台事项。'),
+    { status: 400, code: 'MAILBOX_SETUP_REQUIRED' });
   return jobs.enqueue({ tenantId: ownerId, ownerId, mailboxId, kind: 'scenario.plan', idempotencyKey,
     payload: { workbenchId, itemId, useModel: Boolean(useModel) } });
 }

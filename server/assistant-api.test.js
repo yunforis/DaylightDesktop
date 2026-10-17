@@ -3,14 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { once } from 'node:events';
-import { Worker } from 'node:worker_threads';
+import { spawn } from 'node:child_process';
 import jwt from 'jsonwebtoken';
 
 // Actual Express/auth/assistant/tools/storage and SMTP code paths. Every transport response and
-// identity is synthetic; global fetch, DNS, SMTP and IMAP are fenced inside an isolated worker.
-async function serveFixture() {
-  const { parentPort, workerData } = await import('node:worker_threads');
+// identity is synthetic; global fetch, DNS, SMTP and IMAP are fenced inside a separate process.
+// Natural process shutdown avoids native resources being unloaded by Worker.terminate on Windows.
+async function serveFixture(fixtureData) {
   const { mock } = await import('node:test');
   const { default: express } = await import('express');
   const { default: dns } = await import('node:dns/promises');
@@ -22,6 +21,7 @@ async function serveFixture() {
   const lookups = [];
   let credentialCalls = 0;
   let imapCalls = 0;
+  let httpServer;
   mock.timers.enable({ apis: ['setInterval'] });
   mock.method(ImapFlow.prototype, 'connect', async () => { imapCalls++; throw new Error('Synthetic test forbids IMAP'); });
   mock.method(dns, 'lookup', async (hostname) => { lookups.push(hostname); return { address: '192.0.2.17', family: 4 }; });
@@ -58,7 +58,7 @@ async function serveFixture() {
         : result.draft ? '已保存审核草稿，请检查收件人和正文后点击确认发送。' : '请核对工具返回的执行结果。' };
     } else {
       const user = [...body.messages].reverse().find((item) => item.role === 'user')?.content;
-      const plan = workerData.plans[user];
+      const plan = fixtureData.plans[user];
       if (!plan) throw new Error(`Unexpected synthetic prompt: ${user}`);
       message = { role: 'assistant', content: null, tool_calls: [{ id: `synthetic-call-${models.length}`, type: 'function',
         function: { name: plan.name, arguments: JSON.stringify(plan.args) } }] };
@@ -67,15 +67,31 @@ async function serveFixture() {
   });
   const listen = express.application.listen;
   mock.method(express.application, 'listen', function (...args) {
-    const server = listen.apply(this, args);
-    server.once('listening', () => parentPort.postMessage({ ready: true, port: server.address().port }));
+    const server = httpServer = listen.apply(this, args);
+    server.once('listening', () => process.send({ ready: true, port: server.address().port }));
     return server;
   });
-  parentPort.on('message', ({ command, id }) => {
-    if (command === 'snapshot') parentPort.postMessage({ id, models, outgoing, reserves, lookups, credentialCalls, imapCalls });
+  process.on('message', async ({ command, id }) => {
+    if (command === 'shutdown') {
+      try {
+        await new Promise((resolve, reject) => {
+          httpServer.close((error) => error ? reject(error) : resolve());
+          httpServer.closeAllConnections();
+        });
+        mock.timers.reset();
+        mock.restoreAll();
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      } finally {
+        process.disconnect();
+      }
+      return;
+    }
+    if (command === 'snapshot') process.send({ id, models, outgoing, reserves, lookups, credentialCalls, imapCalls });
   });
   process.argv.push('--production');
-  await import(workerData.indexUrl);
+  await import(fixtureData.indexUrl);
 }
 
 async function fixture(t) {
@@ -123,18 +139,65 @@ async function fixture(t) {
         receivedAt: new Date(now - 10 * 86400_000).toISOString(), category: 'notice', mode: 'qq' }] }));
   }
   const tokens = users.map((user) => jwt.sign({ sub: user.id, sv: 0 }, secret, { expiresIn: '5m' }));
-  let worker;
+  let service;
   let port;
   let commandId = 0;
   const startServer = async () => {
-    const environment = { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '1', DAYLIGHT_AUTO_PROXY: '0' };
+    const environment = { ...process.env, PORT: '0', DAYLIGHT_RUNTIME: 'local', DAYLIGHT_DATA_DIR: directory,
+      DAYLIGHT_REQUIRE_AUTH: '1', DAYLIGHT_AUTO_PROXY: '0' };
     for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy', 'DAYLIGHT_HTTPS_PROXY']) environment[key] = '';
-    worker = new Worker(`(${serveFixture.toString()})()`, { eval: true, workerData: { indexUrl: new URL('./index.js', import.meta.url).href, plans }, env: environment });
-    const [{ port: readyPort }] = await once(worker, 'message');
+    const fixtureData = { indexUrl: new URL('./index.js', import.meta.url).href, plans };
+    const child = spawn(process.execPath, ['--input-type=module', '-e',
+      `(${serveFixture.toString()})(${JSON.stringify(fixtureData)}).catch(error => {
+        console.error(error); process.exitCode = 1; if (process.connected) process.disconnect();
+      })`], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: environment });
+    let output = '', exitResult, stopping;
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.on('data', (chunk) => { output = (output + chunk).slice(-16384); });
+    }
+    const exited = new Promise((resolve) => {
+      child.once('error', (error) => { exitResult = { error }; resolve(exitResult); });
+      child.once('exit', (code, signal) => { exitResult = { code, signal }; resolve(exitResult); });
+    });
+    const failure = (message, result = exitResult) => new Error(
+      `${message}; exitCode=${result?.code ?? 'pending'}, signal=${result?.signal ?? 'none'}\n${result?.error?.message || ''}\n${output}`);
+    const nextMessage = () => new Promise((resolve, reject) => {
+      if (exitResult) { reject(failure('Assistant API fixture already exited')); return; }
+      const cleanup = () => {
+        clearTimeout(timer);
+        child.off('message', onMessage);
+        child.off('exit', onExit);
+        child.off('error', onError);
+      };
+      const onMessage = (value) => { cleanup(); resolve(value); };
+      const onExit = (code, signal) => { cleanup(); reject(failure('Assistant API fixture exited before replying', { code, signal })); };
+      const onError = (error) => { cleanup(); reject(failure('Assistant API fixture process failed', { error })); };
+      const timer = setTimeout(() => { cleanup(); reject(failure('Assistant API fixture did not reply within 15 seconds')); }, 15000);
+      child.once('message', onMessage);
+      child.once('exit', onExit);
+      child.once('error', onError);
+    });
+    const send = (value) => new Promise((resolve, reject) => child.send(value, (error) => error ? reject(error) : resolve()));
+    const stop = () => stopping ||= (async () => {
+      let timer;
+      try {
+        if (!exitResult) await send({ command: 'shutdown' });
+        const result = await Promise.race([exited, new Promise((_, reject) => {
+          timer = setTimeout(() => reject(failure('Assistant API fixture did not shut down within 5 seconds')), 5000);
+        })]);
+        if (result.error || result.code !== 0 || result.signal) throw failure('Assistant API fixture exited unsuccessfully', result);
+      } catch (error) {
+        if (!exitResult) { child.kill(); await exited; }
+        throw error;
+      } finally { clearTimeout(timer); }
+    })();
+    service = { nextMessage, send, stop };
+    const { port: readyPort } = await nextMessage();
+    assert.ok(Number.isInteger(readyPort) && readyPort > 0, failure('Assistant API fixture returned an invalid port'));
     port = readyPort;
   };
+  t.after(() => service?.stop());
   await startServer();
-  t.after(() => worker.terminate());
   const request = async (route, { token = tokens[0], method = 'GET', body, mailboxId, sse = false } = {}) => {
     const response = await fetch(`http://127.0.0.1:${port}/api${route}`, { method, signal: AbortSignal.timeout(10_000),
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -147,13 +210,12 @@ async function fixture(t) {
         : { body: JSON.parse(text) }) };
   };
   const snapshot = async () => {
-    const received = once(worker, 'message');
-    worker.postMessage({ command: 'snapshot', id: ++commandId });
-    return (await received)[0];
+    const [received] = await Promise.all([service.nextMessage(), service.send({ command: 'snapshot', id: ++commandId })]);
+    return received;
   };
   const chat = (message, requestId, options = {}) => request('/assistant/chat', { ...options, method: 'POST',
     body: { messages: [{ role: 'user', content: message }], requestId, ...(options.sse ? { stream: true } : {}) } });
-  const restart = async () => { await worker.terminate(); await startServer(); };
+  const restart = async () => { await service.stop(); await startServer(); };
   return { directory, mailboxes, tokens, request, snapshot, chat, restart, mailText, meetingText, briefText, secondText };
 }
 
@@ -228,6 +290,7 @@ test('真实 Express HTTP：小 D 起草审核发送、飞书入历邀约、简�
   assert.equal(sending[0].options.tls.servername, 'smtp.example.invalid');
   assert.equal(sending[0].options.requireTLS, true);
   assert.equal(sending[0].options.auth.user, firstMailbox.email);
+  assert.equal(Object.hasOwn(sending[0].mail, 'html'), false, '普通邮件草稿仍发送已审核的纯文本');
   assert.equal((await app.request(`/assistant/drafts/${draft.id}/send`, { method: 'POST', body: { confirmed: true, revision: 2 } })).status, 200);
   assert.equal((await app.snapshot()).outgoing.length, 1, '重复确认只调用一次SMTP代码');
 
@@ -270,7 +333,15 @@ test('真实 Express HTTP：小 D 起草审核发送、飞书入历邀约、简�
   const withInvitation = await app.snapshot();
   assert.equal(withInvitation.outgoing.length, 2);
   assert.deepEqual(withInvitation.outgoing[1].mail.to, ['guest@example.invalid', 'peer@example.invalid']);
-  assert.ok(withInvitation.outgoing[1].mail.text.includes(meeting.meeting.url));
+  assert.equal(withInvitation.outgoing[1].mail.text, meeting.draft.body);
+  const invitationHtml = withInvitation.outgoing[1].mail.html;
+  assert.equal(typeof invitationHtml, 'string');
+  const invitationAnchors = [...invitationHtml.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)];
+  assert.equal(invitationAnchors.length, 1);
+  assert.ok(invitationAnchors[0][0].includes(`href="${meeting.meeting.url}"`));
+  assert.match(invitationAnchors[0][0], /target="_blank"/);
+  assert.match(invitationAnchors[0][0], /rel="noopener noreferrer"/);
+  assert.equal(invitationAnchors[0][1], meeting.meeting.url);
   assert.equal((await app.request(`/assistant/drafts/${meeting.draft.id}/send`, { method: 'POST', body: { confirmed: true, revision: 1 } })).status, 200);
   assert.equal((await app.snapshot()).outgoing.length, 2);
 
@@ -318,6 +389,43 @@ test('真实 Express HTTP：小 D 起草审核发送、飞书入历邀约、简�
   assert.equal(restartedState.imapCalls, 0);
   assert.equal((await app.request('/state')).body.events.length, 1);
   assert.equal((await app.request('/assistant/drafts')).body.drafts.filter((item) => item.status !== 'discarded').length, 2);
+});
+
+test('会议邀约 API 不会把外部提交的非 HTTPS 或含认证信息的链接渲染为 HTML 超链接', { timeout: 60_000 }, async (t) => {
+  const app = await fixture(t);
+  const [mailbox] = app.mailboxes;
+  const file = path.join(app.directory, 'mailboxes', mailbox.id, 'calendar.json');
+  const calendar = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const start = new Date(Date.now() + 86400000).toISOString();
+  const end = new Date(Date.now() + 90000000).toISOString();
+  calendar.events.push({ id: 'external-meeting-event', title: '合成会议链接边界', start, end });
+  fs.writeFileSync(file, JSON.stringify(calendar));
+  const invalidUrls = ['javascript:alert("synthetic")', 'data:text/html,<b>synthetic</b>',
+    'http://vc.feishu.cn/j/synthetic', 'https://synthetic:credential@vc.feishu.cn/j/synthetic'];
+  for (const url of invalidUrls) {
+    const body = `请核对会议链接：${url}`;
+    const created = await app.request('/assistant/drafts', { method: 'POST', body: {
+      kind: 'meeting_invitation', eventId: 'external-meeting-event',
+      to: ['guest@example.invalid'], subject: '合成会议链接边界', body,
+      meeting: { url, expiresAt: end, scheduledStart: start, scheduledEnd: end },
+    } });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const draft = created.body.draft;
+    const sent = await app.request(`/assistant/drafts/${draft.id}/send`, {
+      method: 'POST', body: { confirmed: true, revision: draft.revision },
+    });
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    assert.equal(sent.body.draft.status, 'sent');
+    const outgoing = (await app.snapshot()).outgoing.at(-1).mail;
+    assert.equal(outgoing.text, body);
+    assert.doesNotMatch(outgoing.html || '', /<a\b/i, url);
+    assert.doesNotMatch(outgoing.html || '', /<b\b/i, '正文中的 HTML 标签不能成为实际标记');
+  }
+  const snapshot = await app.snapshot();
+  assert.equal(snapshot.outgoing.length, invalidUrls.length);
+  assert.equal(snapshot.reserves.length, 0, '外部提交草稿不会调用飞书');
+  assert.equal(snapshot.models.length, 0, '审核发送不调用模型');
+  assert.equal(snapshot.imapCalls, 0);
 });
 
 test('iOS/shared HTTP: invitation review, deduplication, Web state visibility, preferences and private ICS isolation', {timeout:60000}, async t=>{

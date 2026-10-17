@@ -141,7 +141,9 @@ export async function initOss() {
         region: config.region || 'oss-cn-beijing',
         endpoint,
         forcePathStyle: config.forcePathStyle || config.provider === 'us3',
-        requestHandler: { connectionTimeout: 5000, requestTimeout: 10000 },
+        requestHandler: { connectionTimeout: 5000, requestTimeout: 10000, socketTimeout: 30000 },
+        // S3-compatible providers can reject optional SDK checksum headers.
+        requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
         credentials,
       });
       candidate = client;
@@ -233,11 +235,11 @@ async function putQiniu({ config, key, buffer, contentType }) {
   return JSON.parse(text || '{}');
 }
 
-async function getQiniu({ config, key }) {
+async function getQiniu({ config, key, signal }) {
   const url = publicObjectUrl(config, key);
   if (!url) throw new Error('七牛需要配置 publicBaseUrl（CDN/下载域名）');
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`七牛下载失败：${resp.status}`);
+  const resp = await fetch(url, { signal });
+  if (!resp.ok) throw Object.assign(new Error('Object download failed'), { $metadata: { httpStatusCode: resp.status } });
   const bytes = Buffer.from(await resp.arrayBuffer());
   return { buffer: bytes, contentType: resp.headers.get('content-type') || 'application/octet-stream' };
 }
@@ -271,11 +273,11 @@ async function putUpyun({ config, key, buffer, contentType }) {
   }
 }
 
-async function getUpyun({ config, key }) {
+async function getUpyun({ config, key, signal }) {
   const url = publicObjectUrl(config, key);
   if (url) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`又拍云下载失败：${resp.status}`);
+    const resp = await fetch(url, { signal });
+    if (!resp.ok) throw Object.assign(new Error('Object download failed'), { $metadata: { httpStatusCode: resp.status } });
     return {
       buffer: Buffer.from(await resp.arrayBuffer()),
       contentType: resp.headers.get('content-type') || 'application/octet-stream',
@@ -290,8 +292,9 @@ async function getUpyun({ config, key }) {
   const resp = await fetch(`${host}${uri}`, {
     method: 'GET',
     headers: { Authorization: authorization, Date: date },
+    signal,
   });
-  if (!resp.ok) throw new Error(`又拍云下载失败：${resp.status}`);
+  if (!resp.ok) throw Object.assign(new Error('Object download failed'), { $metadata: { httpStatusCode: resp.status } });
   return {
     buffer: Buffer.from(await resp.arrayBuffer()),
     contentType: resp.headers.get('content-type') || 'application/octet-stream',
@@ -384,28 +387,67 @@ async function putAttachmentImpl({
   };
 }
 
-export async function getAttachmentObject(key) {
+const DOWNLOAD_TIMEOUT_MS = 90_000;
+
+function downloadFailure(error, signal) {
+  if (error?.status === 400) return error;
+  const timeout = signal?.aborted || ['TimeoutError', 'RequestTimeout', 'RequestTimeoutException', 'AbortError'].includes(error?.name)
+    || ['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'].includes(error?.code);
+  return Object.assign(new Error(timeout ? '对象存储下载超时，请稍后重试。' : '对象存储暂时无法读取附件，请稍后重试。', { cause: error }),
+    { status: timeout ? 504 : 502, code: timeout ? 'ATTACHMENT_DOWNLOAD_TIMEOUT' : 'ATTACHMENT_STORAGE_UNAVAILABLE' });
+}
+
+export async function getAttachmentObject(key, { timeoutMs = DOWNLOAD_TIMEOUT_MS } = {}) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > DOWNLOAD_TIMEOUT_MS) throw new TypeError('Invalid attachment download timeout');
+  const controller = new AbortController();
+  const { signal } = controller;
+  let body, rejectDeadline;
+  const expired = new Promise((resolve, reject) => { rejectDeadline = reject; });
+  const deadline = setTimeout(() => {
+    const error = Object.assign(new Error('Attachment download deadline expired'), { name: 'TimeoutError' });
+    rejectDeadline(error);
+    controller.abort(error);
+    body?.destroy?.();
+  }, timeoutMs);
+  deadline.unref();
+  const trackBody = incoming => {
+    body = incoming;
+    // A transport that settles after expiry must not leave an unconsumed socket.
+    if (signal.aborted) { body?.destroy?.(); signal.throwIfAborted(); }
+  };
   const stop = timer('oss.get.ms', { mode });
   let outcome = 'ok';
   try {
-    const result = await getAttachmentObjectImpl(key);
+    const result = await Promise.race([getAttachmentObjectImpl(key, signal, timeoutMs, trackBody), expired]);
     if (!result) outcome = 'missing';
     else counterAdd('oss.bytes_total', result.buffer?.length || 0, { mode, op: 'get' });
     return result;
-  } catch (error) { outcome = 'error'; throw error; }
+  } catch (error) {
+    body?.destroy?.();
+    if (error?.$metadata?.httpStatusCode === 404 || ['NoSuchKey', 'NoSuchObject', 'NotFound'].includes(error?.name)) {
+      outcome = 'missing';
+      return null;
+    }
+    outcome = 'error';
+    throw downloadFailure(error, signal);
+  }
   finally {
+    clearTimeout(deadline);
     stop({ outcome });
     counter('oss.get_total', { mode, outcome });
   }
 }
 
-async function getAttachmentObjectImpl(key) {
+async function getAttachmentObjectImpl(key, signal, timeoutMs, trackBody) {
   validateKey(key);
   const config = readInfraConfig().oss;
   if ((mode === 'aliyun' || mode === 'us3' || mode === 's3') && s3) {
     const { GetObjectCommand } = await import('@aws-sdk/client-s3');
-    const result = await s3.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
-    const bytes = await result.Body.transformToByteArray();
+    const result = await s3.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }), { abortSignal: signal, requestTimeout: timeoutMs });
+    // SDK send resolves after headers; the same deadline includes the full body.
+    const body = result.Body;
+    trackBody(body);
+    const bytes = await body.transformToByteArray();
     return {
       buffer: Buffer.from(bytes),
       contentType: result.ContentType || 'application/octet-stream',
@@ -414,11 +456,11 @@ async function getAttachmentObjectImpl(key) {
     };
   }
   if (mode === 'qiniu') {
-    const got = await getQiniu({ config, key });
+    const got = await getQiniu({ config, key, signal });
     return { ...got, storage: 'qiniu', publicUrl: publicObjectUrl(config, key) };
   }
   if (mode === 'upyun') {
-    const got = await getUpyun({ config, key });
+    const got = await getUpyun({ config, key, signal });
     return { ...got, storage: 'upyun', publicUrl: publicObjectUrl(config, key) };
   }
   requireLocalRuntime('Local attachment fallback');
@@ -488,6 +530,7 @@ export async function testOssConnection(incoming) {
       endpoint,
       forcePathStyle: config.forcePathStyle || provider === 'us3',
       requestHandler: { connectionTimeout: 5000, requestTimeout: 10000 },
+      requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
       credentials,
     });
     try {

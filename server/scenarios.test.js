@@ -189,6 +189,7 @@ test('礼貌回复不当录取；终稿依赖作者确认；回执才算提交',
     await assert.rejects(()=>service.confirmAction(paperWb.id,submit.id),/前置行动/);
     const prepared=await service.confirmAction(paperWb.id,gate.id);
     assert.equal(prepared.action.state,'prepared');
+    await assert.rejects(()=>service.confirmAction(paperWb.id,submit.id),/前置行动/);
     const again=await service.confirmAction(paperWb.id,gate.id);
     assert.equal(again.duplicate,true);
     const tasks=JSON.parse(fs.readFileSync(path.join(folder,'calendar.json'),'utf8')).tasks;
@@ -198,6 +199,7 @@ test('礼貌回复不当录取；终稿依赖作者确认；回执才算提交',
     await assert.rejects(()=>service.recordReceipt(paperWb.id,{}),/回执/);
     const receipt=await service.recordReceipt(paperWb.id,{actionId:gate.id,note:'作者邮件确认'});
     assert.equal(receipt.action.state,'submitted');
+    assert.equal((await service.confirmAction(paperWb.id,submit.id)).action.state,'prepared');
   });
 });
 
@@ -675,7 +677,12 @@ test('终稿可以同时依赖多项前置，未完成时不能写入待办',asy
     await assert.rejects(()=>service.confirmAction(wb.id,submit.id),/前置行动尚未完成：共同作者确认、注册缴费/);
     await service.confirmAction(wb.id,gates[0].id);
     await assert.rejects(()=>service.confirmAction(wb.id,submit.id),/前置行动/);
-    const done=await service.confirmAction(wb.id,gates[1].id).then(()=>service.confirmAction(wb.id,submit.id));
+    await service.confirmAction(wb.id,gates[1].id);
+    await assert.rejects(()=>service.confirmAction(wb.id,submit.id),/前置行动尚未完成：共同作者确认、注册缴费/);
+    await service.recordReceipt(wb.id,{actionId:gates[0].id,status:'confirmed',note:'共同作者已确认终稿'});
+    await assert.rejects(()=>service.confirmAction(wb.id,submit.id),/前置行动尚未完成：注册缴费/);
+    await service.recordReceipt(wb.id,{actionId:gates[1].id,status:'submitted',note:'注册系统已给出缴费回执'});
+    const done=await service.confirmAction(wb.id,submit.id);
     assert.equal(done.action.state,'prepared');
   });
 });
@@ -711,8 +718,84 @@ test('带前置的报告时间在前置完成前不能写入日历',async()=>{
     assert.ok(talk.dependsOn.includes(gate.id));
     await assert.rejects(()=>service.confirmSchedule(wb.id,talk.id),/前置行动尚未完成：共同作者确认/);
     await service.confirmAction(wb.id,gate.id);
+    await assert.rejects(()=>service.confirmSchedule(wb.id,talk.id),/前置行动尚未完成：共同作者确认/);
+    await service.recordReceipt(wb.id,{actionId:gate.id,status:'confirmed',note:'共同作者已确认报告内容'});
     const written=await service.confirmSchedule(wb.id,talk.id);
     assert.equal(written.written,true);
+  });
+});
+
+test('已取消、缺失或异事项前置不会放行待办和日历；已发送回执可以放行',async()=>{
+  await asUser('a',async()=>{
+    const wb=await service.createWorkbench({templateId:'research-publications',name:'前置异常核验',mailboxIds:['a-mail']});
+    const item=await service.createItem(wb.id,{title:'前置核验稿件',fields:{venue:'测试会议'}});
+    const other=await service.createItem(wb.id,{title:'另一篇稿件',fields:{venue:'测试会议'}});
+    await service.recordExternalSource(wb.id,item.id,{channel:'作者补充',note:'请所有作者确认后提交终稿。'});
+    const plan=await service.proposeItemPlan(wb.id,item.id);
+    const gate=plan.actions.find(action=>action.title==='共同作者确认');
+    const submit=plan.actions.find(action=>action.title==='提交终稿');
+    const {action:talk}=await service.proposeSchedule(wb.id,item.id,{title:'前置核验报告',localStart:'2027-01-10T14:00',localEnd:'2027-01-10T15:00',timeZone:'Asia/Shanghai'});
+    await mutateScenarioData(data=>{data.actions.find(action=>action.id===talk.id).dependsOn=[gate.id];});
+    const blocked=async(pattern)=>{
+      await assert.rejects(()=>service.confirmAction(wb.id,submit.id),pattern);
+      await assert.rejects(()=>service.confirmSchedule(wb.id,talk.id,{acknowledgeConflicts:true}),pattern);
+      const store=JSON.parse(fs.readFileSync(path.join(directory,'mailboxes','a-mail','calendar.json'),'utf8'));
+      assert.equal(store.tasks.some(task=>task.scenarioActionId===submit.id),false);
+      assert.equal(store.events.some(event=>event.scenarioActionId===talk.id),false);
+    };
+    await mutateScenarioData(data=>{data.actions.find(action=>action.id===gate.id).state='cancelled';});
+    await blocked(/共同作者确认（已取消/);
+    await mutateScenarioData(data=>{Object.assign(data.actions.find(action=>action.id===gate.id),{state:'confirmed',itemId:other.id});});
+    await blocked(/前置行动缺失/);
+    await mutateScenarioData(data=>{data.actions=data.actions.filter(action=>action.id!==gate.id);});
+    await blocked(/前置行动缺失/);
+    const draft=await service.saveReplyDraft(wb.id,item.id,{body:'已核对终稿，请确认收到。'});
+    await mutateScenarioData(data=>{
+      for(const action of data.actions.filter(action=>[submit.id,talk.id].includes(action.id))) action.dependsOn=[draft.action.id];
+    });
+    await blocked(/回复草稿/);
+    await service.recordReceipt(wb.id,{actionId:draft.action.id,status:'sent',note:'用户在邮箱核实已发送，测试不调用SMTP'});
+    assert.equal((await service.confirmAction(wb.id,submit.id)).action.state,'prepared');
+    assert.equal((await service.confirmSchedule(wb.id,talk.id,{acknowledgeConflicts:true})).written,true);
+  });
+});
+
+test('前置回执在确认排队期间失效时，写入事务内复核并保留原日历和待办',async()=>{
+  await asUser('a',async()=>{
+    const wb=await service.createWorkbench({templateId:'research-publications',name:'前置并发核验',mailboxIds:['a-mail']});
+    const item=await service.createItem(wb.id,{title:'并发核验稿件',fields:{venue:'测试会议'}});
+    await service.recordExternalSource(wb.id,item.id,{channel:'作者补充',note:'请所有作者确认后提交终稿。'});
+    const plan=await service.proposeItemPlan(wb.id,item.id);
+    const gate=plan.actions.find(action=>action.title==='共同作者确认');
+    const submit=plan.actions.find(action=>action.title==='提交终稿');
+    const {action:talk}=await service.proposeSchedule(wb.id,item.id,{title:'并发核验报告',localStart:'2027-01-11T14:00',localEnd:'2027-01-11T15:00',timeZone:'Asia/Shanghai'});
+    await mutateScenarioData(data=>{data.actions.find(action=>action.id===talk.id).dependsOn=[gate.id];});
+    await service.confirmAction(wb.id,gate.id);
+    await service.recordReceipt(wb.id,{actionId:gate.id,status:'confirmed',note:'作者已确认'});
+    const calendarFile=path.join(directory,'mailboxes','a-mail','calendar.json');
+    const before=fs.readFileSync(calendarFile,'utf8');
+    let release,started;
+    const waiting=new Promise(resolve=>{release=resolve;});
+    const running=new Promise(resolve=>{started=resolve;});
+    const update=mutateScenarioData(async(data)=>{
+      started();
+      await waiting;
+      data.actions.find(action=>action.id===gate.id).state='cancelled';
+    });
+    await running;
+    const confirmations=[
+      assert.rejects(()=>service.confirmAction(wb.id,submit.id),/前置行动尚未完成/),
+      assert.rejects(()=>service.confirmSchedule(wb.id,talk.id,{acknowledgeConflicts:true}),/前置行动尚未完成/),
+    ];
+    await new Promise(resolve=>setImmediate(resolve));
+    release();
+    await update;
+    await Promise.all(confirmations);
+    assert.equal(fs.readFileSync(calendarFile,'utf8'),before);
+    const saved=await service.listScenarios();
+    assert.equal(saved.executions.some(execution=>[submit.id,talk.id].includes(execution.actionId)),false);
+    assert.equal(saved.actions.find(action=>action.id===submit.id).state,'pending');
+    assert.equal(saved.actions.find(action=>action.id===talk.id).state,'pending');
   });
 });
 

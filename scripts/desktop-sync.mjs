@@ -29,9 +29,8 @@ if (!fs.existsSync(path.join(WEB, 'server', 'index.js'))) {
 const OWNED = new Set([
   'src/App.jsx',            // 去登录化 / 去管理端的桌面路由
   'src/lib/desktop.js',     // 壳层链接处理 + /desktop/session 会话引导
-  'src/components/pdf-canvas-viewer.jsx', // 桌面端专属 PDF canvas 查看器
   'server/desktop-entry.js', // 桌面进程入口（环境守卫、就绪信号、优雅关闭）
-  'server/desktop-http.js',  // 桌面 HTTP 会话中间件 + pdf.js 资源
+  'server/desktop-http.js',  // 桌面 HTTP 会话中间件
   'server/secure-json.js',   // 配置落盘加密
 ]);
 
@@ -44,8 +43,15 @@ const REMOVE = [
 ];
 
 const COPY_DIRS = ['src', 'server', 'shared', 'public', 'scripts'];
-// 测试与验证素材（合成数据，非真实邮件正文）
-const COPY_FILES = ['index.html', 'docs/resume-test', 'docs/invoice-test'];
+// 测试与验证素材（合成数据，非真实邮件正文）。
+// Dockerfile 与评测用例仅因共享测试套件会读取它们而保留，桌面端不使用容器部署。
+const COPY_FILES = [
+  'index.html',
+  'Dockerfile',
+  'docs/resume-test',
+  'docs/invoice-test',
+  'docs/submission/evaluation-cases.json',
+];
 
 let applied = 0;
 const skipped = [];
@@ -138,31 +144,33 @@ mountDesktopHttp(app);
 if (process.env.DAYLIGHT_DESKTOP === '1') app.use('/api/admin', (req, res) => res.status(404).json({ error: '接口不存在。' }));
 app.use('/api', mobileCors());`);
 
-patch('server/index.js', '桌面监听与就绪信号',
-  `} else {
-  const vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { port: Number(process.env.DAYLIGHT_HMR_PORT || (Number(process.env.PORT || 3000) + 10000)) } }, appType: 'spa' });
-  app.use(vite.middlewares);
-}
-const port = Number(process.env.PORT || 3000);
-const host = process.env.HOST || (productionRuntime ? '0.0.0.0' : '127.0.0.1');
-const server = app.listen(port, host, () => { health.started(); console.log(\`Daylight is ready on port \${port}\`); });
-if (productionRuntime) installShutdown({ health, server });`,
-  `} else {
-  // [desktop patch] 动态导入：安装版运行时不含 vite。
+patch('server/index.js', 'vite 动态导入',
+  `  const vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { port: Number(process.env.DAYLIGHT_HMR_PORT || (Number(process.env.PORT || 3000) + 10000)) } }, appType: 'spa' });`,
+  `  // [desktop patch] 动态导入：安装版运行时不含 vite。
   const { createServer: createViteServer } = await import('vite');
-  const vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { port: Number(process.env.DAYLIGHT_HMR_PORT || (Number(process.env.PORT || 3000) + 10000)) } }, appType: 'spa' });
-  app.use(vite.middlewares);
-}
-const port = Number(process.env.PORT || 3000);
-// [desktop patch] 桌面端只监听回环地址，不接受外部网卡。
-const host = process.env.DAYLIGHT_DESKTOP === '1' ? '127.0.0.1' : (process.env.HOST || (productionRuntime ? '0.0.0.0' : '127.0.0.1'));
-const server = app.listen(port, host);
+  const vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { port: Number(process.env.DAYLIGHT_HMR_PORT || (Number(process.env.PORT || 3000) + 10000)) } }, appType: 'spa' });`);
+
+patch('server/index.js', '桌面端只监听回环地址',
+  `const host = process.env.HOST || (productionRuntime ? '0.0.0.0' : '127.0.0.1');`,
+  `// [desktop patch] 桌面端只监听回环地址，不接受外部网卡。
+const host = process.env.DAYLIGHT_DESKTOP === '1' ? '127.0.0.1' : (process.env.HOST || (productionRuntime ? '0.0.0.0' : '127.0.0.1'));`);
+
+// 保留上游的 RAG 启动预热（bootstrapRagKnowledge），只替换监听/就绪/端口回退。
+patch('server/index.js', '桌面监听与就绪信号',
+  `const server = app.listen(port, host, () => {
+  health.started();
+  console.log(\`Daylight is ready on port \${port}\`);
+  setTimeout(() => { bootstrapRagKnowledge().catch(() => {}); }, 1500);
+});
+if (productionRuntime) installShutdown({ health, server });`,
+  `const server = app.listen(port, host);
 server.on('listening', () => {
   health.started();
   const actualPort = server.address().port;
   // [desktop patch] 原生壳层解析这一行拿到实际端口后再导航。
   if (process.env.DAYLIGHT_DESKTOP === '1') console.log(\`DAYLIGHT_READY \${actualPort}\`);
   else console.log(\`Daylight is ready on port \${actualPort}\`);
+  setTimeout(() => { bootstrapRagKnowledge().catch(() => {}); }, 1500);
 });
 server.on('error', (error) => {
   // [desktop patch] 端口被占用时回退随机端口，避免用户机器上直接打不开。
@@ -280,79 +288,11 @@ patch('server/infra/config.js', 'infra 加密写入',
   `  fs.writeFileSync(configPath, \`\${JSON.stringify(merged, null, 2)}\\n\`);`,
   `  writeSecureJson(configPath, merged);`);
 
-// 2.7 前端：附件预览的桌面端确定性行为
-patch('src/components/attachment-viewer.jsx', 'PDF 查看器导入',
-  `import { fetchAuthorizedBlobUrl, fetchAuthorizedText } from '@/lib/auth-fetch';
-import { getAuthToken } from '@/lib/auth-api';
-import { RichMarkdown } from '@/components/rich-markdown';`,
-  `import { fetchAuthorizedBlobUrl, fetchAuthorizedText } from '@/lib/auth-fetch';
-import { getAuthToken } from '@/lib/auth-api';
-import { isDesktop } from '@/lib/desktop';
-import { RichMarkdown } from '@/components/rich-markdown';
-import { PdfCanvasViewer } from '@/components/pdf-canvas-viewer';`);
-
-patch('src/components/attachment-viewer.jsx', '去掉 Office 内嵌拼接',
-  `function officeEmbedUrl(url) {
-  if (!url || url.startsWith('/')) return null;
-  return \`https://view.officeapps.live.com/op/embed.aspx?src=\${encodeURIComponent(url)}\`;
-}
-
-function formatSize(size) {`,
-  `// [desktop patch] 原先这里会拼一个 Office Online 内嵌地址，但它要求附件有公网可访问 URL；
-// 桌面端附件都是回环地址，微软服务取不到，这个分支实际永远不会生效。统一改为「下载后用系统应用打开」。
-function formatSize(size) {`);
-
-patch('src/components/attachment-viewer.jsx', '去掉 useMemo 导入',
-  `import React, { useEffect, useMemo, useState } from 'react';`,
-  `import React, { useEffect, useState } from 'react';`);
-
-patch('src/components/attachment-viewer.jsx', '去掉 officeUrl memo',
-  `  const officeUrl = useMemo(
-    () => (['excel', 'ppt'].includes(kind) ? officeEmbedUrl(file?.url) : null),
-    [kind, file?.url],
-  );
-  const needsText = ['text', 'code', 'markdown'].includes(kind);`,
-  `  const needsText = ['text', 'code', 'markdown'].includes(kind);`);
-
-patch('src/components/attachment-viewer.jsx', 'PDF 走页面内渲染',
-  `          {url && !loading && !error && kind === 'pdf' && viewUrl && (
-            <iframe
-              title={file.filename || 'pdf'}
-              src={Number(file.page) > 0 ? \`\${viewUrl}#page=\${Number(file.page)}\` : viewUrl}
-              className="h-[70vh] w-full rounded-lg border bg-background"
-            />
-          )}`,
-  `          {url && !loading && !error && kind === 'pdf' && viewUrl && (
-            // [desktop patch] 各平台 WebView 的 PDF 能力不一致（Linux WebKitGTK 常没有查看器），
-            // 桌面端统一用 pdfjs 渲染；浏览器端保留原生查看器以获得更好的滚动/搜索体验。
-            isDesktop() ? (
-              <PdfCanvasViewer src={viewUrl} page={Number(file.page) || 0} />
-            ) : (
-              <iframe
-                title={file.filename || 'pdf'}
-                src={Number(file.page) > 0 ? \`\${viewUrl}#page=\${Number(file.page)}\` : viewUrl}
-                className="h-[70vh] w-full rounded-lg border bg-background"
-              />
-            )
-          )}`);
-
-patch('src/components/attachment-viewer.jsx', 'Office 改为确定行为',
-  `          {url && !loading && !error && (kind === 'excel' || kind === 'ppt') && (
-            officeUrl ? (
-              <iframe title={file.filename || 'office'} src={officeUrl} className="h-[70vh] w-full rounded-lg border bg-background" />
-            ) : (
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>该附件暂无公网地址，无法内嵌 Office 预览。请下载后本地打开。</p>
-                <Button type="button" onClick={downloadAuthorized}><Download className="size-4" />下载</Button>
-              </div>
-            )
-          )}`,
-  `          {url && !loading && !error && (kind === 'excel' || kind === 'ppt') && (
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <p>该格式无法在应用内预览，请下载后用系统应用（Excel / PowerPoint / WPS）打开。</p>
-              <Button type="button" onClick={downloadAuthorized}><Download className="size-4" />下载</Button>
-            </div>
-          )}`);
+// 2.7 前端：附件预览
+// 上游已把 PDF 预览抽成 `src/components/pdf-preview.jsx`（pdfjs 自渲染 + 打包 CJK 资源，
+// 专为「浏览器没有内置 PDF 查看器」的场景写的），桌面端直接复用，不再维护自己的查看器。
+// Office 附件：桌面端附件地址都是相对路径，上游会走「无公网地址 → 下载后打开」分支，
+// 也不会去请求 view.officeapps.live.com，因此无需适配。
 
 // 2.8 打包：运行时依赖白名单必须覆盖 server/ 的全部裸包导入
 const serverBareImports = new Set();

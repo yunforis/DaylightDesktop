@@ -87,9 +87,13 @@ const WELCOME = {
 };
 
 export function LittleD() {
-  const { state, reload, setEventModal } = useWorkspace();
+  const { state, reload, setEventModal, viewMode } = useWorkspace();
   const mailboxId = state?.settings?.activeMailboxId || '';
   const mailboxEmail = state?.settings?.email || '未配置邮箱';
+  // 混合视图（全部邮箱 / 标签）下，知识检索要和列表口径一致，能查到别的邮箱里的邮件。
+  const viewScope = viewMode === 'all'
+    ? { scope: 'all' }
+    : (String(viewMode || '').startsWith('tag:') ? { tag: String(viewMode).slice(4) } : null);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -284,6 +288,7 @@ export function LittleD() {
         .map((item) => ({ role: item.role, content: item.content }));
       const result = await streamAssistantChat(payload, {
         mailboxId: requestMailboxId,
+        scope: viewScope,
         signal: controller.signal,
         onEvent: (event) => {
           if (!isCurrent()) return;
@@ -485,7 +490,7 @@ export function LittleD() {
                       <RagCitations
                         citations={message.citations}
                         mailboxId={mailboxId}
-                        className="border-t border-border/60 pt-2"
+                        className="mt-1"
                       />
                     )}
                     {message.toolTrace?.length > 0 && (

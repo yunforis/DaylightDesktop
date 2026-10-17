@@ -10,12 +10,26 @@ import { readInfraConfig } from './infra/config.js';
 import { getPostgresPool } from './infra/postgres.js';
 import { publishAssistantFileLock } from './assistant-file-lock.js';
 import { isProductionRuntime } from './runtime-mode.js';
+import { isRegisteredMailbox } from './mailbox-identity.js';
 
 export function assistantMailbox(mailboxId, settings = readSettings()) {
   const mailbox = (settings.mailboxes || []).find((item) => item.id === mailboxId);
-  if (!mailbox) throw Object.assign(new Error('邮箱不存在或无权访问。'), { status: 404 });
+  if (!mailbox || (isProductionRuntime() && getRequestUserId()
+    && (mailbox.ownerUserId || mailbox.userId) !== getRequestUserId())) {
+    throw Object.assign(new Error('邮箱不存在或无权访问。'), { status: 404 });
+  }
   return mailbox;
 }
+
+function pendingMailbox(mailboxId) {
+  if (!isProductionRuntime()) return false;
+  const settings = readSettings();
+  const mailbox = assistantMailbox(mailboxId, settings);
+  return mailbox.pendingSetup === true && !isRegisteredMailbox(mailboxId, settings, getRequestUserId());
+}
+
+const setupRequired = () => Object.assign(new Error('请先在设置中保存并配置自己的邮箱，再使用小 D 执行操作。'),
+  { status: 400, code: 'MAILBOX_SETUP_REQUIRED' });
 
 const initial = () => ({ schemaVersion: 1, items: [] });
 const queues = new Map();
@@ -64,6 +78,7 @@ function save(file, data) {
 }
 
 export async function readAssistantState(mailboxId, namespace) {
+  if (pendingMailbox(mailboxId)) return initial();
   const { id, file } = location(mailboxId, namespace);
   const pool = database(file);
   if (!pool) return load(file);
@@ -124,6 +139,7 @@ async function fileMutation(file, change) {
 }
 
 export async function mutateAssistantState(mailboxId, namespace, change) {
+  if (pendingMailbox(mailboxId)) throw setupRequired();
   const { id, file } = location(mailboxId, namespace);
   const previous = queues.get(id) || Promise.resolve();
   const task = previous.catch(() => {}).then(async () => {

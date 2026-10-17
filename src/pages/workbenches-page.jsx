@@ -29,7 +29,9 @@ function Field({label,children}) { return <label className="grid gap-2 text-sm">
 function openPrerequisiteTitles(actions, row) {
   return (row.dependsOn || []).flatMap((id) => {
     const gate = (actions || []).find((action) => action.id === id);
-    return gate && !['prepared', 'confirmed', 'submitted', 'sent', 'cancelled'].includes(gate.state) ? [gate.title] : [];
+    if (!gate || gate.itemId !== row.itemId || gate.workbenchId !== row.workbenchId) return ['前置行动缺失，请核对事项计划'];
+    if (gate.state === 'cancelled') return [`${gate.title}（已取消，需重新核对）`];
+    return ['confirmed', 'submitted', 'sent'].includes(gate.state) ? [] : [gate.title];
   });
 }
 function download(value,filename) {

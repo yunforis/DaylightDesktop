@@ -120,6 +120,16 @@ test('真实 HTTP：个人/HR 均可用招聘，工作台仍需登录且隔离�
     await call(`/scenarios/workbenches/${created['research-publications']}/sources`,tokens[0],'POST',{mailboxId:'mail-0',emailId:'paper',itemId:paperItem.data.id});
     const paperPlan=await call(`/scenarios/workbenches/${created['research-publications']}/items/${paperItem.data.id}/plan`,tokens[0],'POST',{});
     assert.equal(paperPlan.status,200);
+    const paperGate=paperPlan.data.actions.find(action=>action.title==='共同作者确认');
+    const paperSubmit=paperPlan.data.actions.find(action=>action.title==='提交终稿');
+    const confirmPaper=()=>call(`/scenarios/workbenches/${created['research-publications']}/actions/${paperSubmit.id}/confirm`,tokens[0],'POST',{});
+    assert.equal((await confirmPaper()).status,400);
+    assert.equal((await call(`/scenarios/workbenches/${created['research-publications']}/actions/${paperGate.id}/confirm`,tokens[0],'POST',{})).status,200);
+    const stillBlocked=await confirmPaper();
+    assert.equal(stillBlocked.status,400);
+    assert.match(stillBlocked.data.error,/前置行动尚未完成/);
+    assert.equal((await call(`/scenarios/workbenches/${created['research-publications']}/receipts`,tokens[0],'POST',{actionId:paperGate.id,status:'confirmed',note:'合成作者确认回执'})).status,200);
+    assert.equal((await confirmPaper()).status,200);
     const recruitList=await call('/scenarios',tokens[0]);
     assert.equal(recruitList.data.workbenches.filter(row=>row.template.id==='recruitment').length,1);
     const visibilityPath='/scenarios/navigation/visibility';

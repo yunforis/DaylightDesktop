@@ -15,6 +15,7 @@ const { readStore, saveStore, readSettings, saveSettings, readCalendarSync, save
 const { withStorageSnapshot, withStorageCommit, commitStorage, discardStorage, readSnapshotDocument, stageSnapshotDocument, settingsKey, STORAGE_SCHEMA } = await import('./storage/index.js');
 const { mutateScenarioData, readScenarioData } = await import('./scenarios/repository.js');
 const { runWithRequestContext } = await import('./request-context.js');
+const { readTraces, saveTraces } = await import('./traces.js');
 const url = process.env.DAYLIGHT_STORAGE_TEST_URL;
 const integration = url ? test : test.skip;
 let admin, pool;
@@ -263,6 +264,23 @@ integration('real PG: worker explicit mailbox overrides preference and rejects a
     assert.deepEqual(readSnapshotDocument(settingsKey('traces:c')), []);
   });
   await assert.rejects(withStorageSnapshot({ ...options(), mailboxId: 'b' }, () => {}), { status: 403 });
+});
+
+integration('real PG: implicit trace storage uses the owner mailbox and persists independently across snapshots', async () => {
+  await reset();
+  await withStorageCommit(options(), () => {
+    assert.deepEqual(readTraces(), []);
+    saveTraces([{ trace_id: 'owner-trace' }]);
+  });
+  assert.deepEqual((await document('app_settings', 'traces:a')).payload, [{ trace_id: 'owner-trace' }]);
+  assert.equal(await document('app_settings', 'traces:undefined'), undefined);
+  await withStorageSnapshot(options(), () => {
+    assert.deepEqual(readTraces(), [{ trace_id: 'owner-trace' }]);
+  });
+  await withStorageSnapshot({ pool, userId: 'bob' }, () => {
+    assert.deepEqual(readTraces(), []);
+    assert.throws(() => readTraces('a'), { code: 'STORAGE_DOCUMENT_NOT_LOADED' });
+  });
 });
 
 integration('real PG: development standalone scenarios preserve PG authority across process restart and commit calendar atomically', async () => {

@@ -11,8 +11,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { getAuthToken } from '@/lib/auth-api';
-import { getRequestMailboxId } from '@/lib/api';
-import { request } from '@/lib/api';
+import { getRequestMailboxId, request, withViewScope } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const KIND_ICON = {
@@ -38,7 +37,7 @@ function fileToBase64(file) {
 }
 
 async function fetchMaterialBlob(previewUrl) {
-  const response = await fetch(previewUrl, {
+  const response = await fetch(withViewScope(previewUrl), {
     headers: {
       ...(getRequestMailboxId() ? { 'X-Mailbox-Id': getRequestMailboxId() } : {}),
       ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),

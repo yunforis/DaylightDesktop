@@ -1,0 +1,14 @@
+{
+  "name": "Daylight",
+  "short_name": "Daylight",
+  "description": "Daylight — 从一封邮件，到一段安排。邮件驱动的日程与招聘工作流。",
+  "lang": "zh-CN",
+  "start_url": "/app",
+  "scope": "/",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "theme_color": "#121412",
+  "background_color": "#ffffff"
+}

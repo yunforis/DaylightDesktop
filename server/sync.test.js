@@ -3,20 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { once } from 'node:events';
-import { Worker } from 'node:worker_threads';
+import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-// Run the real API and scheduler in an isolated worker. Only the IMAP transport,
+// Isolate the real API and scheduler in a process: Worker teardown can cause
+// a native access violation on Windows after importing the service dependencies.
+// Only the IMAP transport,
 // model response and interval clock are mocked; no QQ or remote model is contacted.
-async function serveFixture() {
-  const { parentPort, workerData } = await import('node:worker_threads');
+async function serveFixture(fixtureData) {
   const { mock } = await import('node:test');
   const { default: express } = await import('express');
   const { ImapFlow } = await import('imapflow');
   let reads = 0;
   let sourceReads = 0;
   let modelCalls = 0;
+  let embedCalls = 0;
   let uid = 1;
   let failMailbox = false;
   let failModel = false;
@@ -25,13 +26,14 @@ async function serveFixture() {
   let releaseRead;
   let blockModel = false;
   let releaseModel;
+  let httpServer;
   mock.timers.enable({ apis: ['setInterval'] });
   mock.method(ImapFlow.prototype, 'connect', async function () {
     reads++;
     this.mailbox = { exists: 1, uidValidity: 10 };
     if (failMailbox) {
       failMailbox = false;
-      throw new Error(`合成连接失败 ${workerData.authorizationCode}`);
+      throw new Error(`合成连接失败 ${fixtureData.authorizationCode}`);
     }
     if (blockRead) {
       blockRead = false;
@@ -52,6 +54,20 @@ async function serveFixture() {
       ].join('\r\n')) } : {}) };
   });
   mock.method(globalThis, 'fetch', async (url, options) => {
+    const requestUrl = String(url);
+    // 向量检索默认开启，同步会先探测供应商模型列表，再按需调用 /embeddings。
+    // 这两类请求不计入「邮件处理模型调用」，否则断言会把辅助调用误当成重复处理。
+    if (requestUrl.endsWith('/models')) {
+      return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ id: 'fixture-embedding' }] }),
+        json: async () => ({ data: [{ id: 'fixture-embedding' }] }) };
+    }
+    if (requestUrl.endsWith('/embeddings')) {
+      embedCalls++;
+      const payload = JSON.parse(options.body || '{}');
+      const inputs = Array.isArray(payload.input) ? payload.input : [payload.input];
+      return { ok: true, status: 200, text: async () => '{"data":[]}',
+        json: async () => ({ data: inputs.map((_, index) => ({ index, embedding: [1, 0, 0] })) }) };
+    }
     modelCalls++;
     if (blockModel) {
       blockModel = false;
@@ -74,11 +90,27 @@ async function serveFixture() {
   });
   const listen = express.application.listen;
   mock.method(express.application, 'listen', function (...args) {
-    const server = listen.apply(this, args);
-    server.once('listening', () => parentPort.postMessage({ port: server.address().port }));
+    const server = httpServer = listen.apply(this, args);
+    server.once('listening', () => process.send({ port: server.address().port }));
     return server;
   });
-  parentPort.on('message', (message) => {
+  process.on('message', async (message) => {
+    if (message.type === 'shutdown') {
+      try {
+        await new Promise((resolve, reject) => {
+          httpServer.close((error) => error ? reject(error) : resolve());
+          httpServer.closeAllConnections();
+        });
+        mock.timers.reset();
+        mock.restoreAll();
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      } finally {
+        process.disconnect();
+      }
+      return;
+    }
     if (message.type === 'tick') mock.timers.tick(message.ms);
     if (message.type === 'block') blockRead = true;
     if (message.type === 'release') releaseRead();
@@ -88,10 +120,10 @@ async function serveFixture() {
     if (message.type === 'fail-model') failModel = true;
     if (message.type === 'fail-match') failMatch = message.value ?? true;
     if (message.type === 'uid') uid = message.uid;
-    parentPort.postMessage({ reads, sourceReads, modelCalls });
+    process.send({ reads, sourceReads, modelCalls, embedCalls });
   });
   process.argv.push('--production');
-  await import(workerData.indexUrl);
+  await import(fixtureData.indexUrl);
 }
 
 const settings = {
@@ -112,22 +144,64 @@ async function fixtureServer(t) {
     mq: { enabled: false }, // Isolate transport from any RabbitMQ running on the host.
     auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
   }, null, 2));
-  const worker = new Worker(`(${serveFixture.toString()})()`, {
-    eval: true, workerData: { indexUrl: new URL('./index.js', import.meta.url).href, authorizationCode: settings.authorizationCode },
-    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' },
+  const fixtureData = { indexUrl: new URL('./index.js', import.meta.url).href, authorizationCode: settings.authorizationCode };
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `(${serveFixture.toString()})(${JSON.stringify(fixtureData)}).catch(error => {
+      console.error(error); process.exitCode = 1; if (process.connected) process.disconnect();
+    })`], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    env: { ...process.env, PORT: '0', DAYLIGHT_RUNTIME: 'local', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
+  let output = '', exitResult, stopping;
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on('data', (chunk) => { output = (output + chunk).slice(-16384); });
+  }
+  const exited = new Promise((resolve) => {
+    child.once('error', (error) => { exitResult = { error }; resolve(exitResult); });
+    child.once('exit', (code, signal) => { exitResult = { code, signal }; resolve(exitResult); });
   });
-  t.after(() => worker.terminate());
-  const [{ port }] = await once(worker, 'message');
+  const failure = (message, result = exitResult) => new Error(
+    `${message}; exitCode=${result?.code ?? 'pending'}, signal=${result?.signal ?? 'none'}\n${result?.error?.message || ''}\n${output}`);
+  const nextMessage = () => new Promise((resolve, reject) => {
+    if (exitResult) { reject(failure('Sync API fixture already exited')); return; }
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off('message', onMessage);
+      child.off('exit', onExit);
+      child.off('error', onError);
+    };
+    const onMessage = (value) => { cleanup(); resolve(value); };
+    const onExit = (code, signal) => { cleanup(); reject(failure('Sync API fixture exited before replying', { code, signal })); };
+    const onError = (error) => { cleanup(); reject(failure('Sync API fixture process failed', { error })); };
+    const timer = setTimeout(() => { cleanup(); reject(failure('Sync API fixture did not reply within 15 seconds')); }, 15000);
+    child.once('message', onMessage);
+    child.once('exit', onExit);
+    child.once('error', onError);
+  });
+  const send = (value) => new Promise((resolve, reject) => child.send(value, (error) => error ? reject(error) : resolve()));
+  const stop = () => stopping ||= (async () => {
+    let timer;
+    try {
+      if (!exitResult) await send({ type: 'shutdown' });
+      const result = await Promise.race([exited, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(failure('Sync API fixture did not shut down within 5 seconds')), 5000);
+      })]);
+      if (result.error || result.code !== 0 || result.signal) throw failure('Sync API fixture exited unsuccessfully', result);
+    } catch (error) {
+      if (!exitResult) { child.kill(); await exited; }
+      throw error;
+    } finally { clearTimeout(timer); }
+  })();
+  t.after(stop);
+  const { port } = await nextMessage();
+  assert.ok(Number.isInteger(port) && port > 0, failure('Sync API fixture returned an invalid port'));
   const request = async (route, method = 'GET', body) => {
     const response = await fetch(`http://127.0.0.1:${port}${route}`, {
-      method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}),
+      method, signal: AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}),
     });
     return { status: response.status, body: await response.json() };
   };
   const command = async (message) => {
-    const response = once(worker, 'message');
-    worker.postMessage(message);
-    return (await response)[0];
+    const [response] = await Promise.all([nextMessage(), send(message)]);
+    return response;
   };
   const syncState = async () => (await request('/api/traces')).body.sync;
   const waitForSync = async (check) => {
@@ -163,8 +237,10 @@ test('自动同步每分钟检查配置，并沿用真实处理链和邮件 ID �
   const second = await app.waitForSync((sync) => sync.id !== first.id && !sync.running);
   assert.equal(second.result.duplicate, 1);
   assert.equal((await app.command({ type: 'counts' })).modelCalls, 1);
+  assert.equal((await app.command({ type: 'counts' })).embedCalls, 1, '默认开启向量检索时，处理过的邮件会被向量化一次');
   assert.equal((await app.command({ type: 'counts' })).sourceReads, 1, '已处理邮件只检查 UID，不再次下载原文');
   assert.equal((await app.request('/api/state')).body.events.length, 1);
+  assert.equal((await app.command({ type: 'counts' })).embedCalls, 1, '重复邮件按 ID 跳过，不重复向量化');
 });
 
 test('手动、自动和示例同步共用锁，忙碌时跳过定时检查', async (t) => {

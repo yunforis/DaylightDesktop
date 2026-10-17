@@ -70,7 +70,7 @@ export async function readAttachmentBytes(mailboxId, id) {
       throw new Error('Production recruitment attachments require shared object storage');
     }
     const object = await getAttachmentObject(record.key);
-    if (!object?.buffer) throw new Error('Recruitment attachment object is missing');
+    if (!object?.buffer) return null;
     return object.buffer;
   }
   requireLocalRuntime('Legacy local recruitment attachment read');

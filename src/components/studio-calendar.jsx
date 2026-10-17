@@ -85,11 +85,7 @@ const VIEWS = {
 
 function shortTime(date) {
   if (!date) return '';
-  const h = date.getHours();
-  const m = date.getMinutes();
-  const suffix = h >= 12 ? 'p' : 'a';
-  const hour12 = h % 12 || 12;
-  return m ? `${hour12}:${String(m).padStart(2, '0')}${suffix}` : `${hour12}${suffix}`;
+  return clock(date);
 }
 
 function sameDateInfo(a, b) {
@@ -98,11 +94,7 @@ function sameDateInfo(a, b) {
 
 function formatRangeLabel(start, end) {
   if (!start || !end) return '';
-  const fmt = (date) => {
-    const h = date.getHours();
-    const m = date.getMinutes();
-    return `${h}:${String(m).padStart(2, '0')}`;
-  };
+  const fmt = (date) => clock(date);
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
@@ -114,6 +106,7 @@ export function StudioCalendar({
   const [view, setView] = useState(initialCalendarView);
   const [exporting, setExporting] = useState(false);
   const [eventMenu, setEventMenu] = useState(null);
+  const eventMenuRef = useRef(null);
   const categoryList = useMemo(() => {
     const list = (categories || []).filter((item) => item && item.enabled !== false);
     return list.length ? list : FALLBACK_CATEGORIES;
@@ -125,7 +118,7 @@ export function StudioCalendar({
   const [savingCategories, setSavingCategories] = useState(false);
   const [dayMore, setDayMore] = useState(null);
   const [dateInfo, setDateInfo] = useState(() => ({
-    title: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
+    title: new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long' }),
     days: 31,
     eventCount: 0,
   }));
@@ -319,14 +312,11 @@ export function StudioCalendar({
       event.stopPropagation();
       const data = info.event.extendedProps?.event;
       if (!data) return;
-      const pad = 8;
-      const width = 200;
-      const height = 280;
-      const x = Math.min(event.clientX, window.innerWidth - width - pad);
-      const y = Math.min(event.clientY, window.innerHeight - height - pad);
+      // 先按点击点落盘，渲染后再按真实菜单尺寸贴边，避免窄屏或长标题裁切
       setEventMenu({
-        x: Math.max(pad, x),
-        y: Math.max(pad, y),
+        x: event.clientX,
+        y: event.clientY,
+        placed: false,
         event: data,
         dateKey: shanghaiDate(data.start),
       });
@@ -357,10 +347,29 @@ export function StudioCalendar({
     };
   }, [eventMenu]);
 
+  useEffect(() => {
+    if (!eventMenu || eventMenu.placed || !eventMenuRef.current) return undefined;
+    const pad = 8;
+    const node = eventMenuRef.current;
+    const frame = requestAnimationFrame(() => {
+      const rect = node.getBoundingClientRect();
+      const width = Math.min(
+        Math.max(rect.width, 12 * 16),
+        Math.min(22 * 16, window.innerWidth - pad * 2),
+      );
+      const height = rect.height || 280;
+      const x = Math.min(Math.max(pad, eventMenu.x), window.innerWidth - width - pad);
+      const y = Math.min(Math.max(pad, eventMenu.y), window.innerHeight - height - pad);
+      node.style.width = `${width}px`;
+      setEventMenu((current) => (current ? { ...current, x, y, placed: true } : current));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [eventMenu]);
+
   const renderDayCellTop = useCallback((arg) => {
     const date = arg.date instanceof Date ? arg.date : new Date(arg.date);
     const dateKey = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-    const dayNum = Number.isNaN(date.getDate()) ? arg.text : date.getDate();
+    const dayNum = Number(dateKey.slice(-2));
     return (
       <div className={cn('fc-daylight-cell-top', arg.isOther && 'is-other')}>
         <span className={cn('fc-daylight-day-num', arg.isToday && 'is-today')}>
@@ -598,6 +607,7 @@ export function StudioCalendar({
             plugins={PLUGINS}
             locales={LOCALES}
             locale={zh ? 'zh-cn' : 'en'}
+            timeZone="Asia/Shanghai"
             initialView={view}
             headerToolbar={false}
             height="100%"
@@ -630,13 +640,14 @@ export function StudioCalendar({
 
       {eventMenu && createPortal(
         <div
-          className="fixed z-[120] min-w-48 overflow-hidden rounded-xl border bg-popover/95 p-1 text-popover-foreground shadow-xl backdrop-blur-xl"
+          ref={eventMenuRef}
+          className="fixed z-[120] min-w-[12rem] max-w-[min(22rem,calc(100vw-1rem))] overflow-hidden rounded-xl border bg-popover/95 p-1 text-popover-foreground shadow-xl backdrop-blur-xl"
           style={{ left: eventMenu.x, top: eventMenu.y }}
           data-context-own
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <div className="truncate px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground">
+          <div className="break-words px-2.5 py-1.5 text-[10px] font-medium leading-snug text-muted-foreground">
             {eventMenu.event.title || '日程'}
           </div>
           {[
@@ -717,24 +728,24 @@ export function StudioCalendar({
       )}
 
       <Dialog open={Boolean(dayMore)} onOpenChange={(open) => { if (!open) setDayMore(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[min(96vw,36rem)] max-w-[min(96vw,36rem)] sm:max-w-[min(96vw,36rem)]">
           <DialogHeader>
             <DialogTitle>{dayMore?.title || '当日日程'}</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[min(60vh,24rem)] space-y-1 overflow-y-auto pr-1">
+          <div className="max-h-[min(60vh,28rem)] space-y-1 overflow-y-auto pr-1">
             {(dayMore?.items || []).map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted/60"
+                className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted/60"
                 onClick={() => {
                   if (item.event) onEvent(item.event);
                   setDayMore(null);
                 }}
               >
-                <span className="size-2 shrink-0 rounded-full" style={{ background: item.color }} />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.title}</span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{item.timeLabel}</span>
+                <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: item.color }} />
+                <span className="min-w-0 flex-1 break-words text-sm font-medium leading-snug">{item.title}</span>
+                <span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">{item.timeLabel}</span>
               </button>
             ))}
             {!dayMore?.items?.length && (

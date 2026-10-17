@@ -5,6 +5,7 @@ import { sanitizeSnapshot } from './traces.js';
 import { readInfraConfig } from './infra/config.js';
 import { getPostgresPool } from './infra/postgres.js';
 import { usesStorageSnapshot } from './storage/index.js';
+import { meetingLinkParts } from '../shared/meeting-link.js';
 
 const now = () => new Date().toISOString();
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
@@ -123,6 +124,16 @@ function definitelyUnsent(error) {
   return error.code === 'EENVELOPE' && !error.accepted?.length;
 }
 
+function meetingInvitationHtml(draft) {
+  const escape = (value) => value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]);
+  const body = meetingLinkParts(draft.body, draft.meeting?.url).map((part) => part.href
+    ? `<a href="${escape(part.href)}" target="_blank" rel="noopener noreferrer">${escape(part.text)}</a>`
+    : escape(part.text)).join('').replace(/\r\n|\r|\n/g, '<br>');
+  return `<div style="white-space:pre-wrap;overflow-wrap:anywhere">${body}</div>`;
+}
+
 export async function sendAssistantDraft(mailboxId, id, input, settings = readSettings(), dependencies = {}) {
   const mailbox = assistantMailbox(mailboxId, settings);
   if (input.confirmed !== true) fail('请先在审核卡核对收件人、主题和正文，再确认发送真实邮件。');
@@ -163,7 +174,8 @@ export async function sendAssistantDraft(mailboxId, id, input, settings = readSe
   try {
     const send = dependencies.sendMail || (await import('./agent.js')).sendMailboxMessage;
     const info = await send(sendSettings, { to: prepared.draft.to, subject: prepared.draft.subject,
-      text: prepared.draft.body, messageId: prepared.draft.outgoingMessageId });
+      text: prepared.draft.body, messageId: prepared.draft.outgoingMessageId,
+      ...(prepared.draft.kind === 'meeting_invitation' ? { html: meetingInvitationHtml(prepared.draft) } : {}) });
     const accepted = (info.accepted || []).map((value) => String(typeof value === 'string' ? value : value.address).toLowerCase());
     const rejected = (info.rejected || []).map((value) => String(typeof value === 'string' ? value : value.address).toLowerCase());
     const complete = prepared.draft.to.every((recipient) => accepted.includes(recipient));

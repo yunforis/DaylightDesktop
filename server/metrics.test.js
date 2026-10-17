@@ -9,9 +9,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const metricsUrl = new URL('./metrics.js', import.meta.url).href;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-metrics-'));
 process.env.DAYLIGHT_METRICS = '1';
 process.env.DAYLIGHT_METRICS_DIR = dir;
@@ -163,7 +162,7 @@ test('a failing sink never throws into the caller and is reported as status', as
 test('metrics stay completely off when the environment switch is absent', () => {
   const script = `
     process.env.DAYLIGHT_METRICS = '0';
-    const metrics = await import(${JSON.stringify(path.join(here, 'metrics.js'))});
+    const metrics = await import(${JSON.stringify(metricsUrl)});
     metrics.startMetrics({ role: 'off' });
     const result = metrics.counter('never.recorded');
     if (result !== false) throw new Error('counter reported a write while disabled');
@@ -179,7 +178,7 @@ test('provenance reports unknown rather than a false clean tree when git is unav
     delete process.env.DAYLIGHT_METRICS_DIR;
     delete process.env.DAYLIGHT_GIT_SHA;
     delete process.env.DAYLIGHT_GIT_DIRTY;
-    const metrics = await import(${JSON.stringify(path.join(here, 'metrics.js'))});
+    const metrics = await import(${JSON.stringify(metricsUrl)});
     const provenance = metrics.metricsProvenance();
     if (provenance.sha !== 'unknown') throw new Error('expected an unknown sha, got ' + provenance.sha);
     if (provenance.dirty !== null) throw new Error('expected dirty to stay null when no tree is reachable, got ' + provenance.dirty);
@@ -193,7 +192,7 @@ test('sink names differ for the same PID under different container host tags', (
   // PID 1 exists in every container: without the host tag the sinks would overwrite each other.
   const script = `
     process.env.DAYLIGHT_METRICS = '0';
-    const metrics = await import(${JSON.stringify(path.join(here, 'metrics.js'))});
+    const metrics = await import(${JSON.stringify(metricsUrl)});
     process.stdout.write(metrics.sinkFileName(1));
   `;
   const nameFor = host => execFileSync(process.execPath, ['--input-type=module', '--eval', script],
@@ -205,16 +204,17 @@ test('sink names differ for the same PID under different container host tags', (
   assert.notEqual(api, worker, 'the same PID in two containers must not share a file name');
 });
 
-test('an unusable metrics directory degrades to sinkError instead of crashing the service', () => {
+test('an unusable metrics directory degrades to sinkError instead of crashing the service', t => {
   // The sink points *inside a regular file*, so mkdir fails with ENOTDIR for any uid —
   // including root, which can otherwise create a missing directory anywhere.
-  const blockedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-metrics-blocked-'));
-  const blocker = path.join(blockedRoot, 'not-a-directory');
-  fs.writeFileSync(blocker, 'x');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-invalid-metrics-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const blocker = path.join(directory, 'not-a-directory');
+  fs.writeFileSync(blocker, 'fixture');
   const script = `
     process.env.DAYLIGHT_METRICS = '1';
     process.env.DAYLIGHT_METRICS_DIR = ${JSON.stringify(path.join(blocker, 'metrics'))};
-    const metrics = await import(${JSON.stringify(path.join(here, 'metrics.js'))});
+    const metrics = await import(${JSON.stringify(metricsUrl)});
     let started;
     try { started = metrics.startMetrics({ role: 'readonly' }); }
     catch (error) { throw new Error('startMetrics threw on an unwritable sink: ' + (error.code || error.name)); }

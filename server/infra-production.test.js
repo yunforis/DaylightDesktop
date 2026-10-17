@@ -106,19 +106,22 @@ test('OSS init and health perform requests; failure rejects without creating loc
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
-test('attachment keys reject traversal and local downloads reject symlink escapes', async () => {
+test('attachment keys reject traversal and local downloads reject symlink escapes', async (t) => {
   for (const key of ['../secret', '/secret', 'a/../../secret', 'a\\secret', 'a/%2e%2e/secret', 'a?x']) {
     await assert.rejects(oss.getAttachmentObject(key), /Invalid attachment key/);
   }
   process.env.DAYLIGHT_RUNTIME = 'local';
+  t.after(() => { process.env.DAYLIGHT_RUNTIME = 'production'; });
   config.saveInfraConfig({ postgres: { enabled: false }, oss: { enabled: false } });
   await oss.initOss();
   const stored = await oss.putAttachment({ filename: 'sample.txt', buffer: Buffer.from('synthetic') });
   assert.equal((await oss.getAttachmentObject(stored.key)).buffer.toString(), 'synthetic');
-  fs.writeFileSync(path.join(dir, 'outside.txt'), 'outside');
-  fs.symlinkSync(path.join(dir, 'outside.txt'), path.join(dir, 'attachments', 'escape'));
-  assert.equal(oss.resolveLocalAttachment('escape'), null);
-  process.env.DAYLIGHT_RUNTIME = 'production';
+  const outside = path.join(dir, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'sample.txt'), 'outside');
+  // Directory junctions exercise the same realpath guard without requiring Windows symlink privileges.
+  fs.symlinkSync(outside, path.join(dir, 'attachments', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal(oss.resolveLocalAttachment('escape/sample.txt'), null);
 });
 
 test('shared readiness rejects missing settings, schema errors, Redis and OSS outages', async (t) => {

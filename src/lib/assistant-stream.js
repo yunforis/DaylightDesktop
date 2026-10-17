@@ -22,6 +22,7 @@ export async function streamAssistantChat(messages, {
   onEvent,
   signal,
   mailboxId = getRequestMailboxId(),
+  scope = null,
   requestId = globalThis.crypto?.randomUUID?.() || `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
 } = {}) {
   const token = getAuthToken();
@@ -30,11 +31,13 @@ export async function streamAssistantChat(messages, {
     ...(mailboxId ? { 'X-Mailbox-Id': mailboxId } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  // 混合视图：把视图范围一起带上，服务端的 search_knowledge 才会检索同样的邮箱集合。
+  const scoped = scope && (scope.scope || scope.tag) ? scope : {};
 
   const call = (stream) => fetch('/api/assistant/chat', {
     method: 'POST',
     headers: { ...headers, Accept: stream ? 'text/event-stream' : 'application/json' },
-    body: JSON.stringify({ messages, stream, requestId }),
+    body: JSON.stringify({ messages, stream, requestId, ...scoped }),
     signal,
   });
 

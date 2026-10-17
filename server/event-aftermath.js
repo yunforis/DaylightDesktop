@@ -40,8 +40,8 @@ function publicMaterial(item) {
   };
 }
 
-export function listMaterials(eventId) {
-  const store = readStore();
+export function listMaterials(eventId, { mailboxId } = {}) {
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   return {
     eventId,
@@ -68,7 +68,7 @@ export async function addMaterial(eventId, body = {}, { userId, username, mailbo
     }
   }
 
-  const store = readStore();
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   const id = randomUUID();
   const material = {
@@ -103,12 +103,12 @@ export async function addMaterial(eventId, body = {}, { userId, username, mailbo
   }
 
   event.materials = [...(event.materials || []), material];
-  saveStore(store);
+  saveStore(store, mailboxId);
   return publicMaterial(material);
 }
 
-export function updateMaterial(eventId, materialId, patch = {}) {
-  const store = readStore();
+export function updateMaterial(eventId, materialId, patch = {}, { mailboxId } = {}) {
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   const material = (event.materials || []).find((item) => item.id === materialId);
   if (!material) {
@@ -119,12 +119,12 @@ export function updateMaterial(eventId, materialId, patch = {}) {
   if (patch.note !== undefined) material.note = String(patch.note || '').trim().slice(0, 2000);
   if (patch.kind && MATERIAL_KINDS.some((item) => item.id === patch.kind)) material.kind = patch.kind;
   if (patch.textContent !== undefined) material.textContent = String(patch.textContent || '').slice(0, 100_000);
-  saveStore(store);
+  saveStore(store, mailboxId);
   return publicMaterial({ ...material, eventId });
 }
 
-export function removeMaterial(eventId, materialId) {
-  const store = readStore();
+export function removeMaterial(eventId, materialId, { mailboxId } = {}) {
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   const before = event.materials?.length || 0;
   event.materials = (event.materials || []).filter((item) => item.id !== materialId);
@@ -133,12 +133,12 @@ export function removeMaterial(eventId, materialId) {
     error.status = 404;
     throw error;
   }
-  saveStore(store);
+  saveStore(store, mailboxId);
   return { ok: true };
 }
 
-export async function readMaterialFile(eventId, materialId) {
-  const store = readStore();
+export async function readMaterialFile(eventId, materialId, { mailboxId } = {}) {
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   const material = (event.materials || []).find((item) => item.id === materialId);
   if (!material?.storageKey) {
@@ -168,7 +168,7 @@ async function extractTextSnippet(material) {
   }
 }
 
-export async function generateEventReport(eventId, body = {}) {
+export async function generateEventReport(eventId, body = {}, { mailboxId } = {}) {
   const settings = readSettings();
   if (!settings.baseUrl || !settings.apiKey || !settings.model) {
     const error = new Error('请先在设置中配置模型接口。');
@@ -176,7 +176,7 @@ export async function generateEventReport(eventId, body = {}) {
     throw error;
   }
 
-  const store = readStore();
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   const materials = event.materials || [];
   const requirements = String(body.requirements || '').trim();
@@ -251,12 +251,12 @@ markdown 使用中文，结构清晰，可含标题、列表、结论与待办�
   }
 
   event.reports = [...(event.reports || []), report];
-  saveStore(store);
+  saveStore(store, mailboxId);
   return report;
 }
 
-export function deleteReport(eventId, reportId) {
-  const store = readStore();
+export function deleteReport(eventId, reportId, { mailboxId } = {}) {
+  const store = readStore(mailboxId);
   const { event } = findEvent(store, eventId);
   const before = event.reports?.length || 0;
   event.reports = (event.reports || []).filter((item) => item.id !== reportId);
@@ -265,6 +265,6 @@ export function deleteReport(eventId, reportId) {
     error.status = 404;
     throw error;
   }
-  saveStore(store);
+  saveStore(store, mailboxId);
   return { ok: true };
 }

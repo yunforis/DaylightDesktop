@@ -2,7 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { getPostgresPool, postgresMode } from '../infra/postgres.js';
 import { isProductionRuntime } from '../runtime-mode.js';
 import { getRequestContext, getRequestUserId, runWithRequestContext } from '../request-context.js';
-import { auxiliarySnapshotDocuments } from './documents.js';
+import { auxiliarySnapshotDocuments, mailboxSnapshotDocuments, mailboxRegistrationDocuments } from './documents.js';
+import { pendingMailboxId } from '../mailbox-identity.js';
 import { counter, timer } from '../metrics.js';
 
 export { STORAGE_SCHEMA } from './schema.js';
@@ -33,6 +34,7 @@ export function readSnapshotDocument(key) {
 export function stageSnapshotDocument(key, payload) {
   const context = current();
   if (!context.documents.has(key)) throw fail(`Document was not loaded: ${key}`, 'STORAGE_DOCUMENT_NOT_LOADED');
+  if (context.documents.get(key).virtual) throw fail('请先在设置中保存邮箱配置，再执行此操作。', 'MAILBOX_SETUP_REQUIRED', 400);
   context.documents.get(key).payload = clone(payload);
   context.dirty.add(key);
 }
@@ -49,7 +51,7 @@ export function discardStorage() {
 /** Synchronous business callback; exceptions restore all staged documents, including calendars. */
 export function mutateSnapshot(change) {
   const context = current();
-  const child = { ...context, documents: clone(context.documents), dirty: new Set(context.dirty) };
+  const child = { ...context, documents: clone(context.documents), dirty: new Set(context.dirty), newMailboxIds: new Set(context.newMailboxIds) };
   try {
     const result = storage.run(child, change);
     if (result && typeof result.then === 'function') {
@@ -58,8 +60,31 @@ export function mutateSnapshot(change) {
     }
     context.documents = child.documents;
     context.dirty = child.dirty;
+    context.newMailboxIds = child.newMailboxIds;
     return result;
   } finally { child.closed = true; }
+}
+
+function emptyDocument(context, table, id, payload, { virtual = false } = {}) {
+  const key = table === 'app_settings' ? settingsKey(id) : calendarKey(id);
+  context.documents.set(key, { table, column: table === 'app_settings' ? 'id' : 'mailbox_id', id,
+    version: null, payload: clone(payload), virtual });
+  return key;
+}
+
+/** Explicit settings registration: never load or adopt an unregistered ID's data. */
+export function registerSnapshotMailboxes(ids) {
+  const context = current();
+  for (const id of ids) {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id)) {
+      throw fail('Invalid new mailbox identity', 'STORAGE_MAILBOX_INVALID', 400);
+    }
+    context.newMailboxIds.add(id);
+    context.dirty.add(emptyDocument(context, 'mailbox_calendars', id, emptyCalendar()));
+    for (const doc of mailboxRegistrationDocuments(id, context.userId)) {
+      context.dirty.add(emptyDocument(context, 'app_settings', doc.id, doc.initial));
+    }
+  }
 }
 
 async function loadDocument(client, context, table, id, initial) {
@@ -87,7 +112,7 @@ export async function createStorageSnapshot(options = {}) {
   const pool = options.pool || getPostgresPool();
   if (!pool) throw fail('PostgreSQL storage is unavailable', 'STORAGE_UNAVAILABLE');
   if (options.mailboxId !== undefined) identity.mailboxId = options.mailboxId;
-  const context = { pool, userId, identity, documents: new Map(), dirty: new Set(), closed: false, committing: false, failed: false };
+  const context = { pool, userId, identity, documents: new Map(), dirty: new Set(), newMailboxIds: new Set(), closed: false, committing: false, failed: false };
   const stop = timer('storage.snapshot.ms', { system: options.system === true });
   const client = await pool.connect();
   try {
@@ -96,15 +121,20 @@ export async function createStorageSnapshot(options = {}) {
     const settings = context.documents.get(settingsKey('default')).payload;
     const mailboxes = (settings.mailboxes || []).filter(box => !userId || (box.ownerUserId || box.userId) === userId);
     const allowed = new Set(mailboxes.map(box => box.id));
+    const pendingId = userId && !mailboxes.length ? pendingMailboxId(userId) : null;
+    if (pendingId) allowed.add(pendingId);
     if (identity.mailboxId !== undefined && !allowed.has(identity.mailboxId)) throw fail('Mailbox does not belong to this storage owner', 'STORAGE_MAILBOX_FORBIDDEN', 403);
     const ids = [...new Set(options.mailboxIds || [...allowed])];
     for (const id of ids) {
       if (!allowed.has(id)) throw fail('Mailbox does not belong to this storage owner', 'STORAGE_MAILBOX_FORBIDDEN', 403);
-      await loadDocument(client, context, 'mailbox_calendars', id, emptyCalendar());
+      if (id === pendingId) {
+        emptyDocument(context, 'mailbox_calendars', id, emptyCalendar(), { virtual: true });
+        for (const doc of mailboxSnapshotDocuments(id)) emptyDocument(context, 'app_settings', doc.id, doc.initial, { virtual: true });
+      } else await loadDocument(client, context, 'mailbox_calendars', id, emptyCalendar());
     }
     if (userId) await loadDocument(client, context, 'app_settings', `scenarios:${userId}`, {});
     // Trusted server configuration only; never pass request-controlled descriptors here.
-    for (const descriptor of [...auxiliarySnapshotDocuments(ids), ...(options.documents || [])]) {
+    for (const descriptor of [...auxiliarySnapshotDocuments(ids.filter(id => id !== pendingId)), ...(options.documents || [])]) {
       const doc = typeof descriptor === 'string' ? { id: descriptor, initial: {} } : descriptor;
       const table = doc.table || 'app_settings';
       if (table === 'mailbox_calendars' && !allowed.has(doc.id)) throw fail('Mailbox does not belong to this storage owner', 'STORAGE_MAILBOX_FORBIDDEN', 403);
@@ -124,12 +154,13 @@ export async function runStorageSnapshot(snapshot, fn) {
   if (storageContext()) throw fail('Nested storage snapshots are not supported', 'STORAGE_NESTED_SNAPSHOT', 400);
   if (!snapshot || snapshot.closed || snapshot.failed || snapshot.running) throw fail('Snapshot is unavailable or already running', 'STORAGE_SNAPSHOT_REQUIRED');
   snapshot.running = true;
-  const context = { ...snapshot, documents: clone(snapshot.documents), dirty: new Set(snapshot.dirty) };
+  const context = { ...snapshot, documents: clone(snapshot.documents), dirty: new Set(snapshot.dirty), newMailboxIds: new Set(snapshot.newMailboxIds) };
   return runWithRequestContext(snapshot.identity, () => storage.run(context, async () => {
     try {
       const result = await fn();
       snapshot.documents = context.documents;
       snapshot.dirty = context.dirty;
+      snapshot.newMailboxIds = context.newMailboxIds;
       snapshot.closed = context.closed;
       return result;
     } catch (error) {
@@ -174,10 +205,18 @@ export async function commitStorage({ beforeCommit, afterWrite, client: supplied
     if (!suppliedClient) await client.query('BEGIN');
     // Fence job ownership before writing business data; callback may also insert checkpoint SQL.
     if (beforeCommit) await beforeCommit(client);
+    // RAG writers take the same mailbox lock before their attachment lock. Empty
+    // namespaces are reserved below; any pre-existing row makes registration fail.
+    for (const id of [...context.newMailboxIds].sort()) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`daylight:mailbox-registration:${id}`]);
+      const { rows } = await client.query('SELECT 1 FROM rag_chunks WHERE mailbox_id = $1 LIMIT 1', [id]);
+      if (rows.length) throw fail('Mailbox identity already has unassigned data; use a new identity', 'STORAGE_VERSION_CONFLICT', 409);
+    }
     // Lock every input in one order, choosing the final lock mode without upgrades.
     // Advisory locks also cover absent rows: row locks alone cannot protect a missing input.
     for (const key of [...context.documents.keys()].sort()) {
       const doc = context.documents.get(key);
+      if (doc.virtual) continue; // Empty setup profiles never observe or adopt stored rows.
       const writing = context.dirty.has(key);
       await client.query(`SELECT pg_advisory_xact_lock${writing ? '' : '_shared'}(hashtextextended($1, 0))`, [`daylight:storage:${key}`]);
       const { rows } = await client.query(`SELECT version FROM ${doc.table} WHERE ${doc.column} = $1 FOR ${writing ? 'UPDATE' : 'SHARE'}`, [doc.id]);
@@ -202,6 +241,7 @@ export async function commitStorage({ beforeCommit, afterWrite, client: supplied
       await client.query('COMMIT');
       for (const [key, version] of versions) context.documents.get(key).version = version;
       context.dirty.clear();
+      context.newMailboxIds.clear();
     } else {
       // Outer checkpoint owns the outcome: consume speculative state, never claim it committed.
       context.dirty.clear();

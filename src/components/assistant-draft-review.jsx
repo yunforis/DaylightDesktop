@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { request } from '@/lib/api';
+import { meetingLinkParts, meetingLinkUrl } from '../../shared/meeting-link.js';
 
 const STATUS_LABELS = {
   pending: '待审核', sending: '正在发送', sent: '已发送', failed: '发送失败',
@@ -56,7 +57,7 @@ export function AssistantDraftReview({ draft, mailboxId, event, disabled = false
   const blocked = disabled || Boolean(operation) || needsRefresh;
   const canEdit = draft.status === 'pending' || (draft.status === 'failed' && draft.canRetry === true);
   const canSend = canEdit && !editing;
-  const meetingUrl = /^https:\/\//i.test(draft.meeting?.url || '') ? draft.meeting.url : '';
+  const meetingUrl = meetingLinkUrl(draft.meeting?.url);
   const accepted = addressText(draft.delivery?.accepted);
   const rejected = addressText(draft.delivery?.rejected);
   const start = beijingTime(event?.start || draft.meeting?.scheduledStart);
@@ -159,7 +160,9 @@ export function AssistantDraftReview({ draft, mailboxId, event, disabled = false
                 <>
                   <div className="space-y-1"><dt className="font-medium text-muted-foreground">收件人</dt><dd className="space-y-0.5 break-all">{(draft.to || []).map((address, index) => <div key={`${address}-${index}`}>{address}</div>)}</dd></div>
                   <div className="space-y-1"><dt className="font-medium text-muted-foreground">主题</dt><dd className="whitespace-pre-wrap break-words">{draft.subject}</dd></div>
-                  <div className="space-y-1.5"><dt className="font-medium text-muted-foreground">完整邮件正文</dt><dd className="whitespace-pre-wrap break-words rounded-lg border bg-background p-2.5 text-xs leading-relaxed">{draft.body}</dd></div>
+                  <div className="space-y-1.5"><dt className="font-medium text-muted-foreground">完整邮件正文</dt><dd className="whitespace-pre-wrap break-words rounded-lg border bg-background p-2.5 text-xs leading-relaxed">{meetingLinkParts(draft.body, draft.kind === 'meeting_invitation' ? meetingUrl : '').map((part, index) => part.href
+                    ? <a key={index} href={part.href} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline underline-offset-4">{part.text}</a>
+                    : part.text)}</dd></div>
                 </>
               )}
             </dl>

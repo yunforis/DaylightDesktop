@@ -18,14 +18,31 @@ const pg = await import('./infra/postgres.js');
 const rag = await import('./rag/store.js');
 const guide = await import('./onboarding-guide.js');
 const db = await import('./db.js');
+const storage = await import('./storage/index.js');
 after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
+// RAG reads and writes require a mailbox owned by the active production snapshot.
+// Keep this ownership fixture independent of the PG client being fault-injected.
+const mailboxSnapshotPool = { async connect() { return {
+  async query(sql, values) {
+    return { rows: /SELECT payload, version FROM app_settings/i.test(sql) && values[0] === 'default'
+      ? [{ payload: { mailboxes: [{ id: 'mailbox', ownerUserId: 'owner' }] }, version: 1 }] : [] };
+  },
+  release() {},
+}; } };
+const withOwnedMailbox = fn => storage.withStorageSnapshot({ pool: mailboxSnapshotPool, userId: 'owner' }, fn);
+
 test('production auxiliary persistence refuses missing PG without accessing local data', async () => {
+  await assert.rejects(rag.listChunks('mailbox'), { code: 'STORAGE_SNAPSHOT_REQUIRED' });
+  await withOwnedMailbox(async () => {
+    for (const action of [
+      () => rag.listChunks('mailbox'),
+      () => rag.replaceChunks('mailbox', 'attachment', []),
+      () => rag.deleteChunksByAttachment('mailbox', 'attachment'),
+      () => rag.reassignCandidate('mailbox', 'attachment', 'candidate'),
+    ]) await assert.rejects(action(), /unavailable/);
+  });
   for (const action of [
-    () => rag.listChunks('mailbox'),
-    () => rag.replaceChunks('mailbox', 'attachment', []),
-    () => rag.deleteChunksByAttachment('mailbox', 'attachment'),
-    () => rag.reassignCandidate('mailbox', 'attachment', 'candidate'),
     () => guide.readOnboardingGuideAsync(),
     () => guide.resetOnboardingGuide(),
     () => db.getKv('key'), () => db.setKv('key', 'value'),
@@ -62,19 +79,26 @@ test('RAG failure rolls back replacement; every attachment mutation locks; produ
   }));
   await pg.initPostgres();
   const chunk = { id: 'new', content: 'new', page: 1, chunkIndex: 0 };
-  await assert.rejects(rag.replaceChunks('mailbox', 'attachment', [chunk]), /synthetic insertion/);
-  assert.equal(rows[0].id, 'old');
-  assert.equal(released, 1);
-  assert.ok(queries.includes('ROLLBACK'));
-  failInsert = false;
-  const result = await rag.replaceChunks('mailbox', 'attachment', [chunk]);
-  assert.equal(result[0].id, 'new');
-  await rag.reassignCandidate('mailbox', 'attachment', 'candidate');
-  await rag.deleteChunksByAttachment('mailbox', 'attachment');
-  assert.equal(queries.filter((sql) => sql.includes('pg_advisory_xact_lock')).length, 4);
+  await withOwnedMailbox(async () => {
+    await assert.rejects(rag.replaceChunks('mailbox', 'attachment', [chunk]), /synthetic insertion/);
+    assert.equal(rows[0].id, 'old');
+    assert.equal(released, 1);
+    assert.ok(queries.includes('ROLLBACK'));
+    failInsert = false;
+    const result = await rag.replaceChunks('mailbox', 'attachment', [chunk]);
+    assert.equal(result[0].id, 'new');
+    await rag.reassignCandidate('mailbox', 'attachment', 'candidate');
+    await rag.deleteChunksByAttachment('mailbox', 'attachment');
+    await assert.rejects(rag.replaceChunks('mailbox', 'attachment', [{ ...chunk, mailboxId: 'other' }]), /scope/);
+  });
+  const locks = queries.filter((sql) => sql.includes('pg_advisory_xact_lock'));
+  assert.equal(locks.length, 8);
+  for (let index = 0; index < locks.length; index += 2) {
+    assert.match(locks[index], /^SELECT pg_advisory_xact_lock_shared\(/);
+    assert.match(locks[index + 1], /^SELECT pg_advisory_xact_lock\(/);
+  }
   assert.equal(released, 4);
   assert.ok(!queries.some((sql) => /CREATE|ALTER/i.test(sql)));
-  await assert.rejects(rag.replaceChunks('mailbox', 'attachment', [{ ...chunk, mailboxId: 'other' }]), /scope/);
   assert.deepEqual(fs.readdirSync(directory), []);
 });
 
@@ -120,7 +144,6 @@ test('audit uses shared atomic append and returns PG errors rather than SQLite f
 });
 
 test('synchronous auxiliary modules use only ALS snapshots, stage atomic revisions, and preserve local compatibility', async () => {
-  const storage = await import('./storage/index.js');
   const prompts = await import('./prompts.js');
   const reports = await import('./report-prompts.js');
   const templates = await import('./mail-templates.js');

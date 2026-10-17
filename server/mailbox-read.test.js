@@ -6,9 +6,9 @@ import { createTraceRecorder } from './traces.js';
 const settings = { email: 'synthetic@example.invalid', authorizationCode: 'invented-mailbox-read-code', fetchLimit: 3 };
 const idFor = (uid, validity = 10, prefix = 'qq') => `${prefix}:${settings.email}:${validity}:${uid}`;
 
-function message(uid, minute, textLength = 100) {
+function message(uid, minute, textLength = 100, flags = []) {
   const date = new Date(`2026-10-14T08:${String(minute).padStart(2, '0')}:00+08:00`);
-  return { uid, internalDate: date, source: Buffer.from([
+  return { uid, internalDate: date, flags: new Set(flags), source: Buffer.from([
     'From: Fixture <sender@example.invalid>', `Subject: Synthetic UID ${uid}`,
     `Date: ${date.toUTCString()}`, 'Content-Type: text/plain; charset=utf-8', '',
     'x'.repeat(textLength),
@@ -31,7 +31,7 @@ function fixture(messages, uidValidity = 10) {
       calls.push({ range, query, options });
       if (!query.source) {
         const first = Number(range.split(':')[0]);
-        for (const { uid, internalDate } of messages.slice(first - 1)) yield { uid, internalDate };
+        for (const { uid, internalDate, flags } of messages.slice(first - 1)) yield { uid, internalDate, flags };
         metadataFinished = true;
       } else {
         assert.equal(metadataFinished, true, '先完整消费元数据获取，不能嵌套 IMAP 命令');
@@ -59,11 +59,12 @@ test('最近 N 封先获取 UID，成功邮件不下载或解析，失败与新�
   const emails = await readMailboxEmails(settings, { clientFactory: imap.clientFactory, recorder,
     processedIds: new Set(store.emails.map(({ id }) => id)), onProgress: (item) => progress.push(item) });
   assert.deepEqual(imap.calls, [
-    { range: '4:*', query: { uid: true, internalDate: true }, options: undefined },
-    { range: '205,309', query: { source: true, uid: true, internalDate: true }, options: { uid: true } },
+    { range: '4:*', query: { uid: true, internalDate: true, flags: true }, options: undefined },
+    { range: '205,309', query: { source: true, uid: true, internalDate: true, flags: true }, options: { uid: true } },
   ]);
   assert.equal(imap.downloadedBytes, messages[4].source.length + messages[5].source.length);
-  assert.deepEqual(emails.find(({ id }) => id === idFor(101)), { id: idFor(101), receivedAt: messages[3].internalDate.toISOString() });
+  assert.deepEqual(emails.find(({ id }) => id === idFor(101)),
+    { id: idFor(101), receivedAt: messages[3].internalDate.toISOString(), seen: false, flagged: false });
   assert.equal(recorder.traces.length, 2);
   assert.ok(recorder.traces.every((trace) => trace.spans.some(({ stage, status }) => stage === 'queue_wait' && status === 'running')));
   const order = [];
@@ -89,7 +90,7 @@ test('15 封已处理的大邮件仅检查元数据，正文下载字节为零�
   const recorder = createTraceRecorder();
   const emails = await readMailboxEmails({ ...settings, fetchLimit: 15 }, { clientFactory: imap.clientFactory, recorder,
     processedIds: new Set(store.emails.map(({ id }) => id)) });
-  assert.deepEqual(imap.calls, [{ range: '6:*', query: { uid: true, internalDate: true }, options: undefined }]);
+  assert.deepEqual(imap.calls, [{ range: '6:*', query: { uid: true, internalDate: true, flags: true }, options: undefined }]);
   assert.equal(imap.downloadedBytes, 0);
   assert.ok(messages.slice(5).reduce((sum, item) => sum + item.source.length, 0) > 960 * 1024);
   assert.deepEqual(recorder.traces, []);
@@ -177,4 +178,14 @@ test('原文读取中断结束已创建日志，释放锁并立即关闭连接',
   assert.equal(recorder.traces.length, 1);
   assert.equal(recorder.traces[0].status, 'failed');
   assert.ok(recorder.traces[0].spans.every(({ status }) => status !== 'running'));
+});
+
+test('同步时读回 IMAP flags：新导入邮件带上已读 / 星标状态', async () => {
+  const messages = [message(101, 1, 100, ['\\Seen', '\\Flagged']), message(102, 2, 100, ['\\Seen'])];
+  const imap = fixture(messages);
+  const emails = await readMailboxEmails(settings, { clientFactory: imap.clientFactory, fetchLimit: 5 });
+  assert.deepEqual(emails.map(({ id, seen, flagged }) => ({ id, seen, flagged })), [
+    { id: idFor(102), seen: true, flagged: false },
+    { id: idFor(101), seen: true, flagged: true },
+  ]);
 });

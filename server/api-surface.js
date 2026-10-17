@@ -46,7 +46,9 @@ export const PRODUCTION_AREAS = new Map([
   ['invitations', '邀请意愿：邮件快照上的 attendance + 审核草稿'],
   ['invitation-preferences$', '回信模板偏好：app_settings'],
   ['emails', '邮件级重跑入口（发票提取、取消/改期目标确认），全部在共享存储快照内'],
+  ['attachments', '附件下载：共享存储快照 + 桶键归属校验（ownsAttachmentKey），生产下必须登录'],
   ['calendar.ics$', '私密日历订阅：Redis 令牌 + 共享存储日程快照'],
+  ['reminders', '提醒规则解析：只做「一句话 → 规则草稿」的模型调用，规则本身存在设备侧，服务端不落库'],
 ]);
 
 /** Areas that intentionally still run on the legacy local-file path. */

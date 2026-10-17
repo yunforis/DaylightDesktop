@@ -19,10 +19,15 @@ test('生产接口面：共享存储上的业务可服务', () => {
     '/calendar-sync/connections', '/calendar-sync/subscription', '/calendar-sync/oauth/callback',
     '/infra/public', '/material-kinds',
     // 本轮修复：这些路径已经迁到共享存储，但当时没有登记，生产直接 503
-    '/rag/status', '/rag/search', '/rag/reindex', '/rag/ask',
+    '/rag/status', '/rag/search', '/rag/reindex', '/rag/ensure', '/rag/ask',
     '/invitations', '/invitations/e-1', '/invitation-preferences',
     '/emails/e-1/extract-invoices', '/emails/e-1/resolve-match',
+    // 附件下载：正则路由（/^\/api\/attachments\/(.+)$/）不会被下面的字符串路由枚举扫到，
+    // 曾经因此没有登记、生产 503，而它本来就由共享存储中间件 + 归属校验服务。
+    '/attachments/resume.pdf',
     '/calendar.ics',
+    // 提醒规则解析：无状态，只把一句话翻成规则草稿，规则本身存在手机端
+    '/reminders/parse',
   ];
   for (const route of production) {
     assert.equal(isProductionApiPath(route), true, `${route} 必须在生产可服务`);

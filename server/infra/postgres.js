@@ -16,6 +16,7 @@ const usersPath = path.join(dataDir, 'users.json');
 
 let pool = null;
 let mode = 'file';
+let lastConnectionError = null;
 
 /** Per-process connection pool size. Defaults to the previous behaviour (5). */
 function poolMax() {
@@ -107,6 +108,7 @@ export function getPostgresPool() {
 export async function closePostgres() {
   const previous = pool;
   pool = null;
+  lastConnectionError = null;
   mode = isProductionRuntime() ? 'unavailable' : 'file';
   await previous?.end();
 }
@@ -159,6 +161,7 @@ export async function initPostgres() {
   }
   pool = null;
   mode = 'file';
+  lastConnectionError = null;
   if (!config.enabled) {
     ensureUsersFile();
     return { ok: true, mode };
@@ -221,6 +224,7 @@ export async function initPostgres() {
   } catch (error) {
     if (next) { try { await next.end(); } catch { /* preserve connection error */ } }
     pool = null;
+    lastConnectionError = error.message;
     if (isProductionRuntime()) { mode = 'unavailable'; throw error; }
     mode = 'file';
     ensureUsersFile();
@@ -237,7 +241,9 @@ export async function postgresStatus() {
       return { ok: false, mode: 'unavailable', error: error.message };
     }
   }
-  if (isProductionRuntime()) return { ok: false, mode: 'unavailable', error: 'PostgreSQL is not connected' };
+  if (isProductionRuntime() || readInfraConfig().postgres.enabled) {
+    return { ok: false, mode: 'unavailable', error: lastConnectionError || 'PostgreSQL is enabled but not connected' };
+  }
   return { ok: true, mode: 'file', note: '未启用本机 PostgreSQL 时用户数据落在 data/users.json' };
 }
 

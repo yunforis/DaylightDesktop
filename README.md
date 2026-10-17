@@ -80,7 +80,7 @@ $env:PORT='3001'; npm run desktop:dev  # PowerShell
 - **数据目录**：由壳层传入（macOS `~/Library/Application Support/com.daylight.desktop`，Windows `%APPDATA%\com.daylight.desktop`，Linux `~/.local/share/com.daylight.desktop`）。后台诊断日志为该目录下的 `backend.log`。
 - **端口回退**：首选端口被占用时自动改用随机端口，再通过 `DAYLIGHT_READY <port>` 通知壳层导航。窗口打不开的情况不会以「静默失败」收场。
 - **生命周期**：关闭窗口隐藏到托盘（托盘菜单：打开 / 数据目录 / 退出）；单实例；窗口大小位置记忆；退出时先向后台 stdin 写 `shutdown` 再等待，最多 3 秒后强杀，避免数据写一半。
-- **PDF 预览**：桌面端用 `pdfjs-dist` 在页面内渲染（`pdf-canvas-viewer.jsx`），不依赖各平台 WebView 的内置 PDF 能力；Office 文档给出「下载后用系统应用打开」的确定行为。
+- **PDF 预览**：直接复用与 Web 相同的 `src/components/pdf-preview.jsx`（`pdfjs-dist` 在页面内渲染），不依赖各平台 WebView 的内置 PDF 能力；CMap、标准字体与 wasm 解码器经 `import.meta.glob` 打进前端产物，离线可用。Office 文档在桌面端走「该附件暂无公网地址，无法内嵌 Office 预览」分支：附件地址都是相对路径，不会去请求 `view.officeapps.live.com`。
 - **外部链接**：`http(s)` / `mailto` 交给系统浏览器；本机 PDF 用应用内查看器。
 - **语音输入**：小 D 复用浏览器 `SpeechRecognition`，先做能力探测；不支持时提示改用键盘输入。
 
@@ -130,8 +130,8 @@ npm run desktop:check # Rust 壳层检查
 bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴权边界）
 ```
 
-- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、打包运行时（不含 `vite`）能独立启动。
-- **共享业务测试**当前 547 项中 49 项失败，且与 Web 真源**失败集合完全一致**——它们是同时启动真实 Express 服务、mock timer 的历史集成测试，不是桌面端引入。CI 中该步骤 `continue-on-error`。
+- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、打包运行时（不含 `vite`）能独立启动。
+- **共享业务测试**共 680 项：587 通过 / 58 失败 / 35 跳过，与 Web 真源**逐条用例状态完全一致**（本轮对齐引入 0 项差异）。失败项是同时启动真实 Express 服务、mock timer 的历史集成测试，不是桌面端引入。CI 中该步骤 `continue-on-error`。
 - 所有写盘测试使用 `work/` 下的独立数据目录，不触碰用户数据。
 
 ## 7. 与 Daylight 真源对齐
@@ -146,7 +146,9 @@ node scripts/desktop-sync.mjs --check    # 只检查补丁锚点，不写文件
 
 脚本会：整树复制真源的共享代码 → 移除 Web 专有页面 → 逐条重贴桌面补丁（精确字符串匹配，锚点找不到立刻报错）→ 校验运行时依赖白名单覆盖了 `server/` 的全部裸包导入。
 
-**桌面端自有文件不受同步影响**：`src/App.jsx`、`src/lib/desktop.js`、`src/components/pdf-canvas-viewer.jsx`、`src-tauri/**`、`scripts/desktop*.mjs`、`scripts/prepare-desktop.mjs`、`desktop-tests/**`。
+`Dockerfile` 与 `docs/submission/evaluation-cases.json` 也在同步清单里，**只因为共享测试套件会读取它们**；桌面端不使用容器部署，也不参与比赛材料提交。
+
+**桌面端自有文件不受同步影响**：`src/App.jsx`、`src/lib/desktop.js`、`server/desktop-entry.js`、`server/desktop-http.js`、`server/secure-json.js`、`src-tauri/**`、`scripts/desktop*.mjs`、`scripts/prepare-desktop.mjs`、`desktop-tests/**`。
 
 补丁清单与理由见 `STATUS.md`，`desktop-tests` 中有锚点自检测试守护。
 
@@ -156,4 +158,6 @@ node scripts/desktop-sync.mjs --check    # 只检查补丁锚点，不写文件
 - 同一数据目录**不能**给多个后台进程同时写入（JSON + 进程内协调）。
 - 本地模式不提供持久化后台任务队列；长同步在请求内完成，页面通过状态轮询与 trace 观察进度。
 - 真实 IMAP / SMTP / 模型 / 飞书 / 外部日历的可用性取决于用户自己的账号与网络，需要用户自行实连验证；本轮未做真实服务实连。
+- **字体**：`index.html` 仍会从 `fonts.googleapis.com` 拉取 Noto Sans SC / Sora / Space Grotesk。离线或受限网络下会回退到系统字体（macOS 为苹方），版式不会错乱，但字形与 Web 端联网时略有差异。桌面端未内置这些字体，以免安装包体积和字重授权扩散。
+- **睡眠唤醒**：壳层没有监听系统唤醒事件。后台 Node 进程在唤醒后仍在运行，定时同步与空闲监听会在下一轮触发；本机未实测唤醒路径。
 - 未在 Windows / Linux 实机验证；`.github/workflows/desktop.yml` 已配置三平台验证与四产物打包，但本机没有 GitHub remote，**Actions 未实际运行过**。

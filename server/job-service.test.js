@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMailHandler, createPlanHandler, scheduleMailboxes, queueCalendarExport } from './job-service.js';
+import { createMailHandler, createPlanHandler, scheduleMailboxes, queueCalendarExport, enqueueMail, enqueuePlan } from './job-service.js';
 import { withStorageSnapshot, commitStorage, readSnapshotDocument, stageSnapshotDocument, settingsKey } from './storage/index.js';
 import { readSettings, readStore } from './store.js';
 import { readTraces, saveTraces } from './traces.js';
 import { externalSyncKey } from './external-calendar.js';
+import { pendingMailboxId } from './mailbox-identity.js';
 
 const job = () => ({ id: 'job-a', lease_token: 'lease-a', tenant_id: 'alice', owner_id: 'alice', mailbox_id: 'a',
   payload: { workbenchId: 'workbench', itemId: 'item', useModel: false } });
@@ -50,6 +51,28 @@ function fixture(settings = configured()) {
   return { pool, snapshot, log, get checkpoint() { return checkpoint; },
     data: () => rows.get(rowKey('app_settings', 'scenarios:alice')).payload };
 }
+
+test('an unregistered mailbox cannot enqueue mail or model work before setup is saved', async () => {
+  const f = fixture({ mailboxes: [{ id: 'unowned' }, { id: 'foreign', ownerUserId: 'bob' }] });
+  const mailboxId = pendingMailboxId('alice');
+  let enqueued = 0;
+  const jobs = { enqueue() { enqueued++; assert.fail('pending setup must not create a persistent task'); } };
+  await f.snapshot({ userId: 'alice' }, async () => {
+    assert.equal(readSettings().activeMailboxId, mailboxId);
+    assert.throws(() => enqueueMail({ tenantId: 'alice', ownerId: 'alice', mailboxId, idempotencyKey: 'test' }, jobs),
+      { code: 'MAILBOX_SETUP_REQUIRED', status: 400 });
+    const scenarios = readSnapshotDocument(settingsKey('scenarios:alice'));
+    scenarios.workbenches[0].mailboxIds = [mailboxId];
+    stageSnapshotDocument(settingsKey('scenarios:alice'), scenarios);
+    await assert.rejects(enqueuePlan({ ownerId: 'alice', workbenchId: 'workbench', itemId: 'item', idempotencyKey: 'test' }, jobs),
+      { code: 'MAILBOX_SETUP_REQUIRED', status: 400 });
+    // Only the private in-memory fixture is committed; no live job store or
+    // external API is used.
+    const { commitStorage } = await import('./storage/index.js');
+    await commitStorage();
+  });
+  assert.equal(enqueued, 0);
+});
 
 function planHarness(f = fixture(), { loseAfterWrite = false, changedScope = false } = {}) {
   let fences = 0;

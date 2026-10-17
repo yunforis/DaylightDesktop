@@ -3,7 +3,7 @@ import { ragSearch } from './retrieve.js';
 
 function keywordAnswer(query, hits) {
   if (!hits.length) {
-    return '当前邮箱的知识库里没有和这句话相关的片段。可以先同步邮件，或在邮件页把已处理邮件纳入知识库后再问。';
+    return '当前检索范围的知识库里没有和这句话相关的片段。可以先同步邮件，或在邮件页把已处理邮件纳入知识库后再问。';
   }
   const lines = hits.slice(0, 5).map((item, index) => {
     const where = item.emailId ? '邮件' : '附件';
@@ -17,6 +17,7 @@ function keywordAnswer(query, hits) {
  */
 export async function askMailboxKnowledge({
   mailboxId,
+  mailboxIds,
   message,
   settings = {},
   limit = 6,
@@ -25,6 +26,7 @@ export async function askMailboxKnowledge({
   if (!query) return { answer: '请先写出要找的内容。', citations: [], mode: 'empty' };
   const search = await ragSearch({
     mailboxId,
+    mailboxIds,
     query,
     settings,
     limit,

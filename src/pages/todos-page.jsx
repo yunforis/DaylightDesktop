@@ -190,10 +190,10 @@ export default function TodosPage() {
                             key={`${task.id}-${source.emailId}`}
                             size="sm"
                             variant="outline"
-                            className="h-8 px-3 text-xs"
+                            className="h-8 max-w-full min-w-0 px-3 text-xs"
                             onClick={() => openEmail(source.emailId)}
                           >
-                            查看原文：{source.emailSubject || source.emailId}
+                            <span className="truncate">查看原文：{source.emailSubject || source.emailId}</span>
                           </Button>
                         ))}
                       </div>

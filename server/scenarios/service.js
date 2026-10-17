@@ -808,6 +808,8 @@ export async function confirmAction(workbenchId, actionId) {
     const current = next.actions.find((row) => row.id === actionId);
     if (!current) problem('行动不存在', 404);
     if (current.state === 'cancelled') problem('该行动已因后续通知取消，不能再写入待办');
+    const openTasks = openPrerequisiteTitles(next, current);
+    if (openTasks.length) problem(`前置行动尚未完成：${openTasks.join('、')}`);
     const again = next.executions.find((row) => row.actionId === actionId && row.kind === 'task.write');
     if (again) return { action: current, execution: again, duplicate: true };
     const mailboxId = current.mailboxId || workbench.mailboxIds[0];
@@ -1117,7 +1119,10 @@ export async function proposeSchedule(workbenchId, itemId, input) {
 function openPrerequisiteTitles(data, action) {
   return (action?.dependsOn || []).flatMap((id) => {
     const gate = data.actions.find((row) => row.id === id);
-    return gate && !['prepared', 'confirmed', 'submitted', 'sent', 'cancelled'].includes(gate.state) ? [gate.title] : [];
+    if (!gate || gate.itemId !== action.itemId || gate.workbenchId !== action.workbenchId) return ['前置行动缺失，请核对事项计划'];
+    if (gate.state === 'cancelled') return [`${gate.title}（已取消，需重新核对）`];
+    // Prepared means only that a local task/draft exists; an external receipt is still required.
+    return ['confirmed', 'submitted', 'sent'].includes(gate.state) ? [] : [gate.title];
   });
 }
 
@@ -1144,7 +1149,10 @@ export async function confirmSchedule(workbenchId, actionId, input = {}) {
   }
   return mutateScenarioData((next) => {
     const current = next.actions.find((row) => row.id === actionId);
+    if (!current?.schedule) problem('日程安排不存在', 404);
     if (current?.state === 'cancelled') problem('该行动已因后续通知取消，不能再写入日历');
+    const openSchedule = openPrerequisiteTitles(next, current);
+    if (openSchedule.length) problem(`前置行动尚未完成：${openSchedule.join('、')}`);
     const again = next.executions.find((row) => row.actionId === actionId && row.kind === 'calendar.write');
     if (again) return { duplicate: true, execution: again, conflicts };
     const mailboxId = current.mailboxId || workbench.mailboxIds[0];

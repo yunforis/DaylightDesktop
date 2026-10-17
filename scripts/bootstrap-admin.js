@@ -7,8 +7,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { initPostgres, findUserByEmail, findUserByUsername, createUser, updateUser } from '../server/infra/postgres.js';
+import { initPostgres, closePostgres, findUserByEmail, findUserByUsername, createUser, updateUser } from '../server/infra/postgres.js';
 import { readInfraConfig, saveInfraConfig } from '../server/infra/config.js';
+import { isProductionRuntime } from '../server/runtime-mode.js';
 
 function arg(name, envKey) {
   const idx = process.argv.indexOf(`--${name}`);
@@ -72,6 +73,12 @@ async function main() {
     console.log(`已创建管理员：${user.email} / ${user.username}`);
   }
 
+  if (isProductionRuntime()) {
+    console.log('已在 PostgreSQL 创建或提升管理员；生产认证配置继续由环境变量管理，无本地配置写入。');
+    console.log('使用该邮箱/用户名与密码登录 /login 或 /admin/login。');
+    return;
+  }
+
   const infra = readInfraConfig({ force: true });
   const emails = new Set(
     (infra.auth.adminEmails || []).map((item) => String(item).trim().toLowerCase()).filter(Boolean),
@@ -95,5 +102,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(error.message || error);
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(() => closePostgres());

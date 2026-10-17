@@ -5,7 +5,7 @@ import express from 'express';
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { storageHttpMiddleware } from './storage-http.js';
-import { stageSnapshotDocument, readSnapshotDocument, settingsKey, calendarKey, STORAGE_SCHEMA } from './storage/index.js';
+import { stageSnapshotDocument, readSnapshotDocument, settingsKey, calendarKey, commitStorage, STORAGE_SCHEMA } from './storage/index.js';
 
 process.env.DAYLIGHT_RUNTIME = 'production';
 const settings = { mailboxes: [{ id: 'a', ownerUserId: 'alice' }, { id: 'c', ownerUserId: 'alice' }, { id: 'b', ownerUserId: 'bob' }] };
@@ -107,6 +107,22 @@ test('error response discards dirty documents without committing or uncommitted 
   assert.equal(pool.state.commits, 0);
   assert.equal(server.error(), undefined);
   assert.throws(late, { code: 'STORAGE_SNAPSHOT_REQUIRED' });
+});
+
+test('an explicitly committed partial business result survives an unsuccessful HTTP response', async t => {
+  const pool = controlledPool();
+  const server = await serve(t, pool, async (req, res) => {
+    stageSnapshotDocument(calendarKey('a'), { emails: [{ id: 'invoice', invoiceStatus: 'partial', invoiceErrors: ['synthetic extraction failure'] }] });
+    await commitStorage();
+    res.status(502).json({ error: '识别未完成，已保留此前结果。' });
+  });
+  const response = await fetch(server.url);
+  assert.equal(response.status, 502);
+  assert.match((await response.json()).error, /已保留/);
+  await server.done;
+  assert.equal(pool.state.writes, 1);
+  assert.equal(pool.state.commits, 1);
+  assert.equal(server.error(), undefined);
 });
 test('SSE stays buffered until commit; write callbacks can advance a finite stream', async t => {
   const pool = controlledPool();

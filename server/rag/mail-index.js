@@ -1,6 +1,7 @@
 import { chunkPages } from './chunk.js';
 import { ingestAttachmentChunks } from './ingest.js';
-import { mailAttachmentKey, mailBodyKey } from './mail-ref.js';
+import { listChunks } from './store.js';
+import { mailAttachmentKey, mailBodyKey, parseMailRef } from '../../shared/mail-ref.js';
 
 function plainText(value) {
   return String(value || '')
@@ -86,6 +87,33 @@ export async function reindexMailboxEmails({ mailboxId, emails = [], settings = 
     }
   }
   return { processed, chunkCount };
+}
+
+/** 只补尚未入库的历史邮件，已有片段的跳过，适合启动与登录后的后台回填。 */
+export async function ensureMailboxEmailsIndexed({
+  mailboxId,
+  emails = [],
+  settings = {},
+  context,
+} = {}) {
+  if (!mailboxId) return { processed: 0, skipped: 0, chunkCount: 0, missing: 0 };
+  const chunks = await listChunks(mailboxId);
+  const indexed = new Set();
+  for (const chunk of chunks) {
+    const ref = parseMailRef(chunk.attachmentId);
+    if (ref.emailId) indexed.add(ref.emailId);
+  }
+  const missing = (emails || []).filter((email) => email?.id && !indexed.has(email.id));
+  if (!missing.length) {
+    return { processed: 0, skipped: indexed.size, chunkCount: 0, missing: 0 };
+  }
+  const result = await reindexMailboxEmails({
+    mailboxId,
+    emails: missing,
+    settings,
+    context,
+  });
+  return { ...result, skipped: indexed.size, missing: missing.length };
 }
 
 export function chunkEmailPreview(email) {

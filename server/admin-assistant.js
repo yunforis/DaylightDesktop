@@ -687,7 +687,7 @@ export async function runAdminAssistantChat(
 }
 
 /** 管理端全局搜索索引（高覆盖）。 */
-export async function buildAdminSearchIndex({ syncState } = {}) {
+export async function buildAdminSearchIndex({ syncState, jobs: queuedJobs } = {}) {
   const settings = readSettings();
   const users = await adminListUsers().catch(() => []);
   const mailboxes = mailboxStats(settings);
@@ -779,7 +779,7 @@ export async function buildAdminSearchIndex({ syncState } = {}) {
     keywords: `${id} ${templateMetaById[id]?.label || ''} smtp 验证码`,
     hint: id,
   }));
-  const jobs = listJobs(30).map((job) => ({
+  const jobs = (queuedJobs || listJobs(30)).map((job) => ({
     id: `job-${job.id || job.name}-${job.createdAt || ''}`,
     label: job.name || job.type || '队列任务',
     hint: [job.status, job.queue].filter(Boolean).join(' · '),

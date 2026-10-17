@@ -5,8 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { once } from 'node:events';
-import { Worker } from 'node:worker_threads';
+import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
@@ -118,10 +117,9 @@ test('系统 DNS 解析失败时不创建 SMTP 连接，保留解析错误供发
   assert.equal(transport.mock.callCount(), 0);
 });
 
-// Use the real Express API and JSON store in a worker. SMTP/IMAP/model transports
-// are synthetic and the interval clock is disabled; nothing reaches QQ or a model.
-async function serveFixture() {
-  const { parentPort, workerData } = await import('node:worker_threads');
+// A separate process avoids native PDF module teardown in Windows Worker threads.
+// Real Express API/JSON store, synthetic SMTP/IMAP/model and disabled interval clock.
+async function serveFixture(fixtureData) {
   const { mock } = await import('node:test');
   const { default: dns } = await import('node:dns/promises');
   const { default: express } = await import('express');
@@ -136,11 +134,12 @@ async function serveFixture() {
   let failDns = false;
   let blockModel = false;
   let releaseModel;
+  let httpServer;
   mock.timers.enable({ apis: ['setInterval'] });
   mock.method(dns, 'lookup', async () => {
     if (failDns) {
       failDns = false;
-      throw Object.assign(new Error(`getaddrinfo ENOTFOUND smtp.qq.com ${workerData.settings.email} ${workerData.settings.authorizationCode} ${workerData.settings.apiKey} sender@example.invalid`), { code: 'ENOTFOUND' });
+      throw Object.assign(new Error(`getaddrinfo ENOTFOUND smtp.qq.com ${fixtureData.settings.email} ${fixtureData.settings.authorizationCode} ${fixtureData.settings.apiKey} sender@example.invalid`), { code: 'ENOTFOUND' });
     }
     return { address: '192.0.2.5', family: 4 };
   });
@@ -153,7 +152,7 @@ async function serveFixture() {
       }
       if (failSend) {
         failSend = false;
-        throw new Error(`合成 SMTP 连接失败 ${workerData.settings.email} ${workerData.settings.authorizationCode} ${workerData.settings.apiKey} sender@example.invalid`);
+        throw new Error(`合成 SMTP 连接失败 ${fixtureData.settings.email} ${fixtureData.settings.authorizationCode} ${fixtureData.settings.apiKey} sender@example.invalid`);
       }
       return { accepted: [mail.to], rejected: [], messageId: `<reply-fixture-${outgoing.length}@example.invalid>` };
     },
@@ -189,21 +188,37 @@ async function serveFixture() {
   });
   const listen = express.application.listen;
   mock.method(express.application, 'listen', function (...args) {
-    const server = listen.apply(this, args);
-    server.once('listening', () => parentPort.postMessage({ port: server.address().port }));
+    const server = httpServer = listen.apply(this, args);
+    server.once('listening', () => process.send({ port: server.address().port }));
     return server;
   });
-  parentPort.on('message', (message) => {
+  process.on('message', async (message) => {
+    if (message.type === 'shutdown') {
+      try {
+        await new Promise((resolve, reject) => {
+          httpServer.close((error) => error ? reject(error) : resolve());
+          httpServer.closeAllConnections();
+        });
+        mock.timers.reset();
+        mock.restoreAll();
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      } finally {
+        process.disconnect();
+      }
+      return;
+    }
     if (message.type === 'block-send') blockSend = true;
     if (message.type === 'release-send') releaseSend();
     if (message.type === 'fail-send') failSend = true;
     if (message.type === 'fail-dns') failDns = true;
     if (message.type === 'block-model') blockModel = true;
     if (message.type === 'release-model') releaseModel();
-    parentPort.postMessage({ outgoing, reads, modelCalls });
+    process.send({ outgoing, reads, modelCalls });
   });
   process.argv.push('--production');
-  await import(workerData.indexUrl);
+  await import(fixtureData.indexUrl);
 }
 
 async function fixtureServer(t, { settingsOverrides = {}, emailOverrides = {}, traceOverrides = {}, directory } = {}) {
@@ -223,22 +238,65 @@ async function fixtureServer(t, { settingsOverrides = {}, emailOverrides = {}, t
       auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
     }, null, 2));
   }
-  const worker = new Worker(`(${serveFixture.toString()})()`, {
-    eval: true, workerData: { indexUrl: new URL('./index.js', import.meta.url).href, settings: storedSettings },
-    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' },
+  const fixtureData = { indexUrl: new URL('./index.js', import.meta.url).href, settings: storedSettings };
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `(${serveFixture.toString()})(${JSON.stringify(fixtureData)}).catch(error => {
+      console.error(error); process.exitCode = 1; if (process.connected) process.disconnect();
+    })`], { cwd: path.dirname(path.dirname(fileURLToPath(import.meta.url))), windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    env: { ...process.env, PORT: '0', DAYLIGHT_RUNTIME: 'local', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
+  let output = '', exitResult, stopping;
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on('data', (chunk) => { output = (output + chunk).slice(-16384); });
+  }
+  const exited = new Promise((resolve) => {
+    child.once('error', (error) => { exitResult = { error }; resolve(exitResult); });
+    child.once('exit', (code, signal) => { exitResult = { code, signal }; resolve(exitResult); });
   });
-  t.after(() => worker.terminate());
-  const [{ port }] = await once(worker, 'message');
+  const failure = (message, result = exitResult) => new Error(
+    `${message}; exitCode=${result?.code ?? 'pending'}, signal=${result?.signal ?? 'none'}\n${result?.error?.message || ''}\n${output}`);
+  const nextMessage = () => new Promise((resolve, reject) => {
+    if (exitResult) { reject(failure('Reply API fixture already exited')); return; }
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off('message', onMessage);
+      child.off('exit', onExit);
+      child.off('error', onError);
+    };
+    const onMessage = (value) => { cleanup(); resolve(value); };
+    const onExit = (code, signal) => { cleanup(); reject(failure('Reply API fixture exited before replying', { code, signal })); };
+    const onError = (error) => { cleanup(); reject(failure('Reply API fixture process failed', { error })); };
+    const timer = setTimeout(() => { cleanup(); reject(failure('Reply API fixture did not reply within 15 seconds')); }, 15000);
+    child.once('message', onMessage);
+    child.once('exit', onExit);
+    child.once('error', onError);
+  });
+  const send = (value) => new Promise((resolve, reject) => child.send(value, (error) => error ? reject(error) : resolve()));
+  const stop = () => stopping ||= (async () => {
+    let timer;
+    try {
+      if (!exitResult) await send({ type: 'shutdown' });
+      const result = await Promise.race([exited, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(failure('Reply API fixture did not shut down within 5 seconds')), 5000);
+      })]);
+      if (result.error || result.code !== 0 || result.signal) throw failure('Reply API fixture exited unsuccessfully', result);
+    } catch (error) {
+      if (!exitResult) { child.kill(); await exited; }
+      throw error;
+    } finally { clearTimeout(timer); }
+  })();
+  t.after(stop);
+  const { port } = await nextMessage();
+  assert.ok(Number.isInteger(port) && port > 0, failure('Reply API fixture returned an invalid port'));
   const request = async (route, method = 'GET', body) => {
-    const response = await fetch(`http://127.0.0.1:${port}${route}`, { method,
+    const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, signal: AbortSignal.timeout(15000),
       headers: { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     return { status: response.status, body: await response.json() };
   };
   const command = async (message) => {
-    const result = once(worker, 'message');
-    worker.postMessage(message);
-    return (await result)[0];
+    const [result] = await Promise.all([nextMessage(), send(message)]);
+    return result;
   };
   const waitFor = async (check) => {
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -252,7 +310,7 @@ async function fixtureServer(t, { settingsOverrides = {}, emailOverrides = {}, t
     feedback: (action, draft) => request(`/api/traces/${originalTrace.trace_id}/feedback`, 'PUT', { action, draft }),
     trace: async () => (await request('/api/traces')).body.traces.find((item) => item.trace_id === originalTrace.trace_id),
     diskTrace: () => JSON.parse(fs.readFileSync(path.join(directory, 'traces.json'), 'utf8')).find((item) => item.trace_id === originalTrace.trace_id),
-    stop: () => worker.terminate(),
+    stop,
   };
 }
 

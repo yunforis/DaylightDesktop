@@ -274,14 +274,12 @@ export function EmailDetailSheet() {
                       onUpdated={reload}
                     />
                   ) : null}
-                  {(selectedEmail.attachments || []).length > 0
-                    && (showRecruitment
-                      ? !(selectedEmail.category === 'resume' || selectedEmail.extraction?.category === 'resume')
-                      : true) && (
+                  {!showRecruitment && (selectedEmail.attachments || []).length > 0 && (
                     <section className="space-y-2">
                       <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">附件</h3>
                       <AttachmentList
                         attachments={selectedEmail.attachments}
+                        mailboxId={mailboxId}
                         onPreview={(file) => openAttachmentViewer(file)}
                       />
                     </section>
@@ -379,7 +377,7 @@ export function EmailDetailSheet() {
                     {(selectedEmail.attachments || []).length > 0 && (
                       <div className="sm:col-span-2">
                         <MetaField label="附件">
-                          <AttachmentList attachments={selectedEmail.attachments} onPreview={(file) => openAttachmentViewer(file)} />
+                          <AttachmentList attachments={selectedEmail.attachments} mailboxId={mailboxId} onPreview={(file) => openAttachmentViewer(file)} />
                         </MetaField>
                       </div>
                     )}

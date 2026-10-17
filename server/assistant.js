@@ -429,7 +429,7 @@ function summarizeTask(task) {
   };
 }
 
-async function runTool(name, args, { settings, mailboxId, operationKey }) {
+async function runTool(name, args, { settings, mailboxId, mailboxIds, operationKey }) {
   if (name === 'get_current_time') return currentTime();
   if (name === 'draft_email') return createAssistantDraft(mailboxId, { ...actionArguments(name, args), operationKey }, settings);
   if (name === 'create_feishu_meeting') return createAssistantMeeting(mailboxId, { ...actionArguments(name, args), operationKey }, settings);
@@ -451,6 +451,7 @@ async function runTool(name, args, { settings, mailboxId, operationKey }) {
     const ids = args.candidateId ? [String(args.candidateId)] : undefined;
     return ragSearch({
       mailboxId,
+      mailboxIds: mailboxIds?.length ? mailboxIds : undefined,
       query: String(args.query || '').trim(),
       settings,
       candidateIds: ids,
@@ -758,12 +759,14 @@ function collectKnowledgeCitations(toolTrace) {
   for (const entry of toolTrace || []) {
     if (entry?.name !== 'search_knowledge') continue;
     for (const item of entry.result?.citations || entry.result?.hits || []) {
-      const key = `${item.attachmentId}:${item.page}:${String(item.quote || '').slice(0, 40)}`;
+      const key = `${item.mailboxId || ''}:${item.attachmentId}:${item.page}:${String(item.quote || '').slice(0, 40)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       citations.push({
         chunkId: item.chunkId,
         candidateId: item.candidateId || null,
+        // 混合视图下片段可能来自别的邮箱，界面要靠它打开对应邮箱里的原信。
+        mailboxId: item.mailboxId || null,
         attachmentId: item.attachmentId,
         filename: item.filename || '',
         page: item.page,
@@ -866,13 +869,18 @@ function canonicalArguments(value) {
 }
 
 export async function runAssistantChat({ messages = [], requestId } = {}, {
-  timeoutMs = 60_000, onEvent, settings: fixedSettings, mailboxId: fixedMailboxId,
+  timeoutMs = 60_000, onEvent, settings: fixedSettings, mailboxId: fixedMailboxId, mailboxIds: fixedMailboxIds,
 } = {}) {
   const settings = structuredClone(fixedSettings || readSettings());
   const mailboxId = fixedMailboxId || settings.activeMailboxId;
   if (!(settings.mailboxes || []).some((mailbox) => mailbox.id === mailboxId)) {
     throw Object.assign(new Error('邮箱不存在或无权访问。'), { status: 404 });
   }
+  // 混合视图：知识检索覆盖视图里的多个邮箱（只读）；写入类工具仍然只作用于当前邮箱。
+  const knowledgeScope = Array.isArray(fixedMailboxIds)
+    ? [...new Set(fixedMailboxIds.map((id) => String(id || '').trim())
+      .filter((id) => (settings.mailboxes || []).some((mailbox) => mailbox.id === id)))]
+    : [];
   const operationScope = createHash('sha256').update(String(requestId || randomUUID())).digest('hex').slice(0, 24);
   const categoryHint = enabledCalendarCategories(settings.calendarCategories)
     .map((item) => `${item.id}（${item.label}）`)
@@ -888,6 +896,10 @@ export async function runAssistantChat({ messages = [], requestId } = {}, {
       .slice(-16),
   ];
 
+  const knowledgeScopeHint = knowledgeScope.length > 1
+    ? `\n本轮是混合视图：search_knowledge 会检索这 ${knowledgeScope.length} 个邮箱（含非当前邮箱），命中片段可能来自其他邮箱，回答时说明来源邮箱；其他查询和所有写入仍只作用于当前邮箱。`
+    : '';
+
   const toolTrace = [];
   const usageTotal = {
     prompt_tokens: 0, completion_tokens: 0, cached_tokens: 0,
@@ -899,7 +911,7 @@ export async function runAssistantChat({ messages = [], requestId } = {}, {
   while (rounds < 6) {
     rounds += 1;
     const now = currentTime();
-    history[0].content = `${SYSTEM_PROMPT}\n服务端当前北京时间：${now.datetime}（${now.weekday}），今天是 ${now.date}。\n可用日历分类：${categoryHint || 'work、personal'}。创建/修改日程时 category 使用分类 id。`;
+    history[0].content = `${SYSTEM_PROMPT}\n服务端当前北京时间：${now.datetime}（${now.weekday}），今天是 ${now.date}。\n可用日历分类：${categoryHint || 'work、personal'}。创建/修改日程时 category 使用分类 id。${knowledgeScopeHint}`;
     emit(onEvent, { type: 'round', round: rounds, message: `第 ${rounds} 轮模型调用` });
     let completion;
     try {
@@ -969,7 +981,7 @@ export async function runAssistantChat({ messages = [], requestId } = {}, {
           const operationKey = ['draft_email', 'create_feishu_meeting'].includes(name)
             ? `assistant:${operationScope}:${name}:${createHash('sha256').update(JSON.stringify(canonicalArguments(actionArguments(name, args)))).digest('hex').slice(0, 32)}`
             : undefined;
-          result = await runTool(name, args, { settings, mailboxId, operationKey });
+          result = await runTool(name, args, { settings, mailboxId, mailboxIds: knowledgeScope.length > 1 ? knowledgeScope : undefined, operationKey });
         } catch (error) {
           result = { ok: false, error: error.message };
         }
@@ -986,10 +998,13 @@ export async function runAssistantChat({ messages = [], requestId } = {}, {
   }
 
   const cost = costSummary(usageTotal, settings);
+  // 即使这轮被工具调用轮数上限打断，只要检索过知识库，也要把证据片段交回界面。
+  const interruptedCitations = collectKnowledgeCitations(toolTrace);
   const payload = {
     reply: unfinishedReply(toolTrace, new Error('已达到本次工具调用轮数上限')),
     toolTrace,
     interrupted: true,
+    ...(interruptedCitations.length ? { citations: interruptedCitations } : {}),
     ...cost,
   };
   emit(onEvent, { type: 'done', ...payload });

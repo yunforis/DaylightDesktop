@@ -416,6 +416,14 @@ html[data-accent="rose"].dark {
     font-family: var(--font-body);
   }
   button, input, textarea, select { font: inherit; }
+
+  /*
+   * 手机端横向溢出的根因：很多页面写 `grid gap-4 lg:grid-cols-2` 这类「基础无列定义、按断点加列」的布局。
+   * 基础状态没有显式 grid-template-columns，隐式轨道默认是 auto（会被长文本的 min-content 撑到比屏幕还宽，
+   * 整页因此横向滚动或被裁切）。这里把隐式列统一成 minmax(0, 1fr)，等价于 grid-cols-1；
+   * 显式 grid-cols-* / auto-cols-* 不受影响。
+   */
+  .grid { grid-auto-columns: minmax(0, 1fr); }
 }
 
 /* 主题切换过渡：只作用于关键表面，避免全局 * 动画卡顿 */
@@ -594,8 +602,8 @@ html[data-accent] .sticky.top-0.border-b {
   align-items: center;
   justify-content: center;
   border-radius: 0.65rem;
-  background: var(--foreground);
-  color: var(--background);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
 }
 
 .landing-nav-links {
@@ -695,9 +703,8 @@ html[data-accent] .sticky.top-0.border-b {
   justify-content: center;
   border-radius: 1rem;
   border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
-  background: color-mix(in oklab, var(--background) 70%, transparent);
+  background: #ffffff;
   box-shadow: 0 18px 50px -28px color-mix(in oklab, var(--foreground) 45%, transparent);
-  color: var(--foreground);
 }
 
 .landing-hero-title {

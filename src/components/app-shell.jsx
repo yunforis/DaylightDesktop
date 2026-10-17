@@ -6,6 +6,7 @@ import {
   LoaderCircle, LogOut, Mail, Moon, Plus, Search, Settings2, Sparkles, Sun, SwatchBook, UserRound,
 } from 'lucide-react';
 import { requestStartOnboarding } from '@/components/onboarding';
+import { BrandMark } from '@/components/brand-mark';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -77,9 +78,7 @@ export function AppShell() {
               <SidebarMenuItem>
                 <SidebarMenuButton size="lg" asChild>
                   <NavLink to="/app">
-                    <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                      <CalendarDays className="size-4" />
-                    </div>
+                    <BrandMark className="size-8 rounded-lg" />
                     <div className="grid flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-semibold">{t(locale, 'appName')}</span>
                       <span className="truncate text-xs text-muted-foreground">邮件工作空间</span>
@@ -133,9 +132,7 @@ export function AppShell() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
-                      <div className="flex aspect-square size-8 items-center justify-center rounded-lg border bg-background text-xs font-medium">
-                        {(accountLabel || mailboxLabel || 'D').slice(0, 1).toUpperCase()}
-                      </div>
+                      <BrandMark className="aspect-square size-8 rounded-lg" />
                       <div className="grid flex-1 text-left text-sm leading-tight">
                         <span className="truncate font-medium">{accountLabel || '未登录账号'}</span>
                         <span className="truncate text-xs text-muted-foreground">
@@ -210,13 +207,13 @@ export function AppShell() {
                 <kbd className="ml-auto hidden shrink-0 rounded border bg-muted px-1.5 text-[10px] lg:inline">{searchHotkey}</kbd>
               </button>
             </div>
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex min-w-0 items-center gap-1">
               <Button size="icon" variant="ghost" className="md:hidden" onClick={() => setCommandOpen(true)} title="搜索">
                 <Search className="size-4" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" title={t(locale, 'theme')}>
+                  <Button size="icon" variant="ghost" className="hidden sm:inline-flex" title={t(locale, 'theme')}>
                     <SwatchBook className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -236,7 +233,7 @@ export function AppShell() {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" title={t(locale, 'language')}>
+                  <Button size="icon" variant="ghost" className="hidden sm:inline-flex" title={t(locale, 'language')}>
                     <Languages className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -256,11 +253,11 @@ export function AppShell() {
               <Button data-tour="sync" size="sm" variant="outline" disabled={isSyncing || isMixedView} onClick={() => sync('qq').then((r) => {
                 if (r?.needSettings) navigate(`/app/settings?tab=${r.settingsTab || 'mailbox'}`);
               })}>
-                {isSyncing ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                {t(locale, 'sync')}
+                {isSyncing ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4 sm:hidden" />}
+                <span className="hidden sm:inline">{t(locale, 'sync')}</span>
               </Button>
               <Button data-tour="quick-create" size="sm" onClick={() => setEventModal({ event: null, date: null })}>
-                <Plus className="size-4" />{t(locale, 'addEvent')}
+                <Plus className="size-4" /><span className="hidden sm:inline">{t(locale, 'addEvent')}</span>
               </Button>
             </div>
           </header>

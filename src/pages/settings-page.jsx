@@ -90,7 +90,7 @@ export default function SettingsPage() {
       tokenPriceOut: settings.tokenPriceOut ?? '',
       tokenPriceCachedIn: settings.tokenPriceCachedIn ?? '',
       ragEnabled: settings.ragEnabled !== false,
-      ragEmbeddings: settings.ragEmbeddings === true,
+      ragEmbeddings: settings.ragEmbeddings !== false,
       embeddingModel: settings.embeddingModel || '',
       tag: settings.tag || 'work',
       tagCustom: settings.tagCustom || '',
@@ -336,7 +336,7 @@ export default function SettingsPage() {
                     <FieldLabel help="切换已保存账户不会删除数据；换邮箱地址会新建独立数据目录。">已保存邮箱</FieldLabel>
                     <div className="flex flex-wrap gap-2">
                       <Select value={form.mailboxId || '__new__'} onValueChange={(value) => chooseMailbox(value === '__new__' ? '' : value)}>
-                        <SelectTrigger className="max-w-md"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="min-w-0 max-w-full sm:max-w-md"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {mailboxes.map((mailbox) => (
                             <SelectItem key={mailbox.id} value={mailbox.id}>
@@ -581,7 +581,7 @@ export default function SettingsPage() {
                 <div className="space-y-2 md:col-span-2">
                   <FieldLabel help="选择预设会填入常见 Base URL、示例模型与参考单价；自定义中转可改任意字段。">提供商 / 中转站</FieldLabel>
                   <Select value={form.modelProvider || 'custom'} onValueChange={chooseModelProvider}>
-                    <SelectTrigger className="max-w-md"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="min-w-0 max-w-full sm:max-w-md"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {modelProviders.map((provider) => (
                         <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
@@ -636,7 +636,7 @@ export default function SettingsPage() {
                 <CardTitle className="text-base">知识检索（RAG）</CardTitle>
                 <CardDescription>
                   简历 PDF 提取后按页分块入库；招聘助手与小 D 可检索原文并展示引用。关闭后不再入库，已有索引仍可删除后重建。
-                  Embedding 未配置或不兼容时自动回退关键词检索。
+                  向量检索默认开启：未填模型时会从供应商模型列表自动挑一个（中文优先），挑不到或调用失败时自动回退关键词。
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -652,24 +652,24 @@ export default function SettingsPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm md:col-span-2">
                   <Checkbox
-                    checked={form.ragEmbeddings === true}
+                    checked={form.ragEmbeddings !== false}
                     onCheckedChange={(checked) => change('ragEmbeddings', Boolean(checked))}
                     disabled={form.ragEnabled === false}
                   />
                   <span>
-                    <span className="font-medium">调用 Embedding 做混合检索（可选）</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">默认关闭，仅用关键词；开启后需兼容的 embeddings 接口，失败仍回退关键词。</span>
+                    <span className="font-medium">调用 Embedding 做混合检索</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">默认开启；关键词与向量按权重融合排序。接口不兼容或模型不可用时自动回退关键词，不会阻断检索。</span>
                   </span>
                 </label>
                 <div className="space-y-2 md:col-span-2 sm:max-w-md">
-                  <FieldLabel help="开启 Embedding 后填写专用模型名；留空则尝试用聊天模型名调 /embeddings。">
-                    Embedding 模型名（可选）
+                  <FieldLabel help="留空则从供应商 /models 自动挑选（优先 qwen3-embedding、bge-m3、text-embedding-3 等）。">
+                    Embedding 模型名（留空自动选择）
                   </FieldLabel>
                   <Input
                     value={form.embeddingModel || ''}
                     onChange={(e) => change('embeddingModel', e.target.value)}
-                    placeholder="text-embedding-3-small"
-                    disabled={form.ragEnabled === false || form.ragEmbeddings !== true}
+                    placeholder="留空自动选择"
+                    disabled={form.ragEnabled === false || form.ragEmbeddings === false}
                   />
                 </div>
               </CardContent>
@@ -923,7 +923,7 @@ export default function SettingsPage() {
                     {persistence.path && <div className="truncate">SQLite：{persistence.path}</div>}
                     {persistence.infra && (
                       <div className="grid gap-1 border-t pt-2">
-                        <div>PostgreSQL：{persistence.infra.postgres?.mode || persistence.infra.postgres?.ok ? '可用' : '未启用/回退'}</div>
+                        <div>PostgreSQL：{persistence.infra.postgres?.ok ? (persistence.infra.postgres.mode === 'postgres' ? '已连接' : '未启用（本地 JSON）') : '连接不可用'}</div>
                         <div>Redis：{persistence.infra.redis?.mode || (persistence.infra.redis?.ok ? '可用' : '未启用/回退')}</div>
                         <div>消息队列：{(persistence.infra.mq || persistence.infra.queue)?.mode || ((persistence.infra.mq || persistence.infra.queue)?.ok ? '可用' : '未启用/回退')}</div>
                         <div>对象存储：{persistence.infra.oss?.provider || persistence.infra.oss?.mode || 'local'}</div>

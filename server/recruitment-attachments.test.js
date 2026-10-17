@@ -53,6 +53,7 @@ test('production recruitment OSS stores bytes before metadata, reads registered 
     }
     if (command.constructor.name === 'GetObjectCommand') {
       if (failRead) throw new Error('synthetic read outage');
+      if (!objects.has(command.input.Key)) throw Object.assign(new Error('synthetic object missing'), { name: 'NoSuchKey' });
       return { Body: { transformToByteArray: async () => objects.get(command.input.Key) } };
     }
     return {};
@@ -75,7 +76,16 @@ test('production recruitment OSS stores bytes before metadata, reads registered 
     await assert.rejects(attachments.storeAttachmentAsync('mailbox', 'failed', input), /upload outage/);
     assert.equal(attachments.readRecruitment('mailbox').attachments.length, 1);
     failRead = true;
-    await assert.rejects(attachments.readAttachmentBytes('mailbox', record.id), /read outage/);
+    await assert.rejects(attachments.readAttachmentBytes('mailbox', record.id), error => {
+      assert.equal(error.status, 502);
+      assert.equal(error.code, 'ATTACHMENT_STORAGE_UNAVAILABLE');
+      assert.doesNotMatch(error.message, /read outage/);
+      assert.match(error.cause.message, /read outage/);
+      return true;
+    });
+    failRead = false;
+    attachments.updateRecruitment('mailbox', data => data.attachments.push({ id: 'missing-object', key: 'synthetic/missing.pdf', storage: 's3' }));
+    assert.equal(await attachments.readAttachmentBytes('mailbox', 'missing-object'), null);
     attachments.updateRecruitment('mailbox', data => data.attachments.push({ id: 'legacy' }));
     await assert.rejects(attachments.readAttachmentBytes('mailbox', 'legacy'), /unavailable in production/);
     assert.throws(() => attachments.storeAttachment('mailbox', 'mail', input), /unavailable in production/);

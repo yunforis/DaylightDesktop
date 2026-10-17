@@ -4,7 +4,7 @@ import { withStorageSnapshot, commitStorage, discardStorage } from './storage/in
 // escape before commit. This wrapper is for finite responses, not live feeds.
 // At most 16,384 nonempty chunks, even when producers write one byte at a time.
 // Write callbacks acknowledge bounded staging, not delivery to the socket.
-export function storageHttpMiddleware({ pool, maxBufferBytes = 8 * 1024 * 1024, maxDurationMs = 120_000 } = {}) {
+export function storageHttpMiddleware({ pool, system = false, maxBufferBytes = 8 * 1024 * 1024, maxDurationMs = 120_000 } = {}) {
   if (!Number.isSafeInteger(maxBufferBytes) || maxBufferBytes <= 0
     || !Number.isSafeInteger(maxDurationMs) || maxDurationMs <= 0) throw new TypeError('Invalid HTTP storage buffer limits');
   return (req, res, next) => {
@@ -17,7 +17,9 @@ export function storageHttpMiddleware({ pool, maxBufferBytes = 8 * 1024 * 1024, 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(JSON.stringify({ error: res.statusCode === 409 ? '数据已更新，请刷新后重试。' : '数据未能提交，请稍后重试。' }));
     };
-    return withStorageSnapshot({ pool, userId: req.user?.id || null, user: req.user, system: !req.user }, () => new Promise(resolve => {
+    // A system snapshot is a trusted server choice, after the caller authenticates
+    // an administrator. Request headers and body never select this option.
+    return withStorageSnapshot({ pool, userId: system ? null : req.user?.id || null, user: req.user, system: system || !req.user }, () => new Promise(resolve => {
       const original = { write: res.write, end: res.end, flushHeaders: res.flushHeaders, writeHead: res.writeHead };
       let chunks = [], bytes = 0, ending = false, settled = false, committing = false, disconnected = false, abandoned = false;
       const acknowledge = (callback, error) => { if (typeof callback === 'function') queueMicrotask(() => callback(error)); };

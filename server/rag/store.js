@@ -1,13 +1,30 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { mailboxDirectory } from '../store.js';
+import { mailboxDirectory, readSettings } from '../store.js';
 import { getPostgresPool } from '../infra/postgres.js';
 import { isProductionRuntime, requireLocalRuntime } from '../runtime-mode.js';
 import { AUXILIARY_SCHEMA } from '../storage/aux-schema.js';
-import { parseMailRef } from './mail-ref.js';
+import { parseMailRef } from '../../shared/mail-ref.js';
+import { isRegisteredMailbox } from '../mailbox-identity.js';
+import { getRequestUserId } from '../request-context.js';
 
 const empty = () => ({ chunks: [], updatedAt: null });
+
+function registeredMailbox(mailboxId, writing = false) {
+  if (!isProductionRuntime()) return true;
+  const settings = readSettings();
+  const mailbox = settings.mailboxes.find(box => box.id === mailboxId);
+  if (!mailbox || (getRequestUserId() && (mailbox.ownerUserId || mailbox.userId) !== getRequestUserId())) {
+    throw Object.assign(new Error('邮箱不存在或无权访问。'), { status: 403, code: 'STORAGE_MAILBOX_FORBIDDEN' });
+  }
+  if (!isRegisteredMailbox(mailboxId, settings, getRequestUserId())) {
+    if (writing) throw Object.assign(new Error('请先在设置中保存并配置自己的邮箱，再写入检索知识。'),
+      { status: 400, code: 'MAILBOX_SETUP_REQUIRED' });
+    return false;
+  }
+  return true;
+}
 
 function filePath(mailboxId) {
   return path.join(mailboxDirectory(mailboxId), 'rag-chunks.json');
@@ -78,6 +95,9 @@ async function mutateAttachment(pool, mailboxId, attachmentId, mutate) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))', [
+      `daylight:mailbox-registration:${mailboxId}`,
+    ]);
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
       JSON.stringify(['rag', mailboxId, attachmentId]),
     ]);
@@ -123,6 +143,7 @@ function fileToChunk(chunk) {
 }
 
 export async function listChunks(mailboxId, { attachmentId, candidateId } = {}) {
+  if (!registeredMailbox(mailboxId)) return [];
   const pool = getPostgresPool();
   if (pool) {
     await ensurePgTable();
@@ -149,6 +170,7 @@ export async function listChunks(mailboxId, { attachmentId, candidateId } = {}) 
 }
 
 export async function deleteChunksByAttachment(mailboxId, attachmentId) {
+  registeredMailbox(mailboxId, true);
   const pool = getPostgresPool();
   if (pool) {
     await mutateAttachment(pool, mailboxId, attachmentId, (client) => client.query(
@@ -163,6 +185,7 @@ export async function deleteChunksByAttachment(mailboxId, attachmentId) {
 }
 
 export async function replaceChunks(mailboxId, attachmentId, chunks) {
+  registeredMailbox(mailboxId, true);
   chunks = chunks || [];
   const ids = new Set();
   for (const chunk of chunks) {
@@ -212,6 +235,7 @@ export async function replaceChunks(mailboxId, attachmentId, chunks) {
 }
 
 export async function reassignCandidate(mailboxId, attachmentId, candidateId) {
+  registeredMailbox(mailboxId, true);
   const pool = getPostgresPool();
   if (pool) {
     await mutateAttachment(pool, mailboxId, attachmentId, (client) => client.query(

@@ -396,7 +396,7 @@ export async function runRecruitmentChat(mailboxId, message, settings) {
     const uniqueCitations = [];
     const seenCite = new Set();
     for (const item of citations) {
-      const key = `${item.attachmentId}:${item.page}:${item.quote?.slice(0, 40)}`;
+      const key = `${item.mailboxId || ''}:${item.attachmentId}:${item.page}:${item.quote?.slice(0, 40)}`;
       if (seenCite.has(key)) continue;
       seenCite.add(key);
       uniqueCitations.push(item);

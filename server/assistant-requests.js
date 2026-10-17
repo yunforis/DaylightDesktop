@@ -7,9 +7,14 @@ import { sanitizeSnapshot } from './traces.js';
 const running = new Map();
 
 /** A stream reconnect reuses the persisted result instead of rerunning tools. */
-export async function runAssistantRequest({ messages, requestId }, run, { onEvent } = {}) {
+export async function runAssistantRequest({ messages, requestId, mailboxIds }, run, { onEvent } = {}) {
   const settings = readSettings();
   const mailboxId = settings.activeMailboxId;
+  // 混合视图下知识检索要覆盖同样的邮箱集合；写入类工具仍然只作用于当前邮箱。
+  const owned = new Set((settings.mailboxes || []).map((mailbox) => mailbox.id));
+  const knowledgeScope = Array.isArray(mailboxIds)
+    ? [...new Set(mailboxIds.map((id) => String(id || '').trim()).filter((id) => owned.has(id)))]
+    : [];
   const id = requestId || randomUUID();
   if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(id)) throw Object.assign(new Error('无效的小 D 请求编号。'), { status: 400 });
   const hash = createHash('sha256').update(JSON.stringify(messages)).digest('hex');
@@ -35,10 +40,15 @@ export async function runAssistantRequest({ messages, requestId }, run, { onEven
       throw Object.assign(new Error('此请求的执行结果尚待核对，未重复执行。请查看已保存的草稿、日程和工具记录。'), { status: 409 });
     }
     try {
-      const result = await run({ messages, requestId: id }, { settings: structuredClone(settings), mailboxId, onEvent: (event) => {
-        // Persist the final response before delivering it to either transport.
-        if (event.type !== 'done') onEvent?.(event);
-      } });
+      const result = await run({ messages, requestId: id }, {
+        settings: structuredClone(settings),
+        mailboxId,
+        ...(knowledgeScope.length > 1 ? { mailboxIds: knowledgeScope } : {}),
+        onEvent: (event) => {
+          // Persist the final response before delivering it to either transport.
+          if (event.type !== 'done') onEvent?.(event);
+        },
+      });
       await mutateAssistantState(mailboxId, 'requests', (data) => Object.assign(data.items.find((item) => item.id === id),
         { status: 'done', result, updatedAt: new Date().toISOString() }));
       return result;

@@ -41,18 +41,27 @@ test('invalid, duplicate and ambiguous mailbox ownership is refused', async t =>
     await assert.rejects(collectStorageBackup(directory), /refused/);
   }
 });
-test('file and directory symlinks cannot escape the backup root', async t => {
+test('file symlinks cannot escape the backup root', async t => {
   const external = await backup(t);
-  for (const directoryLink of [false, true]) {
-    const directory = await backup(t);
-    await fs.mkdir(path.join(directory, 'mailboxes'));
-    if (directoryLink) await fs.symlink(external, path.join(directory, 'mailboxes/a'));
-    else {
-      await fs.mkdir(path.join(directory, 'mailboxes/a'));
-      await fs.symlink(path.join(external, 'settings.json'), path.join(directory, 'mailboxes/a/calendar.json'));
-    }
-    await assert.rejects(collectStorageBackup(directory), /refused/);
+  const directory = await backup(t);
+  await fs.mkdir(path.join(directory, 'mailboxes/a'), { recursive: true });
+  try {
+    await fs.symlink(path.join(external, 'settings.json'), path.join(directory, 'mailboxes/a/calendar.json'), 'file');
+  } catch (error) {
+    if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+    t.skip('Windows file symlink creation requires Developer Mode or SeCreateSymbolicLinkPrivilege');
+    return;
   }
+  await assert.rejects(collectStorageBackup(directory), /refused/);
+});
+
+test('directory links cannot escape the backup root, including Windows junctions', async t => {
+  const external = await backup(t);
+  const directory = await backup(t);
+  await fs.mkdir(path.join(directory, 'mailboxes'));
+  await fs.symlink(external, path.join(directory, 'mailboxes/a'), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal((await fs.lstat(path.join(directory, 'mailboxes/a'))).isSymbolicLink(), true);
+  await assert.rejects(collectStorageBackup(directory), /refused/);
 });
 test('invalid JSON refusal never logs source snippets or private paths', async t => {
   const directory = await backup(t);

@@ -8,12 +8,20 @@
 
 ### 对齐基线
 
-- Web 真源：`/Users/auroral/ProjectDevelopment/Daylight`，提交 `5809fb1`（该工作区同步时仍有未提交改动，属并发开发中的快照；抄录时点见本节验证记录）。
-- 对齐方式：**重新基线 + 重贴桌面补丁**，由 `scripts/desktop-sync.mjs` 一条命令完成，可重复执行。它只读真源、只写本仓库，补丁锚点找不到就报错，不静默跳过。
+- Web 真源：`/Users/auroral/ProjectDevelopment/Daylight`，提交 `be75dac`（该工作区仍在并发开发，同步时点见本节验证记录）。
+- 对齐方式不变：**重新基线 + 重贴桌面补丁**，由 `scripts/desktop-sync.mjs` 一条命令完成，可重复执行。它只读真源、只写本仓库，补丁锚点找不到就报错，不静默跳过。
+- 本轮（第二轮对齐）追上的上游能力，全部在桌面端直接可用：
+  - **邮件写回真实邮箱**（`server/agent.js`，默认关闭；开关未开时明确报错，不会只改本地留下不一致）；
+  - **一句话提醒规则解析** `POST /api/reminders/parse`（无状态，规则存在手机端，不写业务数据）；
+  - **视图作用域隔离** `server/view-scope.js`（切回单邮箱时按当前视图隔离列表）；
+  - **真实会议链接** `shared/meeting-link.js`、**邮箱身份** `server/mailbox-identity.js`、**RAG 开关** `server/rag/flags.js`；
+  - **品牌与界面**：全站图标换成「日出信封」（`src/components/brand-mark.jsx` + `public/logo.png` 等）、搜索高亮 `src/components/highlight-text.jsx`；
+  - **PDF 预览组件化**：上游新增 `src/components/pdf-preview.jsx`，桌面端**改为直接复用**（见 D3）。
 - 对齐后差异收敛为最小集合：
-  - `src/`：仅 `App.jsx`、`main.jsx`、`command-palette.jsx`、`attachment-viewer.jsx` 分叉；桌面专有新文件 `src/lib/desktop.js`、`src/components/pdf-canvas-viewer.jsx`。
-  - `server/`：仅 `auth.js`、`index.js`、`store.js`、`infra/config.js` 分叉；桌面专有模块 `desktop-entry.js`、`desktop-http.js`、`secure-json.js`。
-  - `shared/`、`public/`、`index.html` 与 Web 完全一致。
+  - `src/`：仅 `App.jsx`、`main.jsx`、`command-palette.jsx` 分叉；桌面专有新文件 `src/lib/desktop.js`。
+  - `server/`：仅 `index.js`、`auth.js`、`store.js`、`infra/config.js` 分叉；桌面专有模块 `desktop-entry.js`、`desktop-http.js`、`secure-json.js`。
+  - `shared/`、`public/`、`index.html` 与 Web **逐字节一致**（已用 `cmp` 逐文件核对）。
+- 同步素材说明：`Dockerfile` 与 `docs/submission/evaluation-cases.json` 纳入同步，**只因为共享测试套件会读取它们**；桌面端不使用容器部署，也不参与比赛材料提交。缺了它们会出现 2 项桌面独有的测试失败（`Dockerfile 的 build 阶段…` 整条，以及 `server/mail-evaluation.test.js` 因读不到评测用例而整文件加载失败）。
 
 ### 决策记录
 
@@ -24,11 +32,16 @@
   - 依据：Web 的前端本身就把「无任务队列」当作一等公民状态——`jobs-page.jsx` 对 404 显示「当前服务未启用后台任务，邮件同步结果请在邮件与执行记录中查看。」；`use-background-jobs.js` 在收到 404 时把 `supported` 置为 false 并停止轮询。桌面端 `server/index.js` 的非生产分支已有进程内 worker 与定时器（`registerWorker('mail.sync')` + `setInterval` + `refreshIdleWatcher`），同步在本地模式下是同步返回结果。
   - 结论：引入忠实于 PG 版本的任务平台需要重写租约、快照提交、outbox（`storage/index.js` 依赖 pg pool，`jobs/repository.js` 的租约用 SQL 时间），风险与工作量都不成比例；对一个单用户本机应用，同步流程已经可用且可观测。该差异已明确标注为**本地模式**，页面文案由 Web 侧代码提供，不是桌面端特例。
 
+- **D3 PDF 预览复用上游组件（推翻上一轮的自研方案）**：上游新增的 `src/components/pdf-preview.jsx` 用 `pdfjs-dist` 在页面内渲染，并用 `import.meta.glob('/node_modules/pdfjs-dist/{cmaps,standard_fonts,wasm}/*')` 把 CJK CMap、标准字体与 wasm 解码器打进前端产物；`useWorkerFetch: false` 让主线程取回资源后再交给 worker。它本来就是为「宿主没有内置 PDF 查看器」写的，与桌面端需求完全重合。
+  - 因此**删除**上一轮自研的 `src/components/pdf-canvas-viewer.jsx`、5 条相关桌面补丁，以及后端 `/desktop/pdfjs/*` 静态目录（连带 `express`/`fs`/`path` 依赖与 cookie 豁免）。
+  - 收益：少一个组件、少一个后端路由、少 5 条补丁，上游后续改进自动继承；代价：渲染尺寸改由 `ResizeObserver` 驱动，交互变成单页 + 上下页 + 缩放（上游的产品选择），桌面端跟随。
+- **D4 把 `Dockerfile` 与评测用例一起同步**：两者与桌面端运行无关，但共享测试套件会读取它们。同步进来比维护一份「桌面端豁免哪些测试」的清单更简单，也让「测试结果与真源逐条一致」这个断言保持可验证。
+
 ### 桌面端专有改动（阶段 10）
 
-- **PDF 预览跨平台统一**：`src/components/pdf-canvas-viewer.jsx` 新增，用 `pdfjs-dist` 在页面内渲染；桌面端走该组件，浏览器端保留原生查看器。原实现是 `<iframe src>` 直链，依赖各平台 WebView 内置 PDF 能力（Linux WebKitGTK 多数没有查看器）。
-- **Office 附件确定性行为**：移除原先拼接 `view.officeapps.live.com` 内嵌地址的分支（该地址要求附件有公网 URL，桌面端附件都在回环地址上，这个分支实际上永远不会生效），改为明确的「下载后用系统应用打开」。
-- **CSP 补全**：`src-tauri/tauri.conf.json` 的 CSP 增加 `img-src/media-src ... blob: data:`、`worker-src 'self' blob:`、`font-src`、`frame-src 'self'`、`connect-src 'self'`。原 CSP 只有 `default-src 'self'`，会拦截附件预览使用的 `blob:` 图片/音视频，以及 PDF.js 的 worker。
+- **PDF 预览改为复用上游组件**（本轮推翻上一轮的自研方案，理由见 D3）：上一轮新增的 `src/components/pdf-canvas-viewer.jsx`、对应 5 条桌面补丁、以及后端 `/desktop/pdfjs/*` 静态目录**全部删除**。离线可用性改由前端产物保证：`import.meta.glob` 把 CMap/标准字体/wasm 打进 `dist/`，其中体积小于 4 KB 的 134 个 CMap 由 Vite 内联为 `data:` URL，其余作为 `dist/assets/*.bcmap` 落盘。
+- **Office 附件不再需要桌面补丁**：上游自身就有 `if (!url || url.startsWith('/')) return null` 的判断。桌面端附件地址都是相对路径（`/api/attachments/...`），会走「该附件暂无公网地址，无法内嵌 Office 预览，请下载后本地打开」，不会请求 `view.officeapps.live.com`；上一轮为此写的补丁已移除。
+- **CSP 与安全边界（澄清）**：`src-tauri/tauri.conf.json` 的 CSP 保留 `img-src/media-src ... blob: data:`、`worker-src 'self' blob:`、`font-src`、`frame-src 'self'`，并在 `connect-src` 上补 `data: blob:`。需要明确：该 CSP 由 Tauri 注入**壳层加载页**；应用页由回环 HTTP 提供，Express **没有**下发 CSP 头，真正的边界是 `Host` 回环 + `Origin` 一致 + 壳层 cookie 三层校验（`server/desktop-http.js`）。不把「配置了 CSP」当成应用页已受 CSP 保护。
 - **打包缺失修复**：`scripts/prepare-desktop.mjs` 原先只复制 `server/` 与 `dist/`，漏了 `shared/`，而 `server/scenarios/service.js` 会 `import` `shared/scenario-templates.js` —— 安装版会直接启动失败。已修正为 `['server', 'dist', 'shared']`，并由 `desktop-tests` 中的打包运行时测试守护。
 - **语音输入**：沿用 Web 的能力探测实现 `src/lib/little-d-speech.js`（`SpeechRecognition`/`webkitSpeechRecognition` 探测 + 不支持时的明确文案），`little-d.jsx` 已改为复用它。
 - **重活不阻塞界面**：后台 Node 进程与 WebView 是不同进程，OCR/PDF 解析不会阻塞渲染；OCR 由 `tesseract.js` 自带的 worker 执行。
@@ -38,23 +51,41 @@
 
 | 项目 | 命令 | 结果 | 等级 |
 | --- | --- | --- | --- |
-| 前端构建 | `npm run build` | 通过；产物含 `pdf.worker.min-*.mjs` 与指向它的 `?url` 模块 | 本地测试通过 |
-| 桌面专有测试 | `npm run test:desktop` | **7/7 通过**（无 PG/MQ 启动并重启读回、鉴权边界、会话一次性、凭据加密、端口回退、补丁锚点、打包运行时独立启动） | 本地测试通过 |
-| 共享业务测试 | `npm test` | 547 项：481 通过 / **49 失败**；与 Web 真源**失败集合完全一致**（本次改动引入 0 项） | 本地测试通过（含已知历史失败） |
-| 后端冒烟（生产模式、无 PG/Redis/MQ、仅回环） | `bash work/smoke.sh` | 就绪、`/desktop/start` 302、`/desktop/session` 签发 token；无 cookie 403、有 cookie 无 Bearer 401、伪造 Origin 403；`/api/state`、`/api/sync/demo`、`/api/onboarding/guide`、`/api/assistant/drafts`、`/api/rag/status`、`/api/report-prompts`、`/api/scenarios`、`/api/invitations`、`/api/traces` 均 200；`/api/admin/*` 404 | 本地测试通过 |
-| 运行时打包 | `npm run desktop:prepare` | 通过；`runtime/` 含 `shared/`、`pdfjs-dist`、`undici`，**不含 `vite`**（169 个依赖） | 本地测试通过 |
-| Rust 壳层 | `npm run desktop:check` | `cargo check` 通过 | 本地测试通过 |
-| 桌面窗口 | `npm run desktop:dev` | 编译 362 crates 通过，进程真实拉起 `target/debug/daylight-desktop` | 本地测试通过（未做界面截图核对） |
-| 安装包 | `npm run desktop:build` | 见下方「安装包」小节 | 本地测试通过 |
+| 前端构建 | `npm run build` | 通过；`dist/` 8.4 MB，含 `pdf.worker.min-*.mjs`、34 个 `.bcmap`、标准字体与 4 个 `.wasm`（另有 134 个 CMap 被内联为 `data:` URL） | 本地测试通过 |
+| 补丁锚点 | `node scripts/desktop-sync.mjs --check` | 17 条补丁在 Web 真源上全部命中 | 本地测试通过 |
+| 文件级对齐 | `cmp` 逐文件比对 `src/ server/ shared/ public/` | 除 3 + 4 处桌面补丁文件外与真源逐字节一致 | 本地测试通过 |
+| 共享业务测试 | `node --test server/*.test.js` | 680 项：587 通过 / **58 失败** / 35 跳过；与 Web 真源**逐条用例状态完全一致**（状态 diff 为空） | 本地测试通过（含与真源相同的历史失败） |
+| 桌面专有测试 | `npm run test:desktop` | **8/8 通过**（无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、打包运行时不含 `vite` 且能独立启动） | 本地测试通过 |
+| PDF 真实渲染 | 真实 Chromium 打开桌面后台 `/app/recruitment` → 体验招聘示例 → 预览简历 | 画布 1758×2488（CSS 879px，DPR 2），整页 4,373,904 个不透明像素、20,866 个字形像素；工具栏「第 1 / 1 页 100%」，无错误提示 | 本地测试通过（真实浏览器 + 真实后台） |
+| 路由冒烟 | 真实 Chromium 遍历 `/app` 等 11 个路由 | 全部正常渲染；顶栏「10月17日 · owner@daylight.local」，品牌图标 `/logo.png`，登录/注册/管理端链接 0 个；`/app/jobs` 显示「当前服务未启用后台任务」 | 本地测试通过 |
+| 后端冒烟（生产模式、无 PG/Redis/MQ、仅回环） | 真实后台 + `curl`，鉴权三层由 `npm run test:desktop` 守护 | 就绪并打印 `DAYLIGHT_READY 14377`；`/desktop/start?token=…` 302 到 `/app`；无 cookie 403；伪造 `Host: evil.example` 403 | 本地测试通过 |
+| 运行时打包 | `npm run desktop:prepare` | 通过；`runtime/` 301 MB，含 `shared/`、`pdfjs-dist`、`@napi-rs/canvas`（`server/pdf.js` 的服务端 PDF 渲染确实用到），**不含 `vite`** | 本地测试通过 |
+| Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（上一轮记录；本轮 `desktop:build` 再次完成 release 编译与打包） | 本地测试通过 |
+| 安装包 | `npm run desktop:build` | `Daylight.app` 282.53 MiB、`Daylight_0.1.0_aarch64.dmg` 96.54 MiB（macOS arm64；release 编译 2m23s） | 本地测试通过 |
 
-**共享业务测试的 49 项失败**：全部是同时启动真实 Express 服务、mock timer、依赖本机环境的集成测试（招聘 API、草稿发送、小 D 真实 HTTP 等），在 Web 真源上以**完全相同的集合**失败。本轮未排查，也未把它们当作门禁（CI 中该步骤 `continue-on-error: true`）。它们是历史遗留，不是桌面端改造引入。
+### 安装包
+
+```
+src-tauri/target/release/bundle/
+├─ macos/Daylight.app                     282.53 MiB（`du -sh` 303 MB）
+└─ dmg/Daylight_0.1.0_aarch64.dmg          96.54 MiB
+```
+
+- 安装包内含 Node 二进制、后台代码（`server/` + `shared/`）、前端产物与运行时依赖，终端用户无需安装环境。
+- 本轮只产出 macOS arm64；x64 / Windows / Linux 需在对应平台或 CI 上执行同一条 `npm run desktop:build`。
+- 与上一轮相比 `.app` 约 +5 MB：前端产物新增了随包分发的 pdf.js CMap / 标准字体 / wasm（`dist/` 8.4 MB）；后台的 `pdfjs-dist` 仍需保留，因为 `server/pdf.js` 的服务端 PDF 渲染会用到。
+
+**共享业务测试的 58 项失败**：全部是同时启动真实 Express 服务、mock timer、依赖本机环境的集成测试（招聘 API、草稿发送、小 D 真实 HTTP 等），在 Web 真源上以**完全相同的集合**失败。本轮用「逐条用例状态 diff」核对（而不是只比失败集合），差异为空。CI 中该步骤 `continue-on-error: true`；这些是历史遗留，不是桌面端改造引入。
+
+**PDF 渲染核对的自动化前提**：自动化浏览器的标签页始终是 `visibilityState: 'hidden'`，`requestAnimationFrame` 与 `ResizeObserver` 回调都不会触发，而 pdf.js 的绘制循环与上游组件的尺寸测量正依赖这两个 API。核对时用 `setTimeout` 顶替，因此这是**应用逻辑 + 真实浏览器渲染管线**的验证，不等于在可见 GUI 窗口下的观察。
 
 ### 未验证 / 明确边界
 
-- **真实邮箱与真实模型**：本轮**未做**任何真实 IMAP/SMTP/模型实连，也未运行示例以外的提取。历史实连记录见下方 2026-10-15 及更早小节，仅作为历史证据，不代表本轮代码状态。
-- **界面渲染**：PDF.js 查看器与 Csp 改动只做了构建、产物与代码层面核对，**没有**做逐平台的可视化核对（需要真实 GUI 环境）。`iframe` 的邮件正文渲染、附件图片/音视频预览同理。
+- **真实邮箱与真实模型**：本轮**未做**任何真实 IMAP/SMTP/模型实连，也未运行示例以外的提取。特别地，本轮同步进来的「邮件写回真实邮箱」默认关闭，只验证了「开关未开时明确报错、不静默改本地」这条路径，**未验证真实写回**；`/api/reminders/parse` 需要已配置模型，本轮也未用真实模型调用。历史实连记录见下方 2026-10-15 及更早小节，仅作历史证据。
+- **界面渲染**：PDF 渲染已在真实浏览器核对（见上表），但**没有**在可见窗口的 Tauri GUI 中逐平台核对；Office 附件提示、邮件正文 `iframe`、图片/音视频预览同理。
 - **Windows / Linux**：未在对应实机运行；CI 配置已就绪（三平台 verify + 四产物 bundle），但在本机**没有 GitHub remote，Actions 未实际运行过**。
 - **睡眠唤醒**：未做显式的系统唤醒事件监听。Node 的定时器在唤醒后会继续触发，属于可接受行为，但未实测。
+- **字体**：`index.html` 仍从 `fonts.googleapis.com` 取 Noto Sans SC / Sora / Space Grotesk，离线时回退系统字体；桌面端未内置字体文件（避免安装包体积与字重授权扩散）。
 - **/api/jobs**：桌面端无任务列表接口（见上方决策），后台任务页显示「当前服务未启用后台任务」。
 
 ## 桌面端改造（2026-10-15，历史存档）

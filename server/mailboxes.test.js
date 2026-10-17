@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { once } from 'node:events';
-import { Worker } from 'node:worker_threads';
+import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const firstSettings = { email: 'first@qq.com', authorizationCode: 'invented-first-mailbox-code',
@@ -12,9 +11,9 @@ const firstSettings = { email: 'first@qq.com', authorizationCode: 'invented-firs
 const secondSettings = { email: 'second@163.com', authorizationCode: 'invented-second-mailbox-code', provider: '163', fetchLimit: 2, mailboxId: '' };
 const legacyEvent = { id: 'legacy-manual', title: '旧邮箱的手动安排', start: '2026-11-20T10:00:00+08:00', end: '2026-11-20T11:00:00+08:00', source: 'manual' };
 
+// A separate process avoids native PDF module teardown in Windows Worker threads.
 // Real API/storage/scheduler; all mail, SMTP and model transports are local fixtures.
-async function serveFixture() {
-  const { parentPort, workerData } = await import('node:worker_threads');
+async function serveFixture(fixtureData) {
   const { mock } = await import('node:test');
   const { default: express } = await import('express');
   const { default: dns } = await import('node:dns/promises');
@@ -29,6 +28,7 @@ async function serveFixture() {
   let releaseModel;
   let blockSend = false;
   let releaseSend;
+  let httpServer;
   mock.timers.enable({ apis: ['setInterval'] });
   mock.method(ImapFlow.prototype, 'connect', async function () {
     this.mailbox = { exists: mailboxSize, uidValidity: 10 };
@@ -79,21 +79,37 @@ async function serveFixture() {
   } }));
   const listen = express.application.listen;
   mock.method(express.application, 'listen', function (...args) {
-    const server = listen.apply(this, args);
-    server.once('listening', () => parentPort.postMessage({ port: server.address().port }));
+    const server = httpServer = listen.apply(this, args);
+    server.once('listening', () => process.send({ port: server.address().port }));
     return server;
   });
-  parentPort.on('message', (message) => {
+  process.on('message', async (message) => {
+    if (message.type === 'shutdown') {
+      try {
+        await new Promise((resolve, reject) => {
+          httpServer.close((error) => error ? reject(error) : resolve());
+          httpServer.closeAllConnections();
+        });
+        mock.timers.reset();
+        mock.restoreAll();
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      } finally {
+        process.disconnect();
+      }
+      return;
+    }
     if (message.type === 'tick') mock.timers.tick(60_000);
     if (message.type === 'cancel') { operation = 'cancel'; mailboxSize = 6; }
     if (message.type === 'block-model') blockModel = true;
     if (message.type === 'release-model') releaseModel();
     if (message.type === 'block-send') blockSend = true;
     if (message.type === 'release-send') releaseSend();
-    parentPort.postMessage({ reads, outgoing, modelInputs });
+    process.send({ reads, outgoing, modelInputs });
   });
   process.argv.push('--production');
-  await import(workerData.indexUrl);
+  await import(fixtureData.indexUrl);
 }
 
 async function fixtureServer(t, { configured = true } = {}) {
@@ -108,21 +124,64 @@ async function fixtureServer(t, { configured = true } = {}) {
     mq: { enabled: false }, // Isolate transport from any RabbitMQ running on the host.
     auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
   }, null, 2));
-  const worker = new Worker(`(${serveFixture.toString()})()`, { eval: true,
-    workerData: { indexUrl: new URL('./index.js', import.meta.url).href },
-    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
-  t.after(() => worker.terminate());
-  const [{ port }] = await once(worker, 'message');
+  const fixtureData = { indexUrl: new URL('./index.js', import.meta.url).href };
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `(${serveFixture.toString()})(${JSON.stringify(fixtureData)}).catch(error => {
+      console.error(error); process.exitCode = 1; if (process.connected) process.disconnect();
+    })`], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    env: { ...process.env, PORT: '0', DAYLIGHT_RUNTIME: 'local', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
+  let output = '', exitResult, stopping;
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on('data', (chunk) => { output = (output + chunk).slice(-16384); });
+  }
+  const exited = new Promise((resolve) => {
+    child.once('error', (error) => { exitResult = { error }; resolve(exitResult); });
+    child.once('exit', (code, signal) => { exitResult = { code, signal }; resolve(exitResult); });
+  });
+  const failure = (message, result = exitResult) => new Error(
+    `${message}; exitCode=${result?.code ?? 'pending'}, signal=${result?.signal ?? 'none'}\n${result?.error?.message || ''}\n${output}`);
+  const nextMessage = () => new Promise((resolve, reject) => {
+    if (exitResult) { reject(failure('Mailboxes API fixture already exited')); return; }
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off('message', onMessage);
+      child.off('exit', onExit);
+      child.off('error', onError);
+    };
+    const onMessage = (value) => { cleanup(); resolve(value); };
+    const onExit = (code, signal) => { cleanup(); reject(failure('Mailboxes API fixture exited before replying', { code, signal })); };
+    const onError = (error) => { cleanup(); reject(failure('Mailboxes API fixture process failed', { error })); };
+    const timer = setTimeout(() => { cleanup(); reject(failure('Mailboxes API fixture did not reply within 15 seconds')); }, 15000);
+    child.once('message', onMessage);
+    child.once('exit', onExit);
+    child.once('error', onError);
+  });
+  const send = (value) => new Promise((resolve, reject) => child.send(value, (error) => error ? reject(error) : resolve()));
+  const stop = () => stopping ||= (async () => {
+    let timer;
+    try {
+      if (!exitResult) await send({ type: 'shutdown' });
+      const result = await Promise.race([exited, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(failure('Mailboxes API fixture did not shut down within 5 seconds')), 5000);
+      })]);
+      if (result.error || result.code !== 0 || result.signal) throw failure('Mailboxes API fixture exited unsuccessfully', result);
+    } catch (error) {
+      if (!exitResult) { child.kill(); await exited; }
+      throw error;
+    } finally { clearTimeout(timer); }
+  })();
+  t.after(stop);
+  const { port } = await nextMessage();
+  assert.ok(Number.isInteger(port) && port > 0, failure('Mailboxes API fixture returned an invalid port'));
   const request = async (route, method = 'GET', body, mailboxId) => {
-    const response = await fetch(`http://127.0.0.1:${port}${route}`, { method,
+    const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, signal: AbortSignal.timeout(15000),
       headers: { 'Content-Type': 'application/json', ...(mailboxId ? { 'X-Mailbox-Id': mailboxId } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() };
   };
   const command = async (message) => {
-    const response = once(worker, 'message');
-    worker.postMessage(message);
-    return (await response)[0];
+    const [response] = await Promise.all([nextMessage(), send(message)]);
+    return response;
   };
   const state = async () => (await request('/api/state')).body;
   const waitFor = async (check) => {
@@ -197,6 +256,15 @@ test('同 UID/Message-ID 和同名待办在不同邮箱分别提取，切换按�
   assert.equal((await app.request(`/api/traces/${firstTrace.trace_id}/feedback`, 'PUT', { action: 'rejected' })).status, 404);
   assert.equal((await app.request(`/api/events/${legacyEvent.id}`, 'PUT', { title: '不能修改另一个邮箱' })).status, 404);
   assert.equal((await app.request(`/api/tasks/${first.tasks[0].id}`, 'PUT', { status: 'pending' })).status, 404);
+  // 混合视图（scope=all）下列表里能看到两个邮箱的日程：改哪条就落到哪条归属的邮箱，
+  // 而不是一律写进当前邮箱。单邮箱视图没有 scope，上面两条仍然 404，隔离口径不变。
+  assert.equal((await app.request(`/api/events/${legacyEvent.id}?scope=all`, 'PUT', { title: '混合视图改旧邮箱日程' })).status, 200);
+  assert.equal((await app.request(`/api/tasks/${first.tasks[0].id}?scope=all`, 'PUT', { status: 'done' })).status, 200);
+  const legacyFile = JSON.parse(fs.readFileSync(path.join(app.directory, 'calendar.json'), 'utf8'));
+  assert.equal(legacyFile.events.find((event) => event.id === legacyEvent.id).title, '混合视图改旧邮箱日程');
+  assert.equal(legacyFile.tasks[0].status, 'done');
+  const secondFile = JSON.parse(fs.readFileSync(path.join(app.directory, 'mailboxes', secondId, 'calendar.json'), 'utf8'));
+  assert.equal(secondFile.events.some((event) => event.title === '混合视图改旧邮箱日程'), false, '跨邮箱修改不该写进当前邮箱');
   await app.command({ type: 'cancel' });
   assert.equal((await app.request('/api/sync/mail', 'POST')).body.cancelled, 1);
   assert.equal((await app.state()).events.find((event) => event.title === '合成安排 4').status, 'cancelled');

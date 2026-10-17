@@ -1,6 +1,7 @@
 import { chunkPages } from './chunk.js';
 import { embedTexts } from './embed.js';
 import { makeChunkId, replaceChunks, reassignCandidate } from './store.js';
+import { isRagEmbeddings } from './flags.js';
 import { getRequestUserId } from '../request-context.js';
 
 function ragEnabled(settings) {
@@ -33,8 +34,9 @@ export async function ingestAttachmentChunks({
 
   const owner = ownerUserId || getRequestUserId() || null;
   let embeddings = pieces.map(() => null);
-  // Embedding 需显式开启（ragEmbeddings=true）；默认仅关键词，避免聊天模型中转被误调 /embeddings。
-  if (settings.ragEmbeddings === true) {
+  // 向量检索默认开启（显式 false 才关闭）：默认 embedding 模型会从供应商模型列表自动挑，
+  // 挑不到就静默退回关键词，所以开启不会因为少填一个字段而报错。
+  if (isRagEmbeddings(settings)) {
     embeddings = await embedTexts(
       settings,
       pieces.map((item) => item.content),

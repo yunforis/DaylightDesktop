@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { once } from 'node:events';
-import { Worker } from 'node:worker_threads';
+import { spawn } from 'node:child_process';
 
 const profile = { personal: { name: '合成候选人', email: 'candidate@example.invalid', age: 23 },
   education: [{ school: '合成上海大学', city: '上海', degree: '本科', graduationStatus: '已毕业' }],
@@ -37,16 +36,16 @@ function mime({ uid = 1, subject = 'Synthetic application', body = 'Please revie
   return { uid, source: Buffer.from(lines.join('\r\n')).toString('base64') };
 }
 
-// The real Express server, MIME parser, PDF parser and file stores run in this worker.
+// A separate process keeps native PDF resources out of Worker-thread teardown on Windows.
+// The real Express server, MIME parser, PDF parser and file stores run in this process.
 // All remote transports are intercepted; only the parent makes HTTP requests to localhost.
-async function serveFixture() {
-  const { parentPort, workerData } = await import('node:worker_threads');
+async function serveFixture(fixtureData) {
   const { mock } = await import('node:test');
   const { default: express } = await import('express');
   const { default: dns } = await import('node:dns/promises');
   const { default: nodemailer } = await import('nodemailer');
   const { ImapFlow } = await import('imapflow');
-  let inbox = workerData.inbox, answers = [], calls = [], reads = 0, rawReads = 0, outgoing = [], smtpErrors = [];
+  let inbox = fixtureData.inbox, answers = [], calls = [], reads = 0, rawReads = 0, outgoing = [], smtpErrors = [], httpServer;
   mock.timers.enable({ apis: ['setInterval'] });
   mock.method(dns, 'lookup', async () => ({ address: '192.0.2.10', family: 4 }));
   mock.method(nodemailer, 'createTransport', () => ({ async sendMail(mail) {
@@ -80,20 +79,36 @@ async function serveFixture() {
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer), reasoning_content: 'PRIVATE_MODEL_REASONING' } }],
       usage: { prompt_tokens: 100, completion_tokens: 80 } }));
   });
-  parentPort.on('message', (command) => {
+  process.on('message', async (command) => {
+    if (command.type === 'shutdown') {
+      try {
+        await new Promise((resolve, reject) => {
+          httpServer.close((error) => error ? reject(error) : resolve());
+          httpServer.closeAllConnections();
+        });
+        mock.timers.reset();
+        mock.restoreAll();
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      } finally {
+        process.disconnect();
+      }
+      return;
+    }
     if (command.type === 'answers') answers.push(...command.values);
     if (command.type === 'inbox') inbox = command.values;
     if (command.type === 'smtpErrors') smtpErrors.push(...command.values);
-    parentPort.postMessage({ reads, rawReads, calls, outgoing, remainingAnswers: answers.length });
+    process.send({ reads, rawReads, calls, outgoing, remainingAnswers: answers.length });
   });
   const listen = express.application.listen;
   mock.method(express.application, 'listen', function (...args) {
-    const server = listen.apply(this, args);
-    server.once('listening', () => parentPort.postMessage({ port: server.address().port }));
+    const server = httpServer = listen.apply(this, args);
+    server.once('listening', () => process.send({ port: server.address().port }));
     return server;
   });
   process.argv.push('--production');
-  await import(workerData.indexUrl);
+  await import(fixtureData.indexUrl);
 }
 
 async function fixture(t, inbox = [mime()], directory) {
@@ -110,20 +125,68 @@ async function fixture(t, inbox = [mime()], directory) {
       auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
     }, null, 2));
   }
-  const worker = new Worker(`(${serveFixture.toString()})()`, { eval: true,
-    workerData: { indexUrl: new URL('./index.js', import.meta.url).href, inbox },
+  const fixtureData = { indexUrl: new URL('./index.js', import.meta.url).href, inbox };
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `(${serveFixture.toString()})(${JSON.stringify(fixtureData)}).catch(error => {
+      console.error(error); process.exitCode = 1; if (process.connected) process.disconnect();
+    })`], { cwd: path.dirname(path.dirname(fileURLToPath(import.meta.url))), windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(https?|all|no)_proxy$/i.test(key))),
-      PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
-  t.after(() => worker.terminate());
-  const [{ port }] = await once(worker, 'message');
-  const command = async (value) => { const result = once(worker, 'message'); worker.postMessage(value); return (await result)[0]; };
+      PORT: '0', DAYLIGHT_RUNTIME: 'local', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
+  let output = '', exitResult, stopping;
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on('data', (chunk) => { output = (output + chunk).slice(-16384); });
+  }
+  const exited = new Promise((resolve) => {
+    child.once('error', (error) => { exitResult = { error }; resolve(exitResult); });
+    child.once('exit', (code, signal) => { exitResult = { code, signal }; resolve(exitResult); });
+  });
+  const failure = (message, result = exitResult) => new Error(
+    `${message}; exitCode=${result?.code ?? 'pending'}, signal=${result?.signal ?? 'none'}\n${result?.error?.message || ''}\n${output}`);
+  const nextMessage = () => new Promise((resolve, reject) => {
+    if (exitResult) { reject(failure('Recruitment API fixture already exited')); return; }
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off('message', onMessage);
+      child.off('exit', onExit);
+      child.off('error', onError);
+    };
+    const onMessage = (value) => { cleanup(); resolve(value); };
+    const onExit = (code, signal) => { cleanup(); reject(failure('Recruitment API fixture exited before replying', { code, signal })); };
+    const onError = (error) => { cleanup(); reject(failure('Recruitment API fixture process failed', { error })); };
+    const timer = setTimeout(() => { cleanup(); reject(failure('Recruitment API fixture did not reply within 15 seconds')); }, 15000);
+    child.once('message', onMessage);
+    child.once('exit', onExit);
+    child.once('error', onError);
+  });
+  const send = (value) => new Promise((resolve, reject) => child.send(value, (error) => error ? reject(error) : resolve()));
+  const stop = () => stopping ||= (async () => {
+    let timer;
+    try {
+      if (!exitResult) await send({ type: 'shutdown' });
+      const result = await Promise.race([exited, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(failure('Recruitment API fixture did not shut down within 5 seconds')), 5000);
+      })]);
+      if (result.error || result.code !== 0 || result.signal) throw failure('Recruitment API fixture exited unsuccessfully', result);
+    } catch (error) {
+      if (!exitResult) { child.kill(); await exited; }
+      throw error;
+    } finally { clearTimeout(timer); }
+  })();
+  t.after(stop);
+  const { port } = await nextMessage();
+  assert.ok(Number.isInteger(port) && port > 0, failure('Recruitment API fixture returned an invalid port'));
+  const command = async (value) => {
+    const [result] = await Promise.all([nextMessage(), send(value)]);
+    return result;
+  };
   const request = async (route, method = 'GET', body, headers = {}) => {
-    const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { 'Content-Type': 'application/json', ...headers },
+    const response = await fetch(`http://127.0.0.1:${port}${route}`, { method, signal: AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/json', ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const content = response.headers.get('content-type')?.includes('application/pdf') ? Buffer.from(await response.arrayBuffer()) : await response.json();
     return { status: response.status, body: content, headers: response.headers };
   };
-  return { directory, request, command, stop: () => worker.terminate(), answers: (values) => command({ type: 'answers', values }),
+  return { directory, request, command, stop, answers: (values) => command({ type: 'answers', values }),
     state: async () => (await request('/api/state')).body, talent: async () => (await request('/api/recruitment')).body,
     counts: () => command({ type: 'counts' }) };
 }

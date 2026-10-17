@@ -14,9 +14,10 @@ import {
 } from './mail-filters.js';
 import { getRequestUser, getRequestUserId, getRequestContext } from './request-context.js';
 import { isProductionRuntime } from './runtime-mode.js';
+import { pendingMailboxId } from './mailbox-identity.js';
 import {
   usesStorageSnapshot, readSnapshotDocument, stageSnapshotDocument,
-  calendarKey, settingsKey, storageStatus,
+  calendarKey, settingsKey, storageStatus, registerSnapshotMailboxes,
 } from './storage/index.js';
 
 export { createStorageSnapshot, runStorageSnapshot, withStorageSnapshot, withStorageCommit, withStorageTransaction, commitStorage, flushStorage, discardStorage } from './storage/index.js';
@@ -64,8 +65,10 @@ function emptyOwnedMailbox(userId) {
   const accountEmail = String(getRequestUser()?.email || '').trim().toLowerCase();
   const providerId = guessMailboxProvider(accountEmail);
   const provider = mailboxProviders.find((item) => item.id === providerId) || mailboxProviders[0];
+  const pending = usesStorageSnapshot();
   return normalizeMailbox({
-    id: `mb-${short}`,
+    id: pending ? pendingMailboxId(userId) : `mb-${short}`,
+    ...(pending ? { pendingSetup: true } : {}),
     ownerUserId: userId,
     email: accountEmail,
     authorizationCode: '',
@@ -156,6 +159,20 @@ export function mailboxTagLabel(mailbox) {
   return MAILBOX_TAG_OPTIONS.find((item) => item.id === mailbox.tag)?.label || '工作';
 }
 
+/**
+ * 写回真实邮箱是显式开关：默认关闭，且必须按邮箱单独打开。
+ * 现网已有数据没有这个字段，因此缺省值必须稳定为「关闭」，不能因为读一次设置就被打开。
+ */
+export function normalizeMailboxWriteBack(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const folder = (input) => (typeof input === 'string' ? input.trim().slice(0, 200) : '');
+  return {
+    enabled: source.enabled === true,
+    archiveFolder: folder(source.archiveFolder),
+    trashFolder: folder(source.trashFolder),
+  };
+}
+
 export function normalizeMailbox(mailbox) {
   const provider = mailboxProviders.find((item) => item.id === (mailbox.provider || 'qq')) || mailboxProviders.at(-1);
   const tagged = normalizeMailboxTag(mailbox.tag, mailbox.tagCustom);
@@ -167,6 +184,7 @@ export function normalizeMailbox(mailbox) {
     smtpHost: provider.smtpHost, smtpPort: provider.smtpPort, smtpSecure: provider.smtpSecure,
     ...mailbox,
     ...tagged,
+    writeBack: normalizeMailboxWriteBack(mailbox.writeBack),
   };
 }
 
@@ -180,7 +198,7 @@ export function readSettings() {
   const mailboxes = mailboxesForUser(legacyMailboxes, userId);
   const userPref = userId && stored.userPrefs?.[userId] ? normalizeUserPref(stored.userPrefs[userId]) : null;
   const explicitMailboxId = getRequestContext().mailboxId;
-  if (explicitMailboxId !== undefined && !legacyMailboxes.some(box => box.id === explicitMailboxId && (!userId || mailboxOwnerId(box) === userId))) {
+  if (explicitMailboxId !== undefined && !mailboxes.some(box => box.id === explicitMailboxId && (!userId || mailboxOwnerId(box) === userId))) {
     throw Object.assign(new Error('Mailbox does not belong to this owner'), { status: 403, code: 'STORAGE_MAILBOX_FORBIDDEN' });
   }
   const preferredActive = explicitMailboxId ?? (userPref?.activeMailboxId || stored.activeMailboxId);
@@ -213,7 +231,7 @@ export function readSettings() {
   return merged;
 }
 
-export function saveSettings(settings) {
+export function saveSettings(settings, { registerMailboxIds = [] } = {}) {
   const stored = readRawSettings();
   const userId = getRequestUserId();
   const {
@@ -222,7 +240,12 @@ export function saveSettings(settings) {
     ragEnabled, ragEmbeddings, embeddingModel,
   } = settings;
 
-  const incomingMailboxes = (mailboxes || []).map(normalizeMailbox);
+  // A placeholder is not an owned mailbox until the mailbox settings form saves
+  // that exact profile. Other preferences can be saved without registering it.
+  const register = new Set(registerMailboxIds);
+  const incomingMailboxes = (mailboxes || []).map(normalizeMailbox)
+    .filter(box => box.pendingSetup !== true || register.has(box.id))
+    .map(({ pendingSetup, ...box }) => box);
   if (usesStorageSnapshot() && userId) {
     const others = new Set((stored.mailboxes || []).filter(box => mailboxOwnerId(box) !== userId).map(box => box.id));
     if (incomingMailboxes.some(box => others.has(box.id))) {
@@ -246,7 +269,8 @@ export function saveSettings(settings) {
     mailboxes: nextMailboxes,
     ...(feishu ? { feishu } : (stored.feishu ? { feishu: stored.feishu } : {})),
     ragEnabled: ragEnabled === undefined ? (stored.ragEnabled !== false) : Boolean(ragEnabled),
-    ragEmbeddings: ragEmbeddings === undefined ? (stored.ragEmbeddings === true) : Boolean(ragEmbeddings),
+    // 向量检索默认开启：模型可自动发现，挑不到就退回关键词，不需要用户先手动打开开关。
+    ragEmbeddings: ragEmbeddings === undefined ? (stored.ragEmbeddings !== false) : Boolean(ragEmbeddings),
     embeddingModel: embeddingModel === undefined
       ? (stored.embeddingModel || '')
       : String(embeddingModel || '').trim(),
@@ -292,7 +316,11 @@ export function saveSettings(settings) {
     };
   }
 
-  if (usesStorageSnapshot()) stageSnapshotDocument(settingsKey('default'), payload);
+  if (usesStorageSnapshot()) {
+    const knownIds = new Set((stored.mailboxes || []).map(box => box.id));
+    registerSnapshotMailboxes(incomingMailboxes.filter(box => !knownIds.has(box.id)).map(box => box.id));
+    stageSnapshotDocument(settingsKey('default'), payload);
+  }
   else write('settings', payload);
 }
 
@@ -310,6 +338,22 @@ export function saveStore(data, mailboxId = readSettings().activeMailboxId) {
   const payload = { ...data, updatedAt: new Date().toISOString() };
   if (usesStorageSnapshot()) stageSnapshotDocument(calendarKey(mailboxId), payload);
   else write('calendar', payload, mailboxDirectory(mailboxId));
+}
+
+/**
+ * 就地更新一封已存邮件（写回真邮箱后同步本地镜像：已读/星标/所在文件夹）。
+ * 找不到这封邮件时返回 null——调用方必须当成失败处理，不能凭空新建记录。
+ */
+export function updateStoredEmail(mailboxId, id, patch) {
+  const data = readStore(mailboxId);
+  const index = (data.emails || []).findIndex((email) => email.id === id);
+  if (index < 0) return null;
+  const current = data.emails[index];
+  const next = typeof patch === 'function' ? patch(current) : { ...current, ...patch };
+  if (!next || next === current) return current;
+  data.emails[index] = next;
+  saveStore(data, mailboxId);
+  return next;
 }
 
 /** 外部日历 OAuth / CalDAV 连接（写在 settings.json，不经 userPrefs 裁剪）。 */
@@ -351,12 +395,13 @@ function publicMailbox(mailbox) {
   const {
     id, provider, email, fetchLimit, fetchMode, fetchRange, fetchSince, fetchUntil,
     syncStrategy, pollIntervalSec, imapHost, imapPort, imapSecure, smtpHost, smtpPort, smtpSecure,
-    tag, tagCustom, authorizationCode,
+    tag, tagCustom, authorizationCode, writeBack,
   } = mailbox;
   const visible = {
     id, provider, email, fetchLimit, fetchMode, fetchRange, fetchSince, fetchUntil,
     syncStrategy, pollIntervalSec, imapHost, imapPort, imapSecure, smtpHost, smtpPort, smtpSecure,
     tag, tagCustom, tagLabel: mailboxTagLabel(mailbox),
+    writeBack: normalizeMailboxWriteBack(writeBack),
   };
   return { ...visible, hasAuthorizationCode: Boolean(authorizationCode),
     mailboxReady: Boolean(mailbox.email && authorizationCode && mailbox.imapHost && mailbox.smtpHost) };
@@ -397,7 +442,7 @@ export function publicSettings(settings = readSettings()) {
     hasApiKey: Boolean(apiKey),
     modelReady: Boolean(settings.baseUrl && apiKey && settings.model),
     ragEnabled: settings.ragEnabled !== false,
-    ragEmbeddings: settings.ragEmbeddings === true,
+    ragEmbeddings: settings.ragEmbeddings !== false,
     embeddingModel: settings.embeddingModel || '',
   };
 }

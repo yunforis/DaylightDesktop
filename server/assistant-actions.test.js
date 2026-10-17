@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import dns from 'node:dns/promises';
 import nodemailer from 'nodemailer';
+import { simpleParser } from 'mailparser';
 
 fs.mkdirSync(path.resolve('work'), { recursive: true });
 const directory = fs.mkdtempSync(path.resolve('work/assistant-actions-test-'));
@@ -160,6 +161,69 @@ test('会议邀约链接、过期、已改动或已取消的日程在 SMTP 前�
   fs.writeFileSync(file, JSON.stringify({ events: [{ id: 'meeting-event', start, end }] }));
   const edited = await actions.updateAssistantDraft('one', draft.id, { revision: 1, body: '删除链接' });
   await assert.rejects(send(edited.draft, () => assert.fail('不可发送')), /缺少真实会议链接/);
+});
+
+test('会议邀约以审核后的中文正文发送纯文本与 HTML MIME，仅真实会议链接可点击且重复确认不重发', async (t) => {
+  const stream = nodemailer.createTransport({ streamTransport: true, buffer: true });
+  t.mock.method(dns, 'lookup', async () => ({ address: '192.0.2.30', family: 4 }));
+  let calls = 0;
+  let outgoing;
+  let parsed;
+  let raw;
+  t.mock.method(nodemailer, 'createTransport', () => ({
+    async sendMail(mail) {
+      calls++;
+      outgoing = mail;
+      const info = await stream.sendMail(mail);
+      raw = info.message.toString('utf8');
+      parsed = await simpleParser(info.message);
+      return { ...info, accepted: mail.to, rejected: [] };
+    },
+    close() {},
+  }));
+  const start = new Date(Date.now() + 86400000).toISOString();
+  const end = new Date(Date.now() + 90000000).toISOString();
+  const meeting = { url: 'https://vc.feishu.cn/j/fixture?token=synthetic&source=daylight',
+    expiresAt: end, scheduledStart: start, scheduledEnd: end };
+  fs.writeFileSync(path.join(directory, 'mailboxes', 'one', 'calendar.json'),
+    JSON.stringify({ events: [{ id: 'meeting-event', start, end }] }));
+  const original = await create({ kind: 'meeting_invitation', subject: '原始会议草稿',
+    body: `原始待修改正文 ${meeting.url}`, eventId: 'meeting-event', meeting });
+  const reviewedBody = ['您好：', '', '已审核的项目会议，A & B。',
+    '<b>这段不是粗体</b> <script>alert("合成内容")</script>',
+    `飞书会议链接：${meeting.url}`, `再次附上：${meeting.url}`, '',
+    '其他说明网址 https://example.invalid/reference 保持原文。', '期待您的参加。'].join('\r\n');
+  const edited = await actions.updateAssistantDraft('one', original.draft.id, {
+    revision: original.draft.revision, subject: '已审核的中文会议邀约', body: reviewedBody,
+  });
+  await assert.rejects(send(original.draft, sendMailboxMessage), /草稿已更新/);
+  assert.equal(calls, 0);
+  const sent = await send(edited.draft, sendMailboxMessage);
+  assert.equal(sent.draft.status, 'sent');
+  assert.equal(calls, 1);
+  assert.equal(outgoing.text, reviewedBody, '纯文本正文与审核内容完全相同');
+  assert.equal(parsed.text, reviewedBody.replace(/\r\n/g, '\n'));
+  assert.equal(parsed.subject, '已审核的中文会议邀约');
+  assert.match(raw, /Content-Type: multipart\/alternative;/i);
+  assert.match(raw, /Content-Type: text\/plain; charset=utf-8/i);
+  assert.match(raw, /Content-Type: text\/html; charset=utf-8/i);
+  assert.equal(parsed.html, outgoing.html);
+  const escapedUrl = 'https://vc.feishu.cn/j/fixture?token=synthetic&amp;source=daylight';
+  const anchors = [...parsed.html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)];
+  assert.equal(anchors.length, 2, '仅持久化会议链接的两次出现生成超链接');
+  for (const [anchor, label] of anchors) {
+    assert.ok(anchor.includes(`href="${escapedUrl}"`));
+    assert.match(anchor, /target="_blank"/);
+    assert.match(anchor, /rel="noopener noreferrer"/);
+    assert.equal(label, escapedUrl);
+  }
+  assert.match(parsed.html, /已审核的项目会议，A &amp; B。/);
+  assert.match(parsed.html, /&lt;b&gt;这段不是粗体&lt;\/b&gt;/);
+  assert.match(parsed.html, /&lt;script&gt;alert\((?:&quot;|&#34;)合成内容(?:&quot;|&#34;)\)&lt;\/script&gt;/);
+  assert.match(parsed.html, /其他说明网址 https:\/\/example\.invalid\/reference 保持原文。/);
+  assert.doesNotMatch(parsed.html, /<script\b|<b\b|原始待修改正文/);
+  await send(edited.draft, () => assert.fail('重复确认不可再次进入 SMTP'));
+  assert.equal(calls, 1);
 });
 
 test('真实 SMTP 发送路径接受多收件人并保留部分拒绝回执，使用 TLS 并关闭传输', async (t) => {

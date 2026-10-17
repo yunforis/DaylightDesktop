@@ -36,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { RagCitations } from '@/components/rag-citations';
 import { openAttachmentViewer } from '@/lib/attachment-open';
+import { sourceUrl } from '@/lib/attachment-source';
 import { cn } from '@/lib/utils';
 import {
   CHAT_EXAMPLES, EMPTY_RECRUITMENT,
@@ -70,7 +71,7 @@ export function EmailAttachments({ email, mailboxId, request, onCandidate, onUpd
   const [error, setError] = useState('');
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const attachments = email.attachments || [];
+  const attachments = (email.attachments || []).map((attachment) => ({ ...attachment, mailboxId }));
   const resume = (email.category || email.extraction?.category) === 'resume';
   if (!attachments.length && !email.candidateIds?.length && !resume) return null;
 
@@ -84,13 +85,14 @@ export function EmailAttachments({ email, mailboxId, request, onCandidate, onUpd
         <p className="text-xs text-muted-foreground">求职简历单独整理到人才库，不创建日程或待办。</p>
       )}
       <div className="space-y-2">
-        {attachments.map((attachment) => (
-          <div key={attachment.id} className="flex flex-wrap items-start gap-3 rounded-md border bg-background px-3 py-2.5">
+        {attachments.map((attachment, index) => (
+          <div key={attachment.key || attachment.id || index} className="flex flex-wrap items-start gap-3 rounded-md border bg-background px-3 py-2.5">
             <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{attachment.filename || attachment.name || 'PDF 简历'}</div>
+              <div className="truncate text-sm font-medium">{attachment.filename || attachment.name || '附件'}</div>
               <div className="text-xs text-muted-foreground">
-                {attachment.status === 'failed' ? '提取失败，可重试'
+                {attachment.skipped ? attachment.reason || '附件已跳过，未保存'
+                  : attachment.status === 'failed' ? '提取失败，可重试'
                   : attachment.status === 'processing' || attachment.status === 'pending' ? '正在提取'
                     : attachment.candidateId ? '已加入人才库' : '附件已保存'}
                 {attachment.pageCount ? ` · ${attachment.pageCount} 页` : ''}
@@ -101,14 +103,8 @@ export function EmailAttachments({ email, mailboxId, request, onCandidate, onUpd
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => openAttachmentViewer({
-                  id: attachment.id,
-                  filename: attachment.filename || attachment.name || 'PDF 简历',
-                  contentType: attachment.contentType || 'application/pdf',
-                  size: attachment.size,
-                  url: pdfUrl(attachment.id, mailboxId),
-                  proxyUrl: pdfUrl(attachment.id, mailboxId),
-                })}
+                disabled={!sourceUrl(attachment)}
+                onClick={() => openAttachmentViewer(attachment)}
               >
                 预览 <FileText className="size-3" />
               </Button>
@@ -121,16 +117,10 @@ export function EmailAttachments({ email, mailboxId, request, onCandidate, onUpd
                 <DropdownMenuContent align="end" className="w-52">
                   <DropdownMenuLabel>附件与邮件</DropdownMenuLabel>
                   <DropdownMenuItem
-                    onClick={() => openAttachmentViewer({
-                      id: attachment.id,
-                      filename: attachment.filename || attachment.name || 'PDF 简历',
-                      contentType: attachment.contentType || 'application/pdf',
-                      size: attachment.size,
-                      url: pdfUrl(attachment.id, mailboxId),
-                      proxyUrl: pdfUrl(attachment.id, mailboxId),
-                    })}
+                    disabled={!sourceUrl(attachment)}
+                    onClick={() => openAttachmentViewer(attachment)}
                   >
-                    <Eye className="size-3.5" />预览简历 PDF
+                    <Eye className="size-3.5" />{resume ? '预览简历 PDF' : '预览附件'}
                   </DropdownMenuItem>
                   {attachment.candidateId && (
                     <DropdownMenuItem onClick={() => onCandidate(attachment.candidateId)}>
@@ -252,8 +242,16 @@ function CandidateCard({ candidate, match, partial, mailboxId, onOpen, onInvite,
 
         {skillText.length > 0 && (
           <div className="flex flex-wrap gap-1">
+            {/* 技能标签可能很长（如「云原生：Kubernetes（Helm、Kustomize、ArgoCD）」）。
+                Badge 默认 whitespace-nowrap + overflow-hidden 会把它整行截断，所以这里允许换行。 */}
             {skillText.map((skill, index) => (
-              <Badge key={index} variant="outline" className="font-normal">{skill}</Badge>
+              <Badge
+                key={index}
+                variant="outline"
+                className="max-w-full items-start justify-start px-2 py-1 text-left font-normal break-words whitespace-normal"
+              >
+                {skill}
+              </Badge>
             ))}
           </div>
         )}
@@ -263,17 +261,17 @@ function CandidateCard({ candidate, match, partial, mailboxId, onOpen, onInvite,
             {match.matched?.length > 0 && (
               <p className="flex gap-1.5 text-foreground">
                 <Check className="mt-0.5 size-3 shrink-0" />
-                <span>{match.matched.map(textOf).join('；')}</span>
+                <span className="min-w-0 break-words">{match.matched.map(textOf).join('；')}</span>
               </p>
             )}
             {match.missing?.length > 0 && (
               <p className="flex gap-1.5 text-muted-foreground">
                 <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                <span>{match.missing.map(textOf).join('；')}</span>
+                <span className="min-w-0 break-words">{match.missing.map(textOf).join('；')}</span>
               </p>
             )}
             {match.evidence?.length > 0 && (
-              <blockquote className="border-l-2 pl-2 text-muted-foreground">
+              <blockquote className="border-l-2 pl-2 break-words text-muted-foreground">
                 {match.evidence.map((item) => (typeof item === 'string' ? item : item.quote || textOf(item))).join('；')}
               </blockquote>
             )}

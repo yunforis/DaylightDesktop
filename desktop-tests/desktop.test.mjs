@@ -98,6 +98,7 @@ async function stopBackend(state) {
   return code;
 }
 
+/** 原始路径请求（不经 URL 归一化），用于校验回环 Host 限制。 */
 function rawRequest(port, pathname, headers = {}) {
   return new Promise((resolve, reject) => {
     const request = http.request({ host: '127.0.0.1', port, path: pathname, method: 'GET', headers }, (response) => {
@@ -110,18 +111,6 @@ function rawRequest(port, pathname, headers = {}) {
 }
 
 /** 按原始路径请求（不做 URL 归一化），用于校验静态目录的越权防护。 */
-function rawPathBody(port, pathname, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const request = http.request({ host: '127.0.0.1', port, path: pathname, method: 'GET', headers }, (response) => {
-      let body = '';
-      response.setEncoding('utf8');
-      response.on('data', (chunk) => { body += chunk; });
-      response.on('end', () => resolve({ status: response.statusCode, body }));
-    });
-    request.on('error', reject);
-    request.end();
-  });
-}
 
 async function call(port, pathname, { method = 'GET', cookie, bearer, origin, body, headers = {} } = {}) {
   const merged = { ...headers };
@@ -337,82 +326,72 @@ test('补丁锚点自检：重新基线时桌面补丁不能被静默丢弃', ()
   assert.match(app, /<Navigate to="\/app" replace \/>/, '根路径必须直接进工作区');
   assert.ok(!/RequireAdmin/.test(app), '桌面端不应有管理端路由守卫');
 
-  // PDF 预览：桌面端用自己的 pdf.js canvas 查看器（三平台一致），资源由后台就地提供。
-  const desktopHttp = fs.readFileSync(path.join(ROOT, 'server', 'desktop-http.js'), 'utf8');
-  assert.match(desktopHttp, /'\/desktop\/pdfjs\/'/, 'pdf.js 资源必须免 cookie 提供（worker 不保证带 cookie）');
-  assert.match(desktopHttp, /express\.static\(target/, 'pdf.js 资源必须以只读静态目录提供');
-  const viewer = fs.readFileSync(path.join(ROOT, 'src', 'components', 'pdf-canvas-viewer.jsx'), 'utf8');
-  assert.match(viewer, /cMapUrl/, '应用自产 PDF 是 UniGB-UCS2-H 预定义 CMap，必须传 cMapUrl');
-  assert.match(viewer, /standardFontDataUrl/);
-  assert.match(viewer, /isEvalSupported: false/, '桌面端 CSP 无 unsafe-eval，必须关掉 eval 路径');
-  assert.match(viewer, /visibilitychange/, '窗口隐藏时 pdf.js 渲染暂停，超时不能误判');
-  const attachment = fs.readFileSync(path.join(ROOT, 'src', 'components', 'attachment-viewer.jsx'), 'utf8');
-  assert.match(attachment, /PdfCanvasViewer/, '附件预览必须走桌面端 canvas 查看器');
+  // PDF 预览复用上游的 pdf.js canvas 查看器（专为「宿主没有内置 PDF 查看器」而写），
+  // 桌面端不再维护自己的实现；离线可用依赖打包进产物的 CMap / 标准字体 / wasm。
+  // 壳层加载页受 tauri.conf.json 的 CSP 约束；应用页由回环 HTTP 提供，
+  // 安全边界是 Host/Origin/cookie 校验（见 desktop-http.js），这里只做两条防御性检查。
+  const csp = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8')).app.security.csp;
+  assert.match(csp, /worker-src[^;]*(?:'self'|blob:)/, 'pdf.js 使用同源 module worker');
+  assert.match(csp, /connect-src[^;]*data:/, '小体积 CMap 会被内联成 data: URL，连接源需放行');
+  assert.ok(!/unsafe-eval/.test(csp), 'CSP 不应放开 unsafe-eval');
 });
 
-test('PDF 预览：pdf.js 资源由后台就地提供，且应用自产 PDF 能被同一配置渲染', async () => {
-  const dataDir = temporaryDataDir('pdfjs');
-  const { state, ready } = startBackend({ dataDir });
-  await ready;
-  try {
-    // 这些是公开的库资源、不含用户数据，worker 与 fetch 也不一定带 cookie，因此必须免 cookie 可取。
-    const cmap = await call(state.port, '/desktop/pdfjs/cmaps/UniGB-UCS2-H.bcmap');
-    assert.equal(cmap.status, 200);
-    assert.ok(cmap.text.length > 10_000, '预定义 CMap 必须完整可下载');
-
-    const worker = await call(state.port, '/desktop/pdfjs/build/pdf.worker.min.mjs');
-    assert.equal(worker.status, 200);
-    assert.ok(worker.text.length > 100_000, 'pdf.js worker 必须可下载');
-    assert.ok(worker.text.includes('WorkerMessageHandler'));
-
-    const standardFont = await call(state.port, '/desktop/pdfjs/standard_fonts/LiberationSans-Regular.ttf');
-    assert.equal(standardFont.status, 200, '标准字体资源必须可下载');
-
-    // 静态目录不得被用于读取包外文件（Express 会把 `..` 归一化掉，这里只要求不泄露内容）。
-    const escaped = await rawPathBody(state.port, '/desktop/pdfjs/cmaps/../../package.json');
-    assert.ok(!escaped.body.includes('pdfjs-dist'), `静态目录越界读取了包外文件：${escaped.body.slice(0, 60)}`);
-
-    // 应用自己生成的简历 PDF 使用 STSong-Light + /Encoding /UniGB-UCS2-H（非嵌入中文 CID 字体），
-    // 必须同时提供 cMapUrl 与 standardFontDataUrl，否则中文字形取不到。
-    const { demoResumePdf } = await import('../server/pdf.js');
-    const bytes = await demoResumePdf({
-      personal: { name: '周雨桐', email: 'candidate@example.invalid', currentCity: '上海' },
-      intent: { positions: ['软件开发工程师'], cities: ['上海'] },
-      skills: ['React', 'Node.js'],
-    });
-    assert.ok(bytes.length > 1_000, '演示简历 PDF 必须生成成功');
-
-    const pdfRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const doc = await pdfjs.getDocument({
-      data: new Uint8Array(bytes),
-      cMapUrl: `${pdfRoot}/cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `${pdfRoot}/standard_fonts/`,
-      wasmUrl: `${pdfRoot}/wasm/`,
-      isEvalSupported: false,
-      verbosity: 0,
-    }).promise;
-    assert.equal(doc.numPages, 1);
-
-    const page = await doc.getPage(1);
-    const content = await page.getTextContent();
-    const flat = content.items.map((item) => item.str || '').join('');
-    assert.ok(flat.includes('周雨桐'), `中文必须能正确解码，实际文本：${flat.slice(0, 40)}`);
-
-    const viewport = page.getViewport({ scale: 1 });
-    const { createCanvas } = require('@napi-rs/canvas');
-    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-    await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport }).promise;
-    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-    let dark = 0;
-    for (let index = 0; index < pixels.length; index += 4) {
-      if (pixels[index] < 100 && pixels[index + 1] < 100 && pixels[index + 2] < 100) dark += 1;
-    }
-    assert.ok(dark > 200, `渲染结果必须含文字像素，实际 ${dark}`);
-  } finally {
-    assert.equal(await stopBackend(state), 0);
+test('PDF 预览：离线资源随包分发，且应用自产 PDF 能渲染出中文', async (t) => {
+  // 上游查看器用 import.meta.glob 把 pdfjs 的 CMap/标准字体/wasm 打进产物（小文件会被内联成 data: URL）。
+  if (!fs.existsSync(path.join(ROOT, 'dist', 'assets'))) {
+    t.diagnostic('尚未执行 npm run build，跳过产物检查');
+  } else {
+    const assets = fs.readdirSync(path.join(ROOT, 'dist', 'assets'));
+    assert.ok(assets.some((name) => name.startsWith('UniGB-UCS2-H') && name.endsWith('.bcmap')), '中文 CMap 必须随包分发');
+    assert.ok(assets.some((name) => name.endsWith('.wasm')), 'pdf.js 的 wasm 解码器必须随包分发');
+    assert.ok(assets.some((name) => name.startsWith('pdf.worker.min')), 'pdf.js worker 必须随包分发');
+    assert.ok(assets.some((name) => name.startsWith('pdf-preview') && name.endsWith('.js')), 'PDF 预览组件必须打进产物');
   }
+
+  const preview = fs.readFileSync(path.join(ROOT, 'src', 'components', 'pdf-preview.jsx'), 'utf8');
+  assert.match(preview, /isEvalSupported: false/, '桌面端 CSP 无 unsafe-eval，必须关掉 eval 路径');
+  assert.match(preview, /useWorkerFetch: false/, '资源由主线程取回后交给 worker，避免 worker 直连受限');
+  assert.match(preview, /BinaryDataFactory/, '离线部署必须自带 CMap/字体/wasm 的取数实现');
+
+  // 应用自己生成的简历 PDF 使用 STSong-Light + /Encoding /UniGB-UCS2-H（非嵌入中文 CID 字体），
+  // 必须同时提供 cMapUrl 与 standardFontDataUrl，否则中文字形取不到、页面渲染不出来。
+  const { demoResumePdf } = await import('../server/pdf.js');
+  const bytes = await demoResumePdf({
+    personal: { name: '周雨桐', email: 'candidate@example.invalid', currentCity: '上海' },
+    intent: { positions: ['软件开发工程师'], cities: ['上海'] },
+    skills: ['React', 'Node.js'],
+  });
+  assert.ok(bytes.length > 1_000, '演示简历 PDF 必须生成成功');
+
+  const pdfRoot = path.dirname(require.resolve('pdfjs-dist/package.json'));
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(bytes),
+    cMapUrl: `${pdfRoot}/cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `${pdfRoot}/standard_fonts/`,
+    wasmUrl: `${pdfRoot}/wasm/`,
+    isEvalSupported: false,
+    verbosity: 0,
+  }).promise;
+  assert.equal(doc.numPages, 1);
+
+  const page = await doc.getPage(1);
+  const content = await page.getTextContent();
+  const flat = content.items.map((item) => item.str || '').join('');
+  assert.ok(flat.includes('周雨桐'), `中文必须能正确解码，实际文本：${flat.slice(0, 40)}`);
+
+  const viewport = page.getViewport({ scale: 1 });
+  const { createCanvas } = require('@napi-rs/canvas');
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+  await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport }).promise;
+  // A4 缩放 1 时画布只有 595×842，正文是深灰而非纯黑，因此按「非白像素」计数。
+  const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+  let inked = 0;
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (pixels[index] < 240 || pixels[index + 1] < 240 || pixels[index + 2] < 240) inked += 1;
+  }
+  assert.ok(inked > 5_000, `页面必须真的画出内容（含中文字形），实际非白像素 ${inked}`);
 });
 
 test('打包运行时（src-tauri/runtime）不含 vite，且能独立启动后台', async (t) => {
