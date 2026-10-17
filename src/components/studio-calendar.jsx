@@ -7,8 +7,10 @@ import interactionPlugin from '@fullcalendar/react/interaction';
 import classicThemePlugin from '@fullcalendar/react/themes/classic';
 import zhCnLocale from '@fullcalendar/react/locales/zh-cn';
 import { differenceInCalendarDays } from 'date-fns';
+import { createPortal } from 'react-dom';
 import {
-  Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, LoaderCircle, Pencil, Plus, Share2,
+  Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, Eye, LoaderCircle,
+  MessageSquare, Pencil, Plus, Share2, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,15 +30,24 @@ import {
 } from '@/components/ui/select';
 import { useTheme } from '@/components/theme-provider';
 import { request } from '@/lib/api';
-import { isCancelled } from '@/lib/domain';
+import { isCancelled, isDeclined } from '@/lib/domain';
 import { t } from '@/lib/i18n';
+import { clock, eventTime, shanghaiDate } from '@/lib/time';
 import { cn } from '@/lib/utils';
 
+const CALENDAR_VIEW_KEY = 'daylight-calendar-view';
 const VIEW_KEYS = [
   { key: 'dayGridMonth', labelKey: 'month' },
   { key: 'timeGridWeek', labelKey: 'week' },
   { key: 'timeGridDay', labelKey: 'day' },
 ];
+function initialCalendarView() {
+  try {
+    const saved = localStorage.getItem(CALENDAR_VIEW_KEY);
+    if (VIEW_KEYS.some((item) => item.key === saved)) return saved;
+  } catch { /* 无本地存储时使用月视图 */ }
+  return 'dayGridMonth';
+}
 
 const FALLBACK_CATEGORIES = [
   { id: 'work', label: '工作安排', color: '#3d7a5c' },
@@ -95,11 +106,14 @@ function formatRangeLabel(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export function StudioCalendar({ events, onEvent, onNew, categories, onCategoriesChange }) {
+export function StudioCalendar({
+  events, onEvent, onNew, onDelete, onAskLittleD, categories, onCategoriesChange,
+}) {
   const { locale } = useTheme();
   const controller = useCalendarController();
-  const [view, setView] = useState('timeGridWeek');
+  const [view, setView] = useState(initialCalendarView);
   const [exporting, setExporting] = useState(false);
+  const [eventMenu, setEventMenu] = useState(null);
   const categoryList = useMemo(() => {
     const list = (categories || []).filter((item) => item && item.enabled !== false);
     return list.length ? list : FALLBACK_CATEGORIES;
@@ -109,6 +123,7 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
   const [editingCategories, setEditingCategories] = useState(false);
   const [draftCategories, setDraftCategories] = useState([]);
   const [savingCategories, setSavingCategories] = useState(false);
+  const [dayMore, setDayMore] = useState(null);
   const [dateInfo, setDateInfo] = useState(() => ({
     title: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
     days: 31,
@@ -118,12 +133,17 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
   const dateInfoRef = useRef(dateInfo);
   const viewRef = useRef(view);
   const rangeRef = useRef({ start: null, end: null });
+  const calendarFrameRef = useRef(null);
   const onEventRef = useRef(onEvent);
   const onNewRef = useRef(onNew);
+  const onDeleteRef = useRef(onDelete);
+  const onAskLittleDRef = useRef(onAskLittleD);
   dateInfoRef.current = dateInfo;
   viewRef.current = view;
   onEventRef.current = onEvent;
   onNewRef.current = onNew;
+  onDeleteRef.current = onDelete;
+  onAskLittleDRef.current = onAskLittleD;
 
   useEffect(() => {
     setVisible((current) => {
@@ -146,30 +166,34 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
     return map;
   }, [activeEvents, categoryList, categoryMap, defaultCategoryId]);
 
-  const fcEvents = useMemo(() => activeEvents
-    .filter((event) => {
-      const id = categoryMap[event.category] ? event.category : defaultCategoryId;
-      return visible[id] !== false;
-    })
-    .map((event) => {
-      const category = categoryMap[event.category] ? event.category : defaultCategoryId;
-      const meta = categoryMap[category] || { color: 'var(--cal-work)' };
-      return {
-        id: event.id,
-        title: event.title,
-        start: event.start,
-        end: event.end,
-        allDay: Boolean(event.allDay),
-        extendedProps: { event, category, color: meta.color },
-        classNames: [
-          event.allDay ? 'fc-daylight-allday' : 'fc-daylight-timed',
-          `fc-daylight-${category}`,
-        ],
-        backgroundColor: event.allDay ? meta.color : 'transparent',
-        borderColor: meta.color,
-        textColor: event.allDay ? '#fff' : 'var(--foreground)',
-      };
-    }), [activeEvents, visible, categoryMap, defaultCategoryId]);
+  const fcEvents = useMemo(() => (
+    activeEvents
+      .filter((event) => {
+        const id = categoryMap[event.category] ? event.category : defaultCategoryId;
+        return visible[id] !== false;
+      })
+      .map((event) => {
+        const category = categoryMap[event.category] ? event.category : defaultCategoryId;
+        const meta = categoryMap[category] || { color: 'var(--cal-work)' };
+        return {
+          id: event.id,
+          title: isDeclined(event) ? `不参加 · ${event.title}` : event.title,
+          start: event.start,
+          end: event.end,
+          allDay: Boolean(event.allDay),
+          extendedProps: { event, category, color: meta.color },
+          classNames: [
+            event.allDay ? 'fc-daylight-allday' : 'fc-daylight-timed',
+            `fc-daylight-${category}`,
+            isDeclined(event) ? 'fc-daylight-declined' : '',
+          ],
+          // 苹果日/周：半透明底 + 左边色条；全天保留色条胶囊
+          backgroundColor: event.allDay ? meta.color : 'transparent',
+          borderColor: meta.color,
+          textColor: event.allDay ? '#fff' : 'var(--foreground)',
+        };
+      })
+  ), [activeEvents, visible, categoryMap, defaultCategoryId]);
   const fcEventsRef = useRef(fcEvents);
   fcEventsRef.current = fcEvents;
 
@@ -218,25 +242,120 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
       );
     }
     if (arg.view.type.startsWith('dayGrid')) {
+      // 月视图：苹果风格色条（左边色 + 浅底），超出 dayMaxEvents 走「另外 N 个」
       return (
-        <div className="fc-daylight-row flex w-full items-center gap-1 truncate px-1 text-[11px]" style={{ color }}>
-          <span className="fc-daylight-dot size-1.5 shrink-0 rounded-full" style={{ background: color }} />
-          <span className="min-w-0 flex-1 truncate font-medium text-foreground">{arg.event.title}</span>
-          <span className="shrink-0 text-muted-foreground">{timeText}</span>
+        <div
+          className="fc-daylight-row flex w-full min-w-0 items-center gap-1 rounded-sm px-1 py-px text-[11px]"
+          style={{
+            color: 'var(--foreground)',
+            background: `color-mix(in oklab, ${color} 16%, transparent)`,
+            borderLeft: `2.5px solid ${color}`,
+          }}
+        >
+          <span className="min-w-0 flex-1 truncate font-medium">{arg.event.title}</span>
+          <span className="ml-auto shrink-0 tabular-nums opacity-70">{timeText}</span>
         </div>
       );
     }
-    // 周/日：对齐 studio-admin 的实心色块，时间在上、标题在下
+    // 周/日：苹果风格半透明块 + 左边色条（不用全描边，避免 classic 灰环）
     return (
       <div
-        className="fc-daylight-block fc-daylight-solid h-full overflow-hidden rounded-md px-1.5 py-1 text-[11px] text-white"
-        style={{ background: color }}
+        className="fc-daylight-block h-full min-w-0 overflow-hidden text-[11px]"
+        style={{
+          background: `color-mix(in oklab, ${color} 22%, transparent)`,
+          borderLeftColor: color,
+          color: 'var(--foreground)',
+        }}
       >
-        <div className="text-[10px] font-medium leading-tight opacity-90">{rangeText || timeText}</div>
-        <div className="font-semibold leading-tight">{arg.event.title}</div>
+        <div className="truncate font-semibold leading-tight tracking-tight">{arg.event.title}</div>
+        <div className="fc-daylight-block-time truncate text-[10px] font-medium leading-tight text-muted-foreground">
+          {rangeText || timeText}
+        </div>
       </div>
     );
   }, []);
+
+  const openEventList = useCallback((events, dateHint) => {
+    const list = (events || []).filter(Boolean);
+    const date = dateHint instanceof Date ? dateHint : new Date(dateHint || list[0]?.start || Date.now());
+    const dateKey = shanghaiDate(date);
+    setDayMore({
+      dateKey,
+      title: date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric' }),
+      items: list.map((raw) => {
+        const category = categoryMap[raw.category] ? raw.category : defaultCategoryId;
+        const color = categoryMap[category]?.color || '#3d7a5c';
+        return {
+          id: raw.id,
+          title: raw.title || '未命名',
+          timeLabel: eventTime(raw),
+          color,
+          event: raw,
+        };
+      }),
+    });
+  }, [categoryMap, defaultCategoryId]);
+
+  const onMoreLinkClick = useCallback((info) => {
+    const segs = [...(info.allSegs || [])];
+    segs.sort((a, b) => {
+      const as = a.start?.getTime?.() ?? 0;
+      const bs = b.start?.getTime?.() ?? 0;
+      return as - bs;
+    });
+    const date = info.date instanceof Date ? info.date : new Date(info.date);
+    openEventList(segs.map((seg) => seg.event?.extendedProps?.event).filter(Boolean), date);
+    // 返回非 popover 的真值，阻止 FullCalendar 默认丑陋弹层
+    return true;
+  }, [openEventList]);
+
+  // 苹果日历：重叠日程全部列排布；右键弹出日程操作菜单（避开全局菜单）
+  const onEventDidMount = useCallback((info) => {
+    const el = info.el;
+    if (!el) return;
+    el.setAttribute('data-context-own', '1');
+    const handler = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const data = info.event.extendedProps?.event;
+      if (!data) return;
+      const pad = 8;
+      const width = 200;
+      const height = 280;
+      const x = Math.min(event.clientX, window.innerWidth - width - pad);
+      const y = Math.min(event.clientY, window.innerHeight - height - pad);
+      setEventMenu({
+        x: Math.max(pad, x),
+        y: Math.max(pad, y),
+        event: data,
+        dateKey: shanghaiDate(data.start),
+      });
+    };
+    el.addEventListener('contextmenu', handler);
+    el._daylightCtx = handler;
+  }, []);
+
+  const onEventWillUnmount = useCallback((info) => {
+    const el = info.el;
+    if (el?._daylightCtx) {
+      el.removeEventListener('contextmenu', el._daylightCtx);
+      delete el._daylightCtx;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!eventMenu) return undefined;
+    function close() { setEventMenu(null); }
+    function onKey(event) { if (event.key === 'Escape') close(); }
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [eventMenu]);
 
   const renderDayCellTop = useCallback((arg) => {
     const date = arg.date instanceof Date ? arg.date : new Date(arg.date);
@@ -268,6 +387,32 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
     const event = info.event.extendedProps.event;
     if (event) onEventRef.current(event);
   }, []);
+
+  // 月视图要等格子尺寸回调才给日程定位。部分环境下 ResizeObserver 不会在
+  // 首次观察时回调，日程会留在 visibility:hidden。日程或视图变化后轻推一像素，
+  // 让已挂上的观察者重算行高。
+  useEffect(() => {
+    const root = calendarFrameRef.current;
+    if (!root) return undefined;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      const parents = [...root.querySelectorAll('[data-date] [role="list"]')]
+        .map((list) => list.parentElement)
+        .filter(Boolean);
+      parents.forEach((parent) => {
+        parent.style.height = `${parent.getBoundingClientRect().height + 0.5}px`;
+      });
+      inner = requestAnimationFrame(() => {
+        parents.forEach((parent) => {
+          parent.style.height = '';
+        });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [fcEvents, view]);
 
   // 筛选变化时只更新当前可见范围内的计数
   useEffect(() => {
@@ -363,6 +508,7 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
             onValueChange={(value) => {
               viewRef.current = value;
               setView(value);
+              try { localStorage.setItem(CALENDAR_VIEW_KEY, value); } catch { /* 忽略无法写入的本地存储 */ }
               controller.changeView(value);
             }}
           >
@@ -446,19 +592,27 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
           </p>
         </aside>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-background">
+        <div ref={calendarFrameRef} className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-background">
           <FullCalendar
             controller={controller}
             plugins={PLUGINS}
             locales={LOCALES}
             locale={zh ? 'zh-cn' : 'en'}
-            initialView="timeGridWeek"
+            initialView={view}
             headerToolbar={false}
             height="100%"
             nowIndicator
             editable={false}
             selectable={false}
-            dayMaxEvents={3}
+            dayMaxEvents={4}
+            dayMaxEventRows={4}
+            slotEventOverlap={false}
+            eventMinHeight={22}
+            eventShortHeight={28}
+            moreLinkClassNames="fc-daylight-more"
+            moreLinkClass={() => 'fc-daylight-more'}
+            moreLinkContent={(arg) => `另外 ${arg.num} 个`}
+            moreLinkClick={onMoreLinkClick}
             events={fcEvents}
             eventDisplay="block"
             displayEventTime
@@ -467,10 +621,143 @@ export function StudioCalendar({ events, onEvent, onNew, categories, onCategorie
             eventContent={renderEventContent}
             dayCellTopContent={renderDayCellTop}
             eventClick={onEventClick}
+            eventDidMount={onEventDidMount}
+            eventWillUnmount={onEventWillUnmount}
             datesSet={onDatesSet}
           />
         </div>
       </div>
+
+      {eventMenu && createPortal(
+        <div
+          className="fixed z-[120] min-w-48 overflow-hidden rounded-xl border bg-popover/95 p-1 text-popover-foreground shadow-xl backdrop-blur-xl"
+          style={{ left: eventMenu.x, top: eventMenu.y }}
+          data-context-own
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div className="truncate px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground">
+            {eventMenu.event.title || '日程'}
+          </div>
+          {[
+            {
+              id: 'view',
+              label: '查看',
+              icon: Eye,
+              onSelect: () => onEventRef.current?.(eventMenu.event),
+            },
+            {
+              id: 'edit',
+              label: '编辑',
+              icon: Pencil,
+              onSelect: () => onEventRef.current?.(eventMenu.event),
+            },
+            {
+              id: 'new',
+              label: '新增日程',
+              icon: Plus,
+              onSelect: () => onNewRef.current?.(eventMenu.dateKey),
+            },
+            {
+              id: 'ask',
+              label: '询问小 D',
+              icon: MessageSquare,
+              onSelect: () => {
+                if (onAskLittleDRef.current) {
+                  onAskLittleDRef.current(eventMenu.event);
+                } else {
+                  const title = eventMenu.event.title || '该日程';
+                  const when = eventTime(eventMenu.event);
+                  window.dispatchEvent(new CustomEvent('daylight:open-little-d', {
+                    detail: {
+                      prompt: `请帮我看看日程「${title}」（${when}），有什么需要注意或可以调整的？`,
+                    },
+                  }));
+                }
+              },
+            },
+            { id: 'sep', separator: true },
+            {
+              id: 'delete',
+              label: '删除',
+              icon: Trash2,
+              destructive: true,
+              onSelect: async () => {
+                if (!window.confirm(`确定删除日程「${eventMenu.event.title || '未命名'}」？`)) return;
+                try {
+                  await onDeleteRef.current?.(eventMenu.event);
+                } catch (error) {
+                  toast.error(error?.message || '删除失败');
+                }
+              },
+            },
+          ].map((item) => {
+            if (item.separator) return <div key={item.id} className="my-1 border-t" />;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-muted',
+                  item.destructive && 'text-destructive',
+                )}
+                onClick={() => {
+                  setEventMenu(null);
+                  item.onSelect?.();
+                }}
+              >
+                {Icon ? <Icon className="size-3.5 opacity-70" /> : null}
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
+
+      <Dialog open={Boolean(dayMore)} onOpenChange={(open) => { if (!open) setDayMore(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{dayMore?.title || '当日日程'}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[min(60vh,24rem)] space-y-1 overflow-y-auto pr-1">
+            {(dayMore?.items || []).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted/60"
+                onClick={() => {
+                  if (item.event) onEvent(item.event);
+                  setDayMore(null);
+                }}
+              >
+                <span className="size-2 shrink-0 rounded-full" style={{ background: item.color }} />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.title}</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{item.timeLabel}</span>
+              </button>
+            ))}
+            {!dayMore?.items?.length && (
+              <p className="px-2 py-6 text-center text-sm text-muted-foreground">这一天没有日程</p>
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const key = dayMore?.dateKey;
+                setDayMore(null);
+                if (key) onNew(key);
+              }}
+            >
+              <Plus className="size-3.5" />新建
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setDayMore(null)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editingCategories} onOpenChange={setEditingCategories}>
         <DialogContent className="sm:max-w-lg">

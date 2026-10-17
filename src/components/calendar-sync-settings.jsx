@@ -21,6 +21,7 @@ const EMPTY_CALDAV = {
 export function CalendarSyncSettings() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState('');
+  const [icsPath,setIcsPath]=useState('');
   const [googleApp, setGoogleApp] = useState({ clientId: '', clientSecret: '' });
   const [msApp, setMsApp] = useState({ clientId: '', clientSecret: '' });
   const [caldav, setCaldav] = useState(EMPTY_CALDAV);
@@ -122,7 +123,8 @@ export function CalendarSyncSettings() {
     }
   }
 
-  const icsUrl = `${window.location.origin}/api/calendar.ics`;
+  const icsUrl=icsPath ? `${window.location.origin}${icsPath}` : '';
+  async function createSubscription(){try{const result=await request('/calendar-sync/subscription','POST',{});setIcsPath(result.path);toast.success('私密订阅已创建，有效期 180 天');}catch(error){toast.error(error.message);}}
 
   return (
     <div className="grid gap-4">
@@ -135,15 +137,79 @@ export function CalendarSyncSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+            <div>
+              <div className="text-sm font-medium">推送前需确认</div>
+              <p className="text-xs text-muted-foreground">开启后，本地写入不会立刻改外部日历，需在下方待确认队列中批准。</p>
+            </div>
+            <Switch
+              aria-label="推送前需确认"
+              checked={Boolean(data.requireConfirm)}
+              onCheckedChange={async (checked) => {
+                try {
+                  const next = await request('/calendar-sync/require-confirm', 'PUT', { requireConfirm: checked });
+                  setData(next);
+                  toast.success(checked ? '已开启推送确认' : '已恢复自动推送');
+                } catch (error) {
+                  toast.error(error.message);
+                }
+              }}
+            />
+          </div>
+          {(data.pendingExternalSync || []).length > 0 && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
+              <div className="text-sm font-medium">待确认推送（{(data.pendingExternalSync || []).length}）</div>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {data.pendingExternalSync.map((item) => (
+                  <li key={item.id}>{item.action} · {item.title || item.eventId} · {item.start}</li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  disabled={Boolean(busy)}
+                  onClick={async () => {
+                    setBusy('confirm-all');
+                    try {
+                      const next = await request('/calendar-sync/pending/confirm', 'POST', { all: true });
+                      setData(next);
+                      toast.success('已确认推送');
+                    } catch (error) {
+                      toast.error(error.message);
+                    } finally {
+                      setBusy('');
+                    }
+                  }}
+                >
+                  全部确认推送
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(busy)}
+                  onClick={async () => {
+                    setBusy('dismiss-all');
+                    try {
+                      const next = await request('/calendar-sync/pending/dismiss', 'POST', { all: true });
+                      setData(next);
+                      toast.message('已清空待确认队列');
+                    } catch (error) {
+                      toast.error(error.message);
+                    } finally {
+                      setBusy('');
+                    }
+                  }}
+                >
+                  全部忽略
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="rounded-lg border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
-            <p className="font-medium text-foreground">ICS 订阅（只读进系统日历）</p>
-            <p className="mt-1 break-all">{icsUrl}</p>
+            <p className="font-medium text-foreground">ICS 订阅（只读进系统日历）</p><Button type="button" variant="outline" className="my-2" onClick={createSubscription}>创建私密订阅地址</Button>
+            <p className="mt-1 break-all">{icsUrl || '请先创建私密订阅地址'}</p>
             <p className="mt-1">在 Mac「日历」→ 文件 → 新建日历订阅，或 iOS「日历」→ 添加订阅日历，粘贴上述地址。双向写入请用 Google / Outlook OAuth 或 iCloud CalDAV。</p>
-            <Button asChild size="sm" variant="outline" className="mt-2">
-              <a href={icsUrl} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-3.5" />下载当前 ICS
-              </a>
-            </Button>
+            <div className="mt-2 flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={!icsUrl} onClick={async()=>{await navigator.clipboard.writeText(icsUrl);toast.success('订阅地址已复制');}}>复制订阅地址</Button><Button size="sm" variant="outline" disabled={!icsUrl} onClick={()=>window.open(icsUrl,'_blank','noopener,noreferrer')}><ExternalLink className="size-3.5"/>打开日历文件</Button></div>
           </div>
         </CardContent>
       </Card>
@@ -158,16 +224,16 @@ export function CalendarSyncSettings() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>Google Client ID</Label>
-            <Input value={googleApp.clientId} onChange={(e) => setGoogleApp((c) => ({ ...c, clientId: e.target.value }))} placeholder="xxxx.apps.googleusercontent.com" />
-            <Label>Google Client Secret</Label>
-            <Input type="password" value={googleApp.clientSecret} onChange={(e) => setGoogleApp((c) => ({ ...c, clientSecret: e.target.value }))} placeholder={data.oauthApps?.google?.hasClientSecret ? '已保存，留空保留' : '密钥'} />
+            <Label htmlFor="calendar-google-id">Google Client ID</Label>
+            <Input id="calendar-google-id" value={googleApp.clientId} onChange={(e) => setGoogleApp((c) => ({ ...c, clientId: e.target.value }))} placeholder="xxxx.apps.googleusercontent.com" />
+            <Label htmlFor="calendar-google-secret">Google Client Secret</Label>
+            <Input id="calendar-google-secret" type="password" value={googleApp.clientSecret} onChange={(e) => setGoogleApp((c) => ({ ...c, clientSecret: e.target.value }))} placeholder={data.oauthApps?.google?.hasClientSecret ? '已保存，留空保留' : '密钥'} />
           </div>
           <div className="space-y-2">
-            <Label>Microsoft Client ID</Label>
-            <Input value={msApp.clientId} onChange={(e) => setMsApp((c) => ({ ...c, clientId: e.target.value }))} placeholder="应用（客户端）ID" />
-            <Label>Microsoft Client Secret</Label>
-            <Input type="password" value={msApp.clientSecret} onChange={(e) => setMsApp((c) => ({ ...c, clientSecret: e.target.value }))} placeholder={data.oauthApps?.microsoft?.hasClientSecret ? '已保存，留空保留' : '客户端密码'} />
+            <Label htmlFor="calendar-microsoft-id">Microsoft Client ID</Label>
+            <Input id="calendar-microsoft-id" value={msApp.clientId} onChange={(e) => setMsApp((c) => ({ ...c, clientId: e.target.value }))} placeholder="应用（客户端）ID" />
+            <Label htmlFor="calendar-microsoft-secret">Microsoft Client Secret</Label>
+            <Input id="calendar-microsoft-secret" type="password" value={msApp.clientSecret} onChange={(e) => setMsApp((c) => ({ ...c, clientSecret: e.target.value }))} placeholder={data.oauthApps?.microsoft?.hasClientSecret ? '已保存，留空保留' : '客户端密码'} />
           </div>
           <div className="flex flex-wrap gap-2 md:col-span-2">
             <Button type="button" disabled={Boolean(busy)} onClick={saveOAuthApps}>
@@ -211,20 +277,20 @@ export function CalendarSyncSettings() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>显示名称</Label>
-            <Input value={caldav.label} onChange={(e) => setCaldav((c) => ({ ...c, label: e.target.value }))} placeholder="我的 iPhone 日历" />
+            <Label htmlFor="calendar-label">显示名称</Label>
+            <Input id="calendar-label" value={caldav.label} onChange={(e) => setCaldav((c) => ({ ...c, label: e.target.value }))} placeholder="我的 iPhone 日历" />
           </div>
           <div className="space-y-2 md:col-span-2">
-            <Label>CalDAV 日历 URL</Label>
-            <Input value={caldav.caldavUrl} onChange={(e) => setCaldav((c) => ({ ...c, caldavUrl: e.target.value }))} />
+            <Label htmlFor="calendar-url">CalDAV 日历 URL</Label>
+            <Input id="calendar-url" value={caldav.caldavUrl} onChange={(e) => setCaldav((c) => ({ ...c, caldavUrl: e.target.value }))} />
           </div>
           <div className="space-y-2">
-            <Label>用户名</Label>
-            <Input value={caldav.username} onChange={(e) => setCaldav((c) => ({ ...c, username: e.target.value }))} placeholder="name@icloud.com" />
+            <Label htmlFor="calendar-user">用户名</Label>
+            <Input id="calendar-user" value={caldav.username} onChange={(e) => setCaldav((c) => ({ ...c, username: e.target.value }))} placeholder="name@icloud.com" />
           </div>
           <div className="space-y-2">
-            <Label>密码 / App 专用密码</Label>
-            <Input type="password" value={caldav.password} onChange={(e) => setCaldav((c) => ({ ...c, password: e.target.value }))} />
+            <Label htmlFor="calendar-password">密码 / App 专用密码</Label>
+            <Input id="calendar-password" type="password" value={caldav.password} onChange={(e) => setCaldav((c) => ({ ...c, password: e.target.value }))} />
           </div>
           <div className="md:col-span-2">
             <Button type="button" disabled={Boolean(busy) || !caldav.username || !caldav.password} onClick={saveCaldav}>

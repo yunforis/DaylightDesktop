@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Download, LoaderCircle, PlugZap, RotateCcw, Save, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,9 @@ import { CalendarSyncSettings } from '@/components/calendar-sync-settings';
 import { CalendarCategoriesSettings, MailFiltersSettings } from '@/components/rules-settings';
 import { request } from '@/lib/api';
 import { useWorkspace } from '@/context/workspace';
+import { useAuthUser } from '@/lib/auth-session';
 import { formatHotkey, HOTKEY_DEFAULTS, readHotkeys, resetHotkeys, saveHotkeys } from '@/lib/hotkeys';
+import { hasRecruitmentAccess } from '@/lib/workspace-mode';
 
 const DEFAULT_RANGES = [
   { id: 'today', label: '今天' },
@@ -32,6 +34,8 @@ const DEFAULT_STRATEGIES = [
 
 export default function SettingsPage() {
   const { state, isSyncing, saveSettings, clearDemo, switchMailbox, reload } = useWorkspace();
+  const { user } = useAuthUser();
+  const showRecruitmentSettings = hasRecruitmentAccess(user);
   const settings = state.settings;
   const mailboxes = settings.mailboxes || [];
   const providers = settings.mailboxProviders || [];
@@ -45,6 +49,11 @@ export default function SettingsPage() {
   const help = settings.fieldHelp || {};
   const rangeOptions = settings.fetchRangeOptions || DEFAULT_RANGES;
   const strategyOptions = settings.syncStrategyOptions || DEFAULT_STRATEGIES;
+  const search = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const initialTab = search?.get('tab') || 'mailbox';
+  const focusAuth = search?.get('focus') === 'auth';
+  const authInputRef = useRef(null);
+  const needsMailboxSetup = Boolean(settings.needsMailboxSetup) || !settings.mailboxReady;
 
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -54,12 +63,18 @@ export default function SettingsPage() {
   const [promptMeta, setPromptMeta] = useState(null);
   const [persistence, setPersistence] = useState(null);
   const [hotkeys, setHotkeys] = useState(() => readHotkeys());
+  const [tab, setTab] = useState(initialTab);
 
+  // 只在「已保存」的邮箱身份变化时重置表单；不要依赖 mailboxProviders 数组引用，
+  // 否则 workspace 每 5s 轮询会换新数组，把用户刚选的邮箱类型打回旧值。
   useEffect(() => {
     const provider = providers.find((item) => item.id === (settings.provider || 'qq')) || providers[0] || {};
+    const accountEmail = settings.accountEmail || user?.email || '';
+    const email = settings.email || accountEmail || '';
     setForm({
       ...provider,
       ...settings,
+      email,
       provider: settings.provider || provider.id || 'qq',
       modelProvider: matchModelProvider(settings, modelProviders),
       mailboxId: settings.activeMailboxId || '',
@@ -74,6 +89,9 @@ export default function SettingsPage() {
       tokenPriceIn: settings.tokenPriceIn ?? '',
       tokenPriceOut: settings.tokenPriceOut ?? '',
       tokenPriceCachedIn: settings.tokenPriceCachedIn ?? '',
+      ragEnabled: settings.ragEnabled !== false,
+      ragEmbeddings: settings.ragEmbeddings === true,
+      embeddingModel: settings.embeddingModel || '',
       tag: settings.tag || 'work',
       tagCustom: settings.tagCustom || '',
       feishu: {
@@ -82,7 +100,8 @@ export default function SettingsPage() {
         appSecret: '',
       },
     });
-  }, [settings.activeMailboxId, settings.email, settings.baseUrl, settings.model, settings.fetchMode, settings.syncStrategy, settings.tag, settings.tagCustom, settings.feishu?.appId, settings.feishu?.ownerId, settings.feishu?.hasAppSecret]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- providers/modelProviders 仅作查找表，引用会随轮询变化
+  }, [settings.activeMailboxId, settings.provider, settings.email, settings.accountEmail, settings.baseUrl, settings.model, settings.fetchMode, settings.syncStrategy, settings.tag, settings.tagCustom, settings.feishu?.appId, settings.feishu?.ownerId, settings.feishu?.hasAppSecret, settings.ragEnabled, settings.ragEmbeddings, settings.embeddingModel, user?.email]);
 
   useEffect(() => {
     request('/prompts').then((data) => {
@@ -91,6 +110,16 @@ export default function SettingsPage() {
     }).catch(() => {});
     request('/persistence').then(setPersistence).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!focusAuth || !form) return undefined;
+    setTab('mailbox');
+    const timer = window.setTimeout(() => {
+      authInputRef.current?.focus();
+      authInputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [focusAuth, form]);
 
   if (!form) return null;
   const change = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -108,8 +137,43 @@ export default function SettingsPage() {
 
   function chooseProvider(id) {
     const provider = providers.find((item) => item.id === id);
-    setForm((current) => ({ ...current, ...provider, provider: id }));
+    if (!provider) {
+      setForm((current) => ({ ...current, provider: id }));
+      return;
+    }
+    // 不要把预设里的 id/name 写进表单，否则会盖掉邮箱 id，保存时行为怪异
+    const { id: _providerId, name: _name, ...server } = provider;
+    setForm((current) => ({ ...current, ...server, provider: id }));
   }
+
+  /** 地址域名与类型明显不符时提示（例如 @outlook.com 却选了 QQ）。 */
+  function providerMismatchHint(email, providerId) {
+    const domain = String(email || '').split('@')[1]?.trim().toLowerCase() || '';
+    if (!domain || !providerId || providerId === 'custom') return '';
+    const map = {
+      'qq.com': 'qq', 'foxmail.com': 'qq',
+      '163.com': '163', '126.com': '126', 'yeah.net': 'yeah',
+      'gmail.com': 'gmail', 'googlemail.com': 'gmail',
+      'outlook.com': 'outlook', 'hotmail.com': 'outlook', 'live.com': 'outlook', 'msn.com': 'outlook',
+      'icloud.com': 'icloud', 'me.com': 'icloud', 'mac.com': 'icloud',
+      'shanghaitech.edu.cn': 'shanghaitech', 'alumni.shanghaitech.edu.cn': 'shanghaitech',
+    };
+    let expected = map[domain];
+    if (!expected && (domain.endsWith('.exmail.qq.com') || domain.includes('exmail'))) expected = 'foxmail';
+    if (!expected) return '';
+    const family = (id) => {
+      if (id === 'qq' || id === 'foxmail') return 'qq';
+      if (id === 'outlook' || id === 'office365') return 'outlook';
+      if (id === '163' || id === '126' || id === 'yeah') return 'netease';
+      return id;
+    };
+    if (family(expected) === family(providerId)) return '';
+    const expectedName = providers.find((item) => item.id === expected)?.name || expected;
+    const currentName = providers.find((item) => item.id === providerId)?.name || providerId;
+    return `当前地址更像「${expectedName}」，但类型选成了「${currentName}」。请先改邮箱类型，再测连通性（否则会连错服务器，出现登录失败）。`;
+  }
+
+  const mismatchHint = providerMismatchHint(form.email, form.provider);
 
   function chooseModelProvider(id) {
     const provider = modelProviders.find((item) => item.id === id);
@@ -129,10 +193,17 @@ export default function SettingsPage() {
     e.preventDefault();
     setBusy(true); setError('');
     try {
-      await saveSettings(form);
-      toast.success('设置已保存');
+      const payload = showRecruitmentSettings
+        ? form
+        : (() => { const { feishu: _feishu, ...rest } = form; return rest; })();
+      await saveSettings(payload);
+      try { localStorage.removeItem('daylight.pending-mailbox-setup'); } catch { /* ignore */ }
     } catch (err) {
-      setError(err.message);
+      const message = typeof err?.message === 'string' && err.message !== 'true'
+        ? err.message
+        : '保存失败，请重试';
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -153,10 +224,13 @@ export default function SettingsPage() {
         smtpPort: form.smtpPort,
         smtpSecure: form.smtpSecure,
       });
-      toast.success(result.message);
+      toast.success(typeof result.message === 'string' ? result.message : '邮箱连通成功');
     } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
+      const message = typeof err?.message === 'string' && err.message !== 'true'
+        ? err.message
+        : '邮箱连通测试失败';
+      setError(message);
+      toast.error(message);
     } finally {
       setTesting('');
     }
@@ -170,10 +244,13 @@ export default function SettingsPage() {
         apiKey: form.apiKey,
         model: form.model,
       });
-      toast.success(result.message);
+      toast.success(typeof result.message === 'string' ? result.message : '模型连通成功');
     } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
+      const message = typeof err?.message === 'string' && err.message !== 'true'
+        ? err.message
+        : '模型连通测试失败';
+      setError(message);
+      toast.error(message);
     } finally {
       setTesting('');
     }
@@ -219,7 +296,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue={new URLSearchParams(window.location.search).get('tab') || 'mailbox'} className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-8">
           <TabsTrigger value="mailbox">邮箱</TabsTrigger>
           <TabsTrigger value="model">模型</TabsTrigger>
@@ -233,11 +310,20 @@ export default function SettingsPage() {
 
         <TabsContent value="mailbox">
           <form className="grid gap-4 lg:grid-cols-2" onSubmit={onSubmit}>
+            {needsMailboxSetup ? (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100 lg:col-span-2 text-pretty">
+                <p className="font-medium">请填写邮箱授权码以完成收信配置</p>
+                <p className="mt-1 text-xs opacity-90">
+                  已用注册账号 {settings.accountEmail || user?.email || form.email || ''} 预填地址。
+                  登录 QQ / 163 等邮箱网页 → 设置 → 开启 IMAP/SMTP → 生成授权码，填到下方「授权码」后保存。授权码不是网页登录密码。
+                </p>
+              </div>
+            ) : null}
             <Card className="lg:col-span-2">
               <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
                 <div>
                   <CardTitle className="text-base">邮箱账户</CardTitle>
-                  <CardDescription>每个邮箱独立保存日历与邮件记录。预设会填入 IMAP/SMTP，也可改成自定义。</CardDescription>
+                  <CardDescription>每个邮箱独立保存日历与邮件记录。注册邮箱会预填到这里；保存前必须填写授权码。</CardDescription>
                 </div>
                 <Button type="button" variant="outline" size="sm" disabled={!!testing || busy} onClick={testMailbox}>
                   {testing === 'mailbox' ? <LoaderCircle className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
@@ -290,15 +376,43 @@ export default function SettingsPage() {
                   <FieldLabel help={help.email}>邮箱地址</FieldLabel>
                   <Input type="email" value={form.email || ''} onChange={(e) => change('email', e.target.value)} placeholder="you@example.com" />
                 </div>
-                <div className="space-y-2 md:col-span-2">
+                {mismatchHint ? (
+                  <div className="md:col-span-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-950/90 dark:text-amber-50/90">
+                    {mismatchHint}
+                    {/\.outlook\.com$|\.hotmail\.com$|\.live\.com$/i.test(String(form.email || '')) ? (
+                      <div className="mt-2">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => chooseProvider('outlook')}>
+                          一键改为 Outlook
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="space-y-2 md:col-span-2" data-tour="auth-code">
                   <FieldLabel help={help.authorizationCode}>授权码 / 应用专用密码</FieldLabel>
                   <Input
+                    ref={authInputRef}
                     type="password"
                     autoComplete="new-password"
                     value={form.authorizationCode}
                     onChange={(e) => change('authorizationCode', e.target.value)}
                     placeholder={savedMailbox?.hasAuthorizationCode ? '已保存，留空保留' : '填写授权码，不是网页登录密码'}
+                    className={needsMailboxSetup && focusAuth ? 'ring-2 ring-amber-500/60' : undefined}
                   />
+                  {form.provider === 'outlook' ? (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-950/90 dark:text-amber-50/90">
+                      <p className="font-medium">Outlook 应用密码（就是这里的授权码）</p>
+                      <ol className="mt-1 list-decimal space-y-0.5 pl-4">
+                        <li>打开微软账号安全页（你截图那种：密钥 / 其他安全选项 / 应用密码）。</li>
+                        <li>确认「双重验证」为<strong>开</strong>（未开先启用）。</li>
+                        <li>滚到「应用密码」→ 点蓝色链接<strong>「创建新应用密码」</strong>。</li>
+                        <li>把生成的那一串密码复制到上方输入框（不是微软网页登录密码）。</li>
+                      </ol>
+                      <p className="mt-1 text-muted-foreground">
+                        企业 / 学校 Microsoft 365 若管理员关掉了基础验证，页面可能没有「创建新应用密码」，这类账号无法用授权码连 IMAP。
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <FieldLabel help="给当前邮箱打标签，便于区分工作 / 个人 / 生活用途。">邮箱标签</FieldLabel>
@@ -341,8 +455,9 @@ export default function SettingsPage() {
                 </div>
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox checked={Boolean(form.imapSecure)} onCheckedChange={(checked) => change('imapSecure', Boolean(checked))} />
-                  使用 TLS（通常端口 993）
+                  直接 TLS（通常端口 993）
                 </label>
+                <p className="text-xs text-muted-foreground">关闭时使用强制 STARTTLS（通常端口 143），仍须验证证书并加密后登录。</p>
               </CardContent>
             </Card>
 
@@ -518,47 +633,104 @@ export default function SettingsPage() {
 
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle className="text-base">飞书会议（招聘面试）</CardTitle>
+                <CardTitle className="text-base">知识检索（RAG）</CardTitle>
                 <CardDescription>
-                  可选。配置后，面试邀约可自动创建飞书会议；也可在审核稿中粘贴腾讯会议 / 飞书链接。密钥仅保存在本地 settings。
+                  简历 PDF 提取后按页分块入库；招聘助手与小 D 可检索原文并展示引用。关闭后不再入库，已有索引仍可删除后重建。
+                  Embedding 未配置或不兼容时自动回退关键词检索。
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <FieldLabel>App ID</FieldLabel>
+                <label className="flex items-start gap-2 text-sm md:col-span-2">
+                  <Checkbox
+                    checked={form.ragEnabled !== false}
+                    onCheckedChange={(checked) => change('ragEnabled', Boolean(checked))}
+                  />
+                  <span>
+                    <span className="font-medium">启用 RAG 入库与检索</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">默认开启；关闭后跳过分块写入与工具检索。</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm md:col-span-2">
+                  <Checkbox
+                    checked={form.ragEmbeddings === true}
+                    onCheckedChange={(checked) => change('ragEmbeddings', Boolean(checked))}
+                    disabled={form.ragEnabled === false}
+                  />
+                  <span>
+                    <span className="font-medium">调用 Embedding 做混合检索（可选）</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">默认关闭，仅用关键词；开启后需兼容的 embeddings 接口，失败仍回退关键词。</span>
+                  </span>
+                </label>
+                <div className="space-y-2 md:col-span-2 sm:max-w-md">
+                  <FieldLabel help="开启 Embedding 后填写专用模型名；留空则尝试用聊天模型名调 /embeddings。">
+                    Embedding 模型名（可选）
+                  </FieldLabel>
                   <Input
-                    value={form.feishu?.appId || ''}
-                    placeholder="cli_…"
-                    onChange={(e) => change('feishu', { ...form.feishu, appId: e.target.value })}
+                    value={form.embeddingModel || ''}
+                    onChange={(e) => change('embeddingModel', e.target.value)}
+                    placeholder="text-embedding-3-small"
+                    disabled={form.ragEnabled === false || form.ragEmbeddings !== true}
                   />
                 </div>
-                <div className="space-y-2">
-                  <FieldLabel>App Secret</FieldLabel>
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
-                    value={form.feishu?.appSecret || ''}
-                    placeholder={settings.feishu?.hasAppSecret ? '已保存，留空保留' : '应用密钥'}
-                    onChange={(e) => change('feishu', { ...form.feishu, appSecret: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <FieldLabel>会议归属人 Open ID</FieldLabel>
-                  <Input
-                    value={form.feishu?.ownerId || ''}
-                    placeholder="ou_…"
-                    onChange={(e) => change('feishu', { ...form.feishu, ownerId: e.target.value })}
-                  />
-                </div>
-                {settings.feishu?.configured && (
-                  <p className="text-xs text-muted-foreground md:col-span-2">飞书会议已配置，可在智能招聘中一键创建。</p>
-                )}
               </CardContent>
             </Card>
 
-            <p className="text-xs text-muted-foreground lg:col-span-2">
-              模型 / 小 D / 分类 / 过滤规则保存在本地工作空间，仅这台设备可见。
-            </p>
+            {showRecruitmentSettings ? (
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="text-base">飞书会议</CardTitle>
+                  <CardDescription>
+                    配置后，可让小 D 安排会议并生成真实飞书入会链接，也支持招聘面试邀约。邀请邮件在审核确认后通过当前邮箱发送。密钥保存在服务端 settings 中；保存配置不代表已实连。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <FieldLabel>App ID</FieldLabel>
+                    <Input
+                      value={form.feishu?.appId || ''}
+                      placeholder="cli_…"
+                      onChange={(e) => change('feishu', { ...form.feishu, appId: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <FieldLabel>App Secret</FieldLabel>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.feishu?.appSecret || ''}
+                      placeholder={settings.feishu?.hasAppSecret ? '已保存，留空保留' : '应用密钥'}
+                      onChange={(e) => change('feishu', { ...form.feishu, appSecret: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <FieldLabel>会议归属人 Open ID</FieldLabel>
+                    <Input
+                      value={form.feishu?.ownerId || ''}
+                      placeholder="ou_…"
+                      onChange={(e) => change('feishu', { ...form.feishu, ownerId: e.target.value })}
+                    />
+                  </div>
+                  {settings.feishu?.configured && (
+                    <p className="text-xs text-muted-foreground md:col-span-2">字段已保存，可在小 D 或智能招聘中创建会议。应用需有预约会议权限，会议归属人须属于对应租户；实际可用性以创建结果为准。</p>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              <p className="text-xs text-muted-foreground lg:col-span-2 text-pretty">
+                登录后可配置会议服务，使用小 D 会议安排和「我的工作台」中的智能招聘。
+              </p>
+            )}
+
+            {settings.modelScope === 'user' && (
+              <p className="text-xs text-muted-foreground lg:col-span-2">
+                当前为你的账号专属模型配置（含小 D）；不会覆盖其他用户。未登录时使用共享默认配置。
+              </p>
+            )}
+            {settings.modelScope !== 'user' && (
+              <p className="text-xs text-muted-foreground lg:col-span-2">
+                登录后保存，模型 / 小 D / 分类 / 过滤规则会记到你的账号下，与管理员全局配置分开。
+              </p>
+            )}
 
             <div className="flex flex-wrap justify-end gap-2 lg:col-span-2">
               {error && <p className="mr-auto text-sm text-destructive">{error}</p>}
@@ -733,14 +905,14 @@ export default function SettingsPage() {
                 <CardTitle className="text-base">持久化架构</CardTitle>
                 <CardDescription>
                   {settings.calendarStorage?.note
-                    || '默认本地 JSON；可选云组件（PG / Redis / MQ / OSS），不上 K8s。'}
+                    || '默认本地 JSON；可选云组件（PG / Redis / MQ / OSS）由管理端配置，不上 K8s。'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <p>· 日程主存储：<span className="font-medium text-foreground">{settings.calendarStorage?.primary === 'postgres' ? 'PostgreSQL（权威）' : '本地 JSON'}</span>
                   {settings.calendarStorage?.primary === 'postgres' ? ' · JSON 缓存' : ''}
                 </p>
-                <p>· <span className="font-medium text-foreground">settings.json</span>：邮箱、模型 Key / 分类 / 过滤等本地配置。</p>
+                <p>· <span className="font-medium text-foreground">settings.json</span>：邮箱、共享回退配置；登录用户的模型 Key / 分类 / 过滤在 userPrefs。</p>
                 <p>· <span className="font-medium text-foreground">calendar.json</span>：每邮箱日程 / 邮件 / 待办（启用 PG 时双写并以库为准）。</p>
                 <p>· <span className="font-medium text-foreground">prompts.json</span>：提取提示词热更新。</p>
                 <p>· <span className="font-medium text-foreground">daylight.sqlite / sql.js</span>：提示词修订等本地元数据（与业务日历并行，不是唯一存储）。</p>

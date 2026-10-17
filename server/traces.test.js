@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { extractEvents, processEmails } from './agent.js';
-import { createTraceRecorder, sanitizeSnapshot, summarizeTraces, usageMetrics } from './traces.js';
+import { createTraceRecorder, sanitizeSnapshot, summarizeTraces, usageMetrics, appendRecruitmentTraces } from './traces.js';
 
 // These are invented fixtures; the model server below listens only on loopback.
 const event = { title: '可观测演示评审', start: '2026-10-20T14:00:00+08:00',
@@ -13,6 +13,21 @@ const email = { id: 'qq:trace-fixture:100:42', subject: '可观测演示评审�
   body: '邀请参加 2026 年 10 月 20 日 14:00–15:00 演示评审，地点演示会议室。' };
 const emptyStore = () => ({ events: [], emails: [], lastSync: null });
 const pricing = { tokenPriceIn: 2, tokenPriceOut: 8, tokenPriceCachedIn: 0.5 };
+
+test('证据链列表带上招聘执行记录，同一条不重复', () => {
+  const merged = appendRecruitmentTraces(
+    [{ trace_id: 'mail', attempts: [] }],
+    [
+      { trace_id: 'mail', attempts: [] },
+      { trace_id: 'recruit', subject: '导入预置招聘示例', status: 'imported', mode: 'demo' },
+    ],
+    { id: 'mb', email: 'a@example.invalid' },
+  );
+  assert.equal(merged.filter((trace) => trace.trace_id === 'mail').length, 1);
+  assert.equal(merged.find((trace) => trace.trace_id === 'recruit').source, 'recruitment');
+  assert.equal(merged.find((trace) => trace.trace_id === 'recruit').mailboxId, 'mb');
+  assert.deepEqual(merged.find((trace) => trace.trace_id === 'recruit').attempts, []);
+});
 const usage = { prompt_tokens: 1000, completion_tokens: 250, total_tokens: 1250 };
 const output = (events = [event], summary = '邀请参加演示评审，需携带演示稿。') => ({ summary, events });
 const completedResponse = (data = output(), tokenUsage = usage) => ({

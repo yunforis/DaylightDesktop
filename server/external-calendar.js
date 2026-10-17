@@ -1,9 +1,67 @@
+import { createCalendarOAuthState, consumeCalendarOAuthState } from './calendar-oauth-state.js';
+import { runWithRequestContext } from './request-context.js';
+import { findUserById } from './infra/postgres.js';
 /**
  * Push Daylight events to Google Calendar / Microsoft Outlook / CalDAV (iCloud 等).
  * Browser (Mac/iOS Safari) 通过本服务的 OAuth / CalDAV 写远端；本地 JSON/PG 仍是权威副本。
  */
 import { randomUUID } from 'node:crypto';
-import { readCalendarSync, saveCalendarSync, readSettings } from './store.js';
+import { readCalendarSync, saveCalendarSync, readSettings, readStore, saveStore } from './store.js';
+import { usesStorageSnapshot, readSnapshotDocument, stageSnapshotDocument, settingsKey, mutateSnapshot } from './storage/index.js';
+import { getRequestUserId } from './request-context.js';
+import { counter, timer } from './metrics.js';
+
+export const externalSyncKey = mailboxId => settingsKey(`external-sync:${mailboxId}`);
+
+/** Stage only: the surrounding business storage commit owns durability. */
+function stageExternalSync(jobs, mailboxId = readSettings().activeMailboxId) {
+  const ownerId = getRequestUserId();
+  const settings = readSettings();
+  if (!ownerId || !settings.mailboxes.some(box => box.id === mailboxId && (box.ownerUserId || box.userId) === ownerId)) {
+    throw Object.assign(new Error('External calendar mailbox owner required'), { status: 403 });
+  }
+  const key = externalSyncKey(mailboxId);
+  const document = readSnapshotDocument(key);
+  for (const job of jobs) document.intents.push({
+    id: job.id || randomUUID(), ownerId, mailboxId, action: job.action,
+    event: structuredClone(job.event), status: 'pending', queuedAt: new Date().toISOString(),
+    connectionIds: (readSyncConfig().connections || []).filter(item => item.enabled !== false).map(item => item.id),
+  });
+  stageSnapshotDocument(key, document);
+  return jobs.length;
+}
+
+// Only fields actually published to providers participate. Receipt IDs, tracing,
+// workbench links and timestamps never generate a reverse synchronization intent.
+const publishedEvent = event => JSON.stringify([
+  event.title || '', event.start, event.end, Boolean(event.allDay),
+  event.location || '', event.description || '', event.status === 'cancelled',
+]);
+
+/** Explicit business writer, not a global saveStore hook. Worker receipts keep
+ * using raw saveStore. Staging and calendar writes roll back together on error.
+ */
+export function saveCalendarWithExternalSync(store, mailboxId = readSettings().activeMailboxId) {
+  if (!usesStorageSnapshot()) return saveStore(store, mailboxId);
+  return mutateSnapshot(() => {
+    const previous = readStore(mailboxId);
+    const before = new Map((previous.events || []).map(event => [event.id, event]));
+    const after = new Map((store.events || []).map(event => [event.id, event]));
+    for (const [id, event] of after) {
+      const old = before.get(id);
+      // Business payloads cannot erase provider receipts from the authoritative snapshot.
+      if (old?.externalIds) event.externalIds = { ...event.externalIds, ...old.externalIds };
+      if (old && publishedEvent(old) === publishedEvent(event)) continue;
+      if (event.status === 'cancelled') {
+        if (old && old.status !== 'cancelled') queueExternalSync(store, { ...event, externalIds: old.externalIds || event.externalIds }, 'delete', { mailboxId });
+      } else queueExternalSync(store, event, old ? 'update' : 'create', { mailboxId });
+    }
+    for (const [id, event] of before) {
+      if (!after.has(id) && event.status !== 'cancelled') queueExternalSync(store, event, 'delete', { mailboxId });
+    }
+    return saveStore(store, mailboxId);
+  });
+}
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -29,6 +87,8 @@ function writeSyncConfig(patch) {
     oauthApps: { ...current.oauthApps, ...(patch.oauthApps || {}) },
     connections: patch.connections !== undefined ? patch.connections : current.connections,
     publicBaseUrl: patch.publicBaseUrl !== undefined ? patch.publicBaseUrl : current.publicBaseUrl,
+    requireConfirm: patch.requireConfirm !== undefined ? Boolean(patch.requireConfirm) : Boolean(current.requireConfirm),
+    pendingExternalSync: patch.pendingExternalSync !== undefined ? patch.pendingExternalSync : (current.pendingExternalSync || []),
   });
 }
 
@@ -36,6 +96,18 @@ export function publicCalendarSync(settings = readSettings()) {
   const sync = readSyncConfig(settings);
   return {
     providers: CALENDAR_PROVIDERS,
+    requireConfirm: Boolean(sync.requireConfirm),
+    pendingExternalSync: (sync.pendingExternalSync || [])
+      .filter(item => !usesStorageSnapshot() || item.mailboxId === readSettings().activeMailboxId).map((item) => ({
+      id: item.id,
+      action: item.action,
+      eventId: item.eventId,
+      title: item.title || '',
+      start: item.start || '',
+      end: item.end || '',
+      queuedAt: item.queuedAt,
+      mailboxId: item.mailboxId,
+    })),
     oauthApps: {
       google: { clientId: sync.oauthApps?.google?.clientId || '', hasClientSecret: Boolean(sync.oauthApps?.google?.clientSecret) },
       microsoft: { clientId: sync.oauthApps?.microsoft?.clientId || '', hasClientSecret: Boolean(sync.oauthApps?.microsoft?.clientSecret) },
@@ -56,6 +128,15 @@ export function publicCalendarSync(settings = readSettings()) {
     })),
     icsPath: '/api/calendar.ics',
   };
+}
+
+export function setExternalSyncRequireConfirm(enabled) {
+  writeSyncConfig({ requireConfirm: Boolean(enabled) });
+  return publicCalendarSync();
+}
+
+export function listPendingExternalSync() {
+  return publicCalendarSync().pendingExternalSync;
 }
 
 export function saveCalendarOAuthApps(body = {}) {
@@ -122,10 +203,10 @@ function publicBaseUrl(req) {
   return 'http://127.0.0.1:3000';
 }
 
-export function buildOAuthStartUrl(provider, req) {
+export async function buildOAuthStartUrl(provider, req) {
   const sync = readSyncConfig();
-  const state = Buffer.from(JSON.stringify({ provider, nonce: randomUUID() })).toString('base64url');
   const redirectUri = `${publicBaseUrl(req)}/api/calendar-sync/oauth/callback`;
+  const state = await createCalendarOAuthState(provider,redirectUri,req?.query?.client==='ios');
   if (provider === 'google') {
     const clientId = sync.oauthApps?.google?.clientId;
     if (!clientId) throw Object.assign(new Error('请先填写 Google OAuth Client ID'), { status: 400 });
@@ -157,9 +238,12 @@ export function buildOAuthStartUrl(provider, req) {
 }
 
 export async function completeOAuthCallback({ code, state, req }) {
-  const parsed = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+  const parsed=await consumeCalendarOAuthState(state);
+  const user=parsed.userId ? await findUserById(parsed.userId) : null;
+  if(parsed.userId && !user) throw Object.assign(new Error('账号已失效，请重新登录后连接。'),{status:401});
+  return runWithRequestContext({userId:parsed.userId,user},async()=> {
   const provider = parsed.provider;
-  const redirectUri = `${publicBaseUrl(req)}/api/calendar-sync/oauth/callback`;
+  const redirectUri = parsed.redirectUri;
   const sync = readSyncConfig();
   let tokens;
   let accountEmail = '';
@@ -208,14 +292,16 @@ export async function completeOAuthCallback({ code, state, req }) {
   });
   if (!existing) connections.push(connection);
   writeSyncConfig({ connections });
-  return connection;
+  return {...connection,native:parsed.native};
+  }).catch(error=>{error.nativeOAuth=parsed.native;throw error;});
 }
 
-async function exchangeToken(url, body) {
+async function exchangeToken(url, body, signal) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body),
+    signal,
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error_description || data.error || 'OAuth 换取令牌失败');
@@ -238,7 +324,7 @@ async function fetchMicrosoftEmail(accessToken) {
   return data.mail || data.userPrincipalName || '';
 }
 
-async function ensureAccessToken(connection) {
+async function ensureAccessToken(connection, signal) {
   if (connection.accessToken && connection.expiresAt && Date.now() < connection.expiresAt - 60_000) {
     return connection.accessToken;
   }
@@ -251,7 +337,7 @@ async function ensureAccessToken(connection) {
       client_secret: app.clientSecret,
       refresh_token: connection.refreshToken,
       grant_type: 'refresh_token',
-    });
+    }, signal);
     connection.accessToken = tokens.access_token;
     connection.expiresAt = Date.now() + (Number(tokens.expires_in || 3600) * 1000);
   } else if (connection.provider === 'microsoft') {
@@ -262,7 +348,7 @@ async function ensureAccessToken(connection) {
       refresh_token: connection.refreshToken,
       grant_type: 'refresh_token',
       scope: 'offline_access Calendars.ReadWrite User.Read',
-    });
+    }, signal);
     connection.accessToken = tokens.access_token;
     if (tokens.refresh_token) connection.refreshToken = tokens.refresh_token;
     connection.expiresAt = Date.now() + (Number(tokens.expires_in || 3600) * 1000);
@@ -359,17 +445,18 @@ function microsoftPayload(event) {
   return payload;
 }
 
-async function pushGoogle(connection, event, action) {
-  const token = await ensureAccessToken(connection);
+async function pushGoogle(connection, event, action, { signal } = {}) {
+  const token = await ensureAccessToken(connection, signal);
   const calendarId = encodeURIComponent(connection.calendarId || 'primary');
   const externalId = event.externalIds?.[connection.id];
   if (action === 'delete' || event.status === 'cancelled') {
     if (!externalId) return null;
     const response = await fetch(`${GOOGLE_EVENTS}/${calendarId}/events/${encodeURIComponent(externalId)}`, {
       method: 'DELETE',
+      signal,
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!response.ok && response.status !== 404) {
+    if (!response.ok && ![404, 410].includes(response.status)) {
       const text = await response.text();
       throw new Error(`Google 删除失败：${text.slice(0, 200)}`);
     }
@@ -378,15 +465,17 @@ async function pushGoogle(connection, event, action) {
   if (externalId) {
     const response = await fetch(`${GOOGLE_EVENTS}/${calendarId}/events/${encodeURIComponent(externalId)}`, {
       method: 'PATCH',
+      signal,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(googlePayload(event)),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || 'Google 更新失败');
-    return data.id;
+    return data.id || externalId;
   }
   const response = await fetch(`${GOOGLE_EVENTS}/${calendarId}/events`, {
     method: 'POST',
+    signal,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(googlePayload(event)),
   });
@@ -395,13 +484,14 @@ async function pushGoogle(connection, event, action) {
   return data.id;
 }
 
-async function pushMicrosoft(connection, event, action) {
-  const token = await ensureAccessToken(connection);
+async function pushMicrosoft(connection, event, action, { signal } = {}) {
+  const token = await ensureAccessToken(connection, signal);
   const externalId = event.externalIds?.[connection.id];
   if (action === 'delete' || event.status === 'cancelled') {
     if (!externalId) return null;
     const response = await fetch(`${MS_GRAPH}/me/events/${encodeURIComponent(externalId)}`, {
       method: 'DELETE',
+      signal,
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok && response.status !== 404) {
@@ -413,15 +503,17 @@ async function pushMicrosoft(connection, event, action) {
   if (externalId) {
     const response = await fetch(`${MS_GRAPH}/me/events/${encodeURIComponent(externalId)}`, {
       method: 'PATCH',
+      signal,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(microsoftPayload(event)),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || 'Outlook 更新失败');
-    return data.id;
+    return data.id || externalId;
   }
   const response = await fetch(`${MS_GRAPH}/me/events`, {
     method: 'POST',
+    signal,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(microsoftPayload(event)),
   });
@@ -433,17 +525,18 @@ async function pushMicrosoft(connection, event, action) {
 function caldavHref(connection, event) {
   const base = (connection.caldavUrl || '').replace(/\/$/, '');
   if (!base) throw new Error('请填写 CalDAV 日历 URL');
-  const name = `${event.id || randomUUID()}.ics`;
+  const name = `${encodeURIComponent(event.id || randomUUID())}.ics`;
   return `${base}/${name}`;
 }
 
-async function pushCaldav(connection, event, action) {
+async function pushCaldav(connection, event, action, { signal } = {}) {
   if (!connection.username || !connection.password) throw new Error('请填写 CalDAV 用户名与密码（iCloud 用 App 专用密码）');
   const href = event.externalIds?.[connection.id] || caldavHref(connection, event);
   const auth = Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
   if (action === 'delete' || event.status === 'cancelled') {
     const response = await fetch(href, {
       method: 'DELETE',
+      signal,
       headers: { Authorization: `Basic ${auth}` },
     });
     if (!response.ok && response.status !== 404) {
@@ -454,18 +547,81 @@ async function pushCaldav(connection, event, action) {
   const body = eventToIcs({ ...event, id: event.id });
   const response = await fetch(href, {
     method: 'PUT',
+    signal,
     headers: {
       Authorization: `Basic ${auth}`,
       'Content-Type': 'text/calendar; charset=utf-8',
-      'If-None-Match': event.externalIds?.[connection.id] ? undefined : '*',
+      ...(event.externalIds?.[connection.id] ? {} : { 'If-None-Match': '*' }),
     },
     body,
   });
-  if (!response.ok && response.status !== 412) {
+  if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`CalDAV 写入失败：HTTP ${response.status} ${text.slice(0, 160)}`);
   }
   return href;
+}
+
+/** One target only. Caller checkpoints before calling and persists the receipt afterwards.
+ * No database transaction may span this call; token changes are staged in its snapshot.
+ */
+export async function pushExternalCalendarTarget(connection, event, action, { signal } = {}) {
+  const stop = timer('calendar.push.ms', { provider: connection.provider, action });
+  let outcome = 'ok';
+  try {
+    signal?.throwIfAborted();
+    if (!['google', 'microsoft', 'icloud', 'caldav'].includes(connection.provider)) {
+      throw Object.assign(new Error('Unsupported calendar provider'), { retryable: false });
+    }
+    const push = connection.provider === 'google' ? pushGoogle : connection.provider === 'microsoft' ? pushMicrosoft : pushCaldav;
+    const remoteId = await push(connection, event, action, { signal });
+    signal?.throwIfAborted();
+    const deleting = action === 'delete' || event.status === 'cancelled';
+    if (!deleting && !remoteId) throw new Error('Calendar create returned no remote identity');
+    return remoteId;
+  } catch (error) {
+    outcome = error?.retryable === false ? 'permanent' : 'retryable';
+    throw error;
+  } finally {
+    stop({ outcome });
+    counter('calendar.push_total', { provider: connection.provider, action, outcome });
+  }
+}
+
+/** Read-only verification. Never follow a caller-supplied CalDAV URL outside
+ * the configured collection, or redirect credentials to another endpoint. */
+export async function verifyExternalCalendarIdentity(connection, remoteId, { signal } = {}) {
+  if (typeof remoteId !== 'string' || !remoteId.trim() || remoteId.length > 2048 || /[\r\n]/.test(remoteId)) {
+    throw Object.assign(new Error('Invalid remote calendar identity'), { code: 'CALENDAR_REMOTE_ID_INVALID', status: 400 });
+  }
+  let url, headers;
+  if (connection.provider === 'google' || connection.provider === 'microsoft') {
+    const token = await ensureAccessToken(connection, signal);
+    url = connection.provider === 'google'
+      ? `${GOOGLE_EVENTS}/${encodeURIComponent(connection.calendarId || 'primary')}/events/${encodeURIComponent(remoteId)}`
+      : `${MS_GRAPH}/me/events/${encodeURIComponent(remoteId)}`;
+    headers = { Authorization: `Bearer ${token}` };
+  } else if (['caldav', 'icloud'].includes(connection.provider)) {
+    const base = new URL(`${(connection.caldavUrl || '').replace(/\/$/, '')}/`);
+    const candidate = new URL(remoteId);
+    if (candidate.origin !== base.origin || !candidate.pathname.startsWith(base.pathname)
+      || candidate.username || candidate.password || candidate.search || candidate.hash) {
+      throw Object.assign(new Error('Remote identity is outside the configured calendar'), { code: 'CALENDAR_REMOTE_ID_INVALID', status: 400 });
+    }
+    url = candidate.href;
+    headers = { Authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}` };
+  } else throw new Error('Unsupported calendar provider');
+  const response = await fetch(url, { method: 'GET', headers, signal, redirect: 'error' });
+  if (!response.ok) throw Object.assign(new Error('Remote calendar identity could not be verified'), { code: 'CALENDAR_VERIFICATION_FAILED', status: 409 });
+  if (['google', 'microsoft'].includes(connection.provider)) {
+    const body = await response.json();
+    if (body.id !== remoteId || body.status === 'cancelled' || body.isCancelled) {
+      throw Object.assign(new Error('Remote calendar identity mismatch or cancelled'), { code: 'CALENDAR_VERIFICATION_FAILED', status: 409 });
+    }
+  } else if (!(await response.text()).includes('BEGIN:VEVENT')) {
+    throw Object.assign(new Error('Remote resource is not a calendar event'), { code: 'CALENDAR_VERIFICATION_FAILED', status: 409 });
+  }
+  return remoteId;
 }
 
 /**
@@ -503,13 +659,15 @@ export async function syncEventExternal(event, action = 'create') {
   return { results, event: { ...event, externalIds } };
 }
 
-/** Fire-and-forget after local save; merges externalIds back when possible. */
-export function queueExternalSync(store, events, action, { save } = {}) {
-  const list = (Array.isArray(events) ? events : [events]).filter(Boolean);
-  if (!list.length || !(readSyncConfig().connections || []).some((item) => item.enabled !== false)) return;
+function runExternalSyncJobs(store, jobs, { save } = {}) {
   Promise.resolve().then(async () => {
-    for (const event of list) {
-      const { event: next, results } = await syncEventExternal(event, action);
+    for (const job of jobs) {
+      const event = job.event || store.events?.find((item) => item.id === job.eventId) || job;
+      if (!event?.id && job.action !== 'delete') continue;
+      const payload = job.action === 'delete'
+        ? { ...(event || {}), id: job.eventId, externalIds: job.externalIds || event?.externalIds }
+        : event;
+      const { event: next, results } = await syncEventExternal(payload, job.action);
       if (!save || !next?.id) continue;
       const current = store.events?.find((item) => item.id === next.id);
       if (current) {
@@ -522,4 +680,77 @@ export function queueExternalSync(store, events, action, { save } = {}) {
     }
     if (typeof save === 'function') save();
   }).catch(() => {});
+}
+
+/** After local save: either push immediately, or enqueue for user confirmation when requireConfirm. */
+export function queueExternalSync(store, events, action, { save, force = false, mailboxId = readSettings().activeMailboxId } = {}) {
+  const list = (Array.isArray(events) ? events : [events]).filter(Boolean);
+  const sync = readSyncConfig();
+  if (!list.length || !(sync.connections || []).some((item) => item.enabled !== false)) return;
+  if (sync.requireConfirm && !force) {
+    const pending = [...(sync.pendingExternalSync || [])];
+    for (const event of list) {
+      pending.push({
+        id: randomUUID(),
+        action,
+        eventId: event.id,
+        title: event.title || '',
+        start: event.start || '',
+        end: event.end || '',
+        externalIds: event.externalIds || {},
+        queuedAt: new Date().toISOString(),
+        mailboxId: usesStorageSnapshot() ? mailboxId : undefined,
+        event: usesStorageSnapshot() ? structuredClone(event) : undefined,
+      });
+    }
+    writeSyncConfig({ pendingExternalSync: pending });
+    return { queued: pending.length, requireConfirm: true };
+  }
+  if (usesStorageSnapshot()) {
+    const queued = stageExternalSync(list.map(event => ({ event, action })), mailboxId);
+    return { queued, requireConfirm: false, durable: true };
+  }
+  runExternalSyncJobs(store, list.map((event) => ({ event, action, eventId: event.id })), { save });
+  return { queued: 0, requireConfirm: false };
+}
+
+export function confirmPendingExternalSync(store, { ids, all = false, save } = {}) {
+  if (usesStorageSnapshot()) return mutateSnapshot(() => confirmPendingExternalSyncMutation(store, { ids, all, save }));
+  return confirmPendingExternalSyncMutation(store, { ids, all, save });
+}
+
+function confirmPendingExternalSyncMutation(store, { ids, all = false, save } = {}) {
+  const sync = readSyncConfig();
+  const pending = sync.pendingExternalSync || [];
+  const mailboxId = usesStorageSnapshot() ? readSettings().activeMailboxId : null;
+  const selected = pending.filter(item => (!mailboxId || item.mailboxId === mailboxId)
+    && (all || (ids || []).includes(item.id)));
+  if (!selected.length) return { confirmed: 0, pending: pending.length };
+  const remain = pending.filter((item) => !selected.some((pick) => pick.id === item.id));
+  writeSyncConfig({ pendingExternalSync: remain });
+  const jobs = selected.map((item) => ({
+    action: item.action,
+    eventId: item.eventId,
+    externalIds: item.externalIds,
+    event: store.events?.find((event) => event.id === item.eventId) || {
+      id: item.eventId,
+      title: item.title,
+      start: item.start,
+      end: item.end,
+      externalIds: item.externalIds,
+    },
+  }));
+  if (usesStorageSnapshot()) stageExternalSync(jobs.map((job, index) => ({ ...job, id: selected[index].id,
+    event: job.action === 'delete' ? (selected[index].event || job.event) : job.event })));
+  else runExternalSyncJobs(store, jobs, { save });
+  return { confirmed: selected.length, pending: remain.length };
+}
+
+export function dismissPendingExternalSync({ ids, all = false } = {}) {
+  const sync = readSyncConfig();
+  const pending = sync.pendingExternalSync || [];
+  const mailboxId = usesStorageSnapshot() ? readSettings().activeMailboxId : null;
+  const remain = pending.filter(item => (mailboxId && item.mailboxId !== mailboxId) || (!all && !(ids || []).includes(item.id)));
+  writeSyncConfig({ pendingExternalSync: remain });
+  return { dismissed: pending.length - remain.length, pending: remain.length };
 }

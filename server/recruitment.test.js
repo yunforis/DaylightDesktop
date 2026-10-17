@@ -8,14 +8,22 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const directory = fs.mkdtempSync(path.join(root, 'work', 'recruitment-test-'));
 process.env.DAYLIGHT_DATA_DIR = directory;
+for (const key of ['DAYLIGHT_HTTPS_PROXY', 'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']) delete process.env[key];
+process.env.DAYLIGHT_AUTO_PROXY = '0';
+fs.writeFileSync(path.join(directory, 'infra.json'), JSON.stringify({ postgres: { enabled: false } }));
 const { readRecruitment, updateRecruitment, storeAttachment, attachmentPath, getAttachment } = await import('./recruitment-store.js');
 const { ingestResume, getRecruitmentState, runRecruitmentChat, updateInterview, prepareInterviewMeeting,
   sendInterview, handleInterviewEmail, createRecruitmentTrace, isRecruitmentBusy, importRecruitmentDemo } = await import('./recruitment.js');
-const { readStore, saveStore } = await import('./store.js');
+const { readStore, saveStore, readSettings, saveSettings } = await import('./store.js');
 after(() => { /* Keep isolated test artifacts under work for inspection. */ });
 
 let sequence = 0;
-const mailbox = () => `fixture-${++sequence}`;
+const mailbox = () => {
+  const id = `fixture-${++sequence}`;
+  const saved = readSettings();
+  saveSettings({ ...saved, mailboxes: [...saved.mailboxes, { id, email: 'sender@example.invalid' }] });
+  return id;
+};
 const settings = { apiKey: 'invented-recruitment-key', authorizationCode: 'invented-mail-code',
   baseUrl: 'http://127.0.0.1:1/v1', model: 'synthetic-json', tokenPriceIn: 2, tokenPriceOut: 8, tokenPriceCachedIn: 0 };
 const profile = (name = '合成候选人', address = 'candidate@example.invalid', phone = '13800138000') => ({
@@ -48,6 +56,18 @@ function mockModel(t, answers) {
   });
   return requests;
 }
+
+test('SMTP DATA结果未知持久化防重，重新读取草稿也不能再次发信', async () => {
+  const id = mailbox();
+  const { candidate } = candidateFixture(id);
+  const interview = interviewFixture(id, candidate);
+  let calls = 0;
+  const sendMail = async () => { calls++; throw Object.assign(new Error('synthetic DATA timeout'), { code: 'ETIMEDOUT', command: 'DATA' }); };
+  await assert.rejects(sendInterview(id, interview.id, settings, { sendMail }), /DATA timeout/);
+  assert.equal(readRecruitment(id).interviews[0].status, 'unknown');
+  await assert.rejects(sendInterview(id, interview.id, settings, { sendMail }), /待核对/);
+  assert.equal(calls, 1);
+});
 
 test('附件使用稳定ID和本地路径，人才重试去重、新投递保留版本，邮箱互相隔离', () => {
   const id = mailbox();
@@ -214,7 +234,7 @@ test('确认发送使用审核正文，SMTP失败可重试、并发和重复发�
   const interview = interviewFixture(id, candidate);
   assert.equal(readStore(id).events.length, 0);
   let calls = 0;
-  const failMail = async () => { calls++; throw new Error('synthetic SMTP failure'); };
+  const failMail = async () => { calls++; throw Object.assign(new Error('synthetic SMTP failure'), { code: 'EAUTH' }); };
   await assert.rejects(sendInterview(id, interview.id, settings, { sendMail: failMail }), /SMTP failure/);
   assert.equal(readStore(id).events.length, 0);
   assert.equal(readRecruitment(id).interviews[0].status, 'failed');
@@ -408,4 +428,107 @@ test('预置示例生成真实PDF与三份档案，重复导入去重，绝不�
   await assert.rejects(sendInterview(id, interview.id, settings), /预置示例/);
   await assert.rejects(prepareInterviewMeeting(id, interview.id, settings), /预置示例/);
   assert.equal(readStore(id).emails.every((email) => email.attachments.length === 1 && email.candidateIds.length === 1), true);
+});
+
+test('示例邀约经显式审核后按编辑邮箱真实发送，失败可重试，成功后保留示例来源并防重复', async (t) => {
+  const id = mailbox();
+  t.mock.method(globalThis, 'fetch', async () => assert.fail('reviewing a preset must not call the model'));
+  const { candidates } = await importRecruitmentDemo(id);
+  const candidate = candidates[0];
+  const interview = interviewFixture(id, candidate, { source: 'demo',
+    subject: '【演示草稿·不可发送】合成面试邀约',
+    meetingUrl: '12312312',
+    body: '【预置演示草稿，仅供HR审核演示，不可发送真实邮件】\n您好，请参加面试。\n\n以上内容仅用于演示，不构成真实面试安排。\n\n会议号：12312312' });
+  const mustNotSend = async () => assert.fail('an unreviewed preset must not reach SMTP');
+  await assert.rejects(sendInterview(id, interview.id, settings, { sendMail: mustNotSend }), /预置示例|审核|确认/);
+  updateInterview(id, interview.id, { to: 'reviewed-recipient@daylight-test.com' });
+  await assert.rejects(sendInterview(id, interview.id, settings, { confirmDemoSend: true, sendMail: mustNotSend }), /演示|审核|保存|核对/);
+  const reviewed = updateInterview(id, interview.id, { confirmDemoSend: true });
+  assert.equal(reviewed.subject, '合成面试邀约');
+  assert.doesNotMatch(reviewed.body, /预置演示|不可发送|仅用于演示/);
+  assert.match(reviewed.body, /您好，请参加面试。/);
+  assert.match(reviewed.body, /会议号：12312312/);
+  assert.equal(reviewed.source, 'demo', '审核不把示例资料伪装为真实来源');
+  updateInterview(id, interview.id, { to: candidate.profile.personal.email });
+  await assert.rejects(sendInterview(id, interview.id, settings, { confirmDemoSend: true, sendMail: mustNotSend }), /邮箱|地址|收件人|占位/);
+  updateInterview(id, interview.id, { to: reviewed.to });
+  let attempts = 0;
+  await assert.rejects(sendInterview(id, interview.id, settings, { confirmDemoSend: true, sendMail: async () => {
+    attempts++;
+    throw Object.assign(new Error('synthetic SMTP temporarily unavailable'), { code: 'ECONNREFUSED' });
+  } }), /SMTP temporarily unavailable/);
+  const failed = readRecruitment(id).interviews.find((item) => item.id === interview.id);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.source, 'demo');
+  assert.equal(readStore(id).events.length, 0);
+  await assert.rejects(sendInterview(id, interview.id, settings, { sendMail: mustNotSend }), /预置示例|审核|确认/);
+  const sent = await sendInterview(id, interview.id, settings, { confirmDemoSend: true, sendMail: async (config, mail) => {
+    attempts++;
+    assert.equal(mail.to, reviewed.to);
+    assert.equal(mail.subject, reviewed.subject);
+    assert.equal(mail.text, reviewed.body);
+    return { messageId: '<reviewed-demo@example.invalid>' };
+  } });
+  assert.equal(sent.status, 'sent');
+  assert.equal(sent.source, 'manual');
+  assert.equal(sent.originalSource, 'demo');
+  assert.equal(readRecruitment(id).candidates.find((item) => item.id === candidate.id).source, 'demo');
+  assert.equal(readStore(id).events.length, 1);
+  assert.equal(readStore(id).events[0].source, 'recruitment');
+  await sendInterview(id, interview.id, settings, { sendMail: mustNotSend });
+  assert.equal(attempts, 2);
+  assert.equal(readStore(id).events.length, 1);
+});
+
+test('手工邀约的会议资料可留空，未创建线上会议也可审核发送', async () => {
+  const id = mailbox();
+  const { candidate } = candidateFixture(id);
+  const original = interviewFixture(id, candidate, { meetingUrl: '', meetingSource: null, body: '您好，邀请您参加面试，地点另行通知。' });
+  const sent = await sendInterview(id, original.id, settings, { sendMail: async (config, mail) => {
+    assert.equal(mail.text, original.body);
+    return { messageId: '<without-meeting@example.invalid>' };
+  } });
+  assert.equal(sent.status, 'sent');
+  assert.equal(readStore(id).events[0].location, '');
+});
+
+test('示例人才的实发邀约按真实来信生成可发送改期稿，继承实发来源及编辑后的邮箱', async (t) => {
+  const id = mailbox();
+  const { candidates } = await importRecruitmentDemo(id);
+  const candidate = candidates[0];
+  const original = interviewFixture(id, candidate, { source: 'demo', to: 'reviewed-recipient@daylight-test.com' });
+  const sent = await sendInterview(id, original.id, settings, { confirmDemoSend: true,
+    sendMail: async () => ({ messageId: '<reviewed-demo-thread@example.invalid>' }) });
+  mockModel(t, [
+    { action: 'tool', tool: 'draft_interview', arguments: { candidateId: candidate.id, kind: 'reschedule', previousInterviewId: sent.id,
+      start: '2026-10-21T10:00:00+08:00', body: '您好，请核对调整后的面试时间。' } },
+    { action: 'answer', content: '已准备改期草稿。' },
+  ]);
+  const proposed = await runRecruitmentChat(id, '为已发送的面试准备次日改期草稿', settings);
+  const proposedDraft = readRecruitment(id).interviews.find((item) => item.id === proposed.interviewIds[0]);
+  assert.equal(proposedDraft.to, original.to, '未指定收件人时沿用实发邮箱，不回退到示例简历占位邮箱');
+  assert.equal(proposedDraft.source, 'manual');
+  assert.equal(proposedDraft.originalSource, 'demo');
+  t.mock.restoreAll();
+  mockModel(t, [{ kind: 'reschedule', summary: '合成回信申请调整面试时间。', start: '2026-10-21T10:00:00+08:00',
+    end: '2026-10-21T11:00:00+08:00', body: '您好，确认新的面试时间。' }]);
+  const email = { id: 'real-reply-to-demo-invite', senderAddress: original.to, subject: 'Re: Interview',
+    body: 'Please move the interview to tomorrow.', messageId: '<reply-to-reviewed-demo@example.invalid>', references: [sent.messageId] };
+  const reply = await handleInterviewEmail(id, email, settings);
+  assert.equal(reply.kind, 'reschedule');
+  const draft = readRecruitment(id).interviews.find((item) => item.id === reply.interviewIds[0]);
+  assert.equal(draft.source, 'manual');
+  assert.equal(draft.to, original.to);
+  assert.equal(draft.previousInterviewId, sent.id);
+  assert.equal(readStore(id).events[0].status, 'active', '收到来信后继续等待HR审核');
+  const changed = await sendInterview(id, draft.id, settings, { sendMail: async (config, mail) => {
+    assert.equal(mail.to, original.to);
+    assert.equal(mail.inReplyTo, email.messageId);
+    assert.ok(mail.references.includes(sent.messageId));
+    return { messageId: '<reviewed-demo-rescheduled@example.invalid>' };
+  } });
+  assert.equal(changed.status, 'sent');
+  const events = readStore(id).events;
+  assert.equal(events.find((item) => item.id === sent.eventId).status, 'cancelled');
+  assert.equal(events.find((item) => item.id === changed.eventId).previousEventId, sent.eventId);
 });

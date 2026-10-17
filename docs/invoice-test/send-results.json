@@ -1,0 +1,320 @@
+{
+  "batch": "20261016-be9e6670",
+  "recipient": "3462740458@qq.com",
+  "sender": "yunfeng-yu@foxmail.com",
+  "createdAt": "2026-10-16T01:45:15.730Z",
+  "messages": [
+    {
+      "caseId": "INV-01",
+      "filename": "01_office-supplies.pdf",
+      "sha256": "c5f123039a37339fbff73c47328c0b762c00f0da9ca5eed81d11ca823758cbba",
+      "subject": "Daylight invoice test 20261016-be9e6670 01/10 [PDF]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-1@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:15.732Z",
+      "acceptedAt": "2026-10-16T01:45:16.881Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-1@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 31,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_894474F79F7A11E635E0A490FE26AE759C07@qq.com>",
+        "date": "2026-10-16T01:45:15.000Z",
+        "attachments": [
+          {
+            "filename": "01_office-supplies.pdf",
+            "type": "application/pdf",
+            "bytes": 34926
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.102Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-02",
+      "filename": "02_software-service.pdf",
+      "sha256": "64d31b0b9be2f983504b7575db4a33bc801eaeff679e3e17092d8ca075d613d3",
+      "subject": "Daylight invoice test 20261016-be9e6670 02/10 [PDF]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-2@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:16.882Z",
+      "acceptedAt": "2026-10-16T01:45:17.889Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-2@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 32,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_AA11DCB5EB4F989D815142549B36D7B71209@qq.com>",
+        "date": "2026-10-16T01:45:16.000Z",
+        "attachments": [
+          {
+            "filename": "02_software-service.pdf",
+            "type": "application/pdf",
+            "bytes": 33408
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.102Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-03",
+      "filename": "03_hotel-accommodation.pdf",
+      "sha256": "c1d8b25b5a0a4ca82921336b7c333a5428dd3595f50f14481cb4950fc0a34610",
+      "subject": "Daylight invoice test 20261016-be9e6670 03/10 [PDF]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-3@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:17.891Z",
+      "acceptedAt": "2026-10-16T01:45:18.920Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-3@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 33,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_37632712B887D51F31E302B3860C344DAE0A@qq.com>",
+        "date": "2026-10-16T01:45:17.000Z",
+        "attachments": [
+          {
+            "filename": "03_hotel-accommodation.pdf",
+            "type": "application/pdf",
+            "bytes": 34220
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.103Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-04",
+      "filename": "04_tax-exempt-books.pdf",
+      "sha256": "dd5526745682c77d62e66fc3d9cc8aa332d1927027da9c3b81c9ae232b3dcccc",
+      "subject": "Daylight invoice test 20261016-be9e6670 04/10 [PDF]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-4@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:18.921Z",
+      "acceptedAt": "2026-10-16T01:45:20.020Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-4@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 34,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_702CA4A5E97ABD28F1DC3DB79E8459031805@qq.com>",
+        "date": "2026-10-16T01:45:18.000Z",
+        "attachments": [
+          {
+            "filename": "04_tax-exempt-books.pdf",
+            "type": "application/pdf",
+            "bytes": 32940
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.104Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-05",
+      "filename": "05_personal-training.pdf",
+      "sha256": "5a05ba0c9bc9639c0c5286cf2bf1cb98f8064f50ed98be02e0fe636b3c39f214",
+      "subject": "Daylight invoice test 20261016-be9e6670 05/10 [PDF]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-5@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:20.021Z",
+      "acceptedAt": "2026-10-16T01:45:21.096Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-5@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 35,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_19817B7E3D3DF30670554860D3E0FA69A206@qq.com>",
+        "date": "2026-10-16T01:45:20.000Z",
+        "attachments": [
+          {
+            "filename": "05_personal-training.pdf",
+            "type": "application/pdf",
+            "bytes": 33498
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.104Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-06",
+      "filename": "06_computer-accessories.png",
+      "sha256": "0f5ecba8e413177aae9c9f24c12a9dea20e9bbb37c5c6d0ac1e13045905dce38",
+      "subject": "Daylight invoice test 20261016-be9e6670 06/10 [PNG]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-6@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:21.098Z",
+      "acceptedAt": "2026-10-16T01:45:22.260Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-6@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 36,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_13C437C5ACBF2762B94FD473303B02A3850A@qq.com>",
+        "date": "2026-10-16T01:45:21.000Z",
+        "attachments": [
+          {
+            "filename": "06_computer-accessories.png",
+            "type": "image/png",
+            "bytes": 271632
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.105Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-07",
+      "filename": "07_passenger-transport.png",
+      "sha256": "0116b9d2307c123fcf2348fcb795374d46e05a2dd7b54677c51d771231e49a5b",
+      "subject": "Daylight invoice test 20261016-be9e6670 07/10 [PNG]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-7@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:22.262Z",
+      "acceptedAt": "2026-10-16T01:45:23.370Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-7@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 37,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_173FB1C9FDBCFE94790CB82624B2C9711D05@qq.com>",
+        "date": "2026-10-16T01:45:22.000Z",
+        "attachments": [
+          {
+            "filename": "07_passenger-transport.png",
+            "type": "image/png",
+            "bytes": 260396
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.105Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-08",
+      "filename": "08_catering.png",
+      "sha256": "87e541bc071e261de07df883f771199b7057858b8dea491b82ad44d2a933b5e3",
+      "subject": "Daylight invoice test 20261016-be9e6670 08/10 [PNG]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-8@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:23.372Z",
+      "acceptedAt": "2026-10-16T01:45:24.640Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-8@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 38,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_4E0ECC0FC00021754D64EBBD897FEE50F508@qq.com>",
+        "date": "2026-10-16T01:45:23.000Z",
+        "attachments": [
+          {
+            "filename": "08_catering.png",
+            "type": "image/png",
+            "bytes": 287892
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.105Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-09",
+      "filename": "09_missing-tax-total.jpg",
+      "sha256": "f1ef36d675b65e104785811e5b0e4a02795e2b34f04862b5666519611cdd5af6",
+      "subject": "Daylight invoice test 20261016-be9e6670 09/10 [JPG]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-9@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:24.642Z",
+      "acceptedAt": "2026-10-16T01:45:26.010Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-9@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 39,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_B78112A5DC27EA97983D804343489ACED709@qq.com>",
+        "date": "2026-10-16T01:45:24.000Z",
+        "attachments": [
+          {
+            "filename": "09_missing-tax-total.jpg",
+            "type": "image/jpeg",
+            "bytes": 488164
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.106Z",
+        "attachmentMatches": true
+      }
+    },
+    {
+      "caseId": "INV-10",
+      "filename": "10_usd-commercial.png",
+      "sha256": "4c0289033876b9a156aec0a3e75994dbe9fde622231f504c985fcb4a602e29da",
+      "subject": "Daylight invoice test 20261016-be9e6670 10/10 [PNG]",
+      "requestedMessageId": "<daylight-invoice-20261016-be9e6670-10@daylight.example>",
+      "status": "smtp-accepted",
+      "startedAt": "2026-10-16T01:45:26.011Z",
+      "acceptedAt": "2026-10-16T01:45:27.032Z",
+      "submittedMessageId": "<daylight-invoice-20261016-be9e6670-10@daylight.example>",
+      "accepted": [
+        "3462740458@qq.com"
+      ],
+      "rejected": [],
+      "smtpResponse": "250 OK: queued as.",
+      "inbox": {
+        "uid": 40,
+        "uidValidity": "1632359483",
+        "deliveredMessageId": "<tencent_94296ABD3FD1C53DBFFE975916B82C84A205@qq.com>",
+        "date": "2026-10-16T01:45:26.000Z",
+        "attachments": [
+          {
+            "filename": "10_usd-commercial.png",
+            "type": "image/png",
+            "bytes": 169570
+          }
+        ],
+        "verifiedAt": "2026-10-16T01:47:29.106Z",
+        "attachmentMatches": true
+      }
+    }
+  ],
+  "inboxCount": 10,
+  "inboxVerifiedAt": "2026-10-16T01:47:29.106Z"
+}

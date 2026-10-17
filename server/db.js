@@ -1,26 +1,15 @@
 /**
- * Hybrid persistence for Daylight (local demo scale).
- *
- * Why not “JSON only” forever:
- * - Per-mailbox calendar blobs stay easy to inspect/backup as JSON.
- * - Prompt edits need hot-reload + revision history → SQLite (sql.js, no native build).
- * - Secrets stay in settings.json (gitignored data/), never copied into docs/logs.
- *
- * Why not Postgres/MySQL yet:
- * - Single-process local demo; no concurrent writers; Node 21 broke better-sqlite3 native.
- * - sql.js gives a real SQL file (data/daylight.sqlite) without native addons.
- * - When multi-user / cloud is needed, migrate tables to Postgres and keep the same schema.
- *
- * Layout:
- * - data/settings.json — credentials + mailbox list (source of truth for auth)
- * - data/mailbox-<id>/calendar.json — events / emails / tasks per mailbox
- * - data/prompts.json — live prompt (hot-read on each extract)
- * - data/daylight.sqlite — prompt_revisions + kv meta (audit / future indexes)
+ * Shared prompt revisions and key/value metadata use PostgreSQL app_settings.
+ * Local development without PostgreSQL retains sql.js in data/daylight.sqlite.
+ * Production never initializes SQLite or falls back to an instance-local database.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import initSqlJs from 'sql.js';
+import { randomUUID } from 'node:crypto';
+import { getPostgresPool } from './infra/postgres.js';
+import { isProductionRuntime, requireLocalRuntime } from './runtime-mode.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dataDir = process.env.DAYLIGHT_DATA_DIR || path.join(root, 'data');
@@ -31,6 +20,7 @@ let db;
 let ready;
 
 async function open() {
+  requireLocalRuntime('SQLite persistence');
   if (db) return db;
   if (!ready) {
     ready = (async () => {
@@ -61,6 +51,14 @@ async function open() {
   return ready;
 }
 
+function sharedPool() {
+  const pool = getPostgresPool();
+  if (!pool && isProductionRuntime()) {
+    throw Object.assign(new Error('PostgreSQL audit storage is unavailable'), { status: 503 });
+  }
+  return pool;
+}
+
 function persist() {
   if (!db) return;
   const data = db.export();
@@ -68,6 +66,15 @@ function persist() {
 }
 
 export async function setKv(key, value) {
+  const pool = sharedPool();
+  if (pool) {
+    await pool.query(
+      `insert into app_settings (id, payload, updated_at) values ($1, $2::jsonb, NOW())
+       on conflict (id) do update set payload = excluded.payload, updated_at = NOW(), version = app_settings.version + 1`,
+      [`aux-kv:${key}`, JSON.stringify({ value })],
+    );
+    return;
+  }
   const database = await open();
   const now = new Date().toISOString();
   database.run(
@@ -78,6 +85,11 @@ export async function setKv(key, value) {
 }
 
 export async function getKv(key, fallback = null) {
+  const pool = sharedPool();
+  if (pool) {
+    const { rows } = await pool.query('select payload from app_settings where id = $1', [`aux-kv:${key}`]);
+    return rows.length ? rows[0].payload.value : fallback;
+  }
   const database = await open();
   const row = database.exec('SELECT value FROM kv WHERE key = ?', [key]);
   if (!row.length || !row[0].values.length) return fallback;
@@ -89,6 +101,21 @@ export async function getKv(key, fallback = null) {
 }
 
 export async function appendPromptRevision(kind, body) {
+  const pool = sharedPool();
+  if (pool) {
+    const now = new Date().toISOString();
+    const revision = { id: randomUUID(), kind, body, createdAt: now };
+    // A single statement appends against the latest row, without holding a connection
+    // during the model request or relying on an instance-local revision list.
+    await pool.query(
+      `insert into app_settings (id, payload, updated_at) values ($1, $2::jsonb, NOW())
+       on conflict (id) do update set
+         payload = app_settings.payload || excluded.payload, updated_at = NOW(), version = app_settings.version + 1`,
+      ['aux-prompt-revisions', JSON.stringify([revision])],
+    );
+    await setKv('prompts.updatedAt', now);
+    return { kind, createdAt: now };
+  }
   const database = await open();
   const now = new Date().toISOString();
   database.run('INSERT INTO prompt_revisions(kind, body, created_at) VALUES(?, ?, ?)', [kind, body, now]);
@@ -98,6 +125,17 @@ export async function appendPromptRevision(kind, body) {
 }
 
 export async function listPromptRevisions(limit = 20) {
+  const pool = sharedPool();
+  if (pool) {
+    const count = Number.isFinite(Number(limit)) ? Math.max(0, Math.floor(Number(limit))) : 20;
+    const { rows } = await pool.query(
+      `select entry.value as revision from app_settings,
+       jsonb_array_elements(payload) with ordinality as entry(value, position)
+       where id = $1 order by entry.position desc limit $2`,
+      ['aux-prompt-revisions', count],
+    );
+    return rows.map((row) => row.revision);
+  }
   const database = await open();
   const result = database.exec(
     'SELECT id, kind, body, created_at FROM prompt_revisions ORDER BY id DESC LIMIT ?',
@@ -110,6 +148,11 @@ export async function listPromptRevisions(limit = 20) {
 }
 
 export async function dbStatus() {
+  const pool = sharedPool();
+  if (pool) {
+    await pool.query('select 1');
+    return { engine: 'postgres', note: 'Shared prompt revisions and key/value metadata in app_settings' };
+  }
   await open();
   return {
     engine: 'sql.js',

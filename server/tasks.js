@@ -1,8 +1,25 @@
+import { emailReference } from './traces.js';
+
 const DAY_MS = 86_400_000;
 const BEIJING_OFFSET = 8 * 60 * 60 * 1000;
 
-export const EMAIL_CATEGORIES = ['meeting', 'task', 'notice', 'inquiry', 'invoice', 'promo', 'resume'];
+export const EMAIL_CATEGORIES = [
+  'meeting', 'task', 'notice', 'inquiry', 'invoice', 'promo', 'resume',
+  'general', // 普通沟通（闲聊/跟进，非明确会议/派活）
+  'irrelevant', // 无关邮件（误投、退订残留、明显无关）
+];
 export const EMAIL_PRIORITIES = ['high', 'normal', 'low'];
+/** 独立于 category 的意图：指导下游是否改日历/待办，与邮件主题分类解耦。 */
+export const EMAIL_INTENTS = [
+  'calendar', // 创建/改/取消日程
+  'task', // 派活或催办
+  'recruit', // 求职/招聘
+  'invoice', // 发票报销（独立提取，不写日程/待办）
+  'reply', // 需要回复沟通
+  'fyi', // 仅知晓
+  'noise', // 可忽略噪声
+];
+export const TASK_VERIFICATION_MODES = ['manual', 'reply_sent', 'email_ack'];
 
 function beijingDay(value) {
   return new Date(Date.parse(value instanceof Date ? value.toISOString() : value) + BEIJING_OFFSET).toISOString().slice(0, 10);
@@ -111,10 +128,25 @@ export function normalizeTask(task) {
     throw new Error('模型返回的待办截止描述格式不正确。');
   }
   const assignee = typeof task.assignee === 'string' ? task.assignee.trim() : '';
+  const requiresVerification = Boolean(task.requiresVerification);
+  let verificationMode = 'manual';
+  if (task.verificationMode != null) {
+    if (!TASK_VERIFICATION_MODES.includes(task.verificationMode)) {
+      throw new Error('模型返回了不支持的待办核验方式，请调整模型后重试。');
+    }
+    verificationMode = task.verificationMode;
+  } else if (requiresVerification) {
+    verificationMode = 'reply_sent';
+  }
   return { title: task.title.trim(), description: typeof task.description === 'string' ? task.description.trim() : '',
     dueAt: task.dueAt || null, deadlineText: task.deadlineText?.trim() || '',
     ...(assignee ? { assignee } : {}),
-    ...(task.existingTaskId ? { existingTaskId: task.existingTaskId } : {}) };
+    ...(task.existingTaskId ? { existingTaskId: task.existingTaskId } : {}),
+    ...(task.linkedTaskRef ? { linkedTaskRef: task.linkedTaskRef } : {}),
+    ...(requiresVerification || verificationMode !== 'manual' ? {
+      requiresVerification: true,
+      verificationMode,
+    } : {}) };
 }
 
 export function emailLabels(extraction) {
@@ -124,6 +156,55 @@ export function emailLabels(extraction) {
   if (extraction.priority !== undefined && !EMAIL_PRIORITIES.includes(extraction.priority)) {
     throw new Error('模型返回了不支持的邮件优先级，请调整模型后重试。');
   }
-  return { ...(extraction.category !== undefined ? { category: extraction.category } : {}),
-    ...(extraction.priority !== undefined ? { priority: extraction.priority } : {}) };
+  if (extraction.intent !== undefined && !EMAIL_INTENTS.includes(extraction.intent)) {
+    throw new Error('模型返回了不支持的邮件意图，请调整模型后重试。');
+  }
+  return {
+    ...(extraction.category !== undefined ? { category: extraction.category } : {}),
+    ...(extraction.priority !== undefined ? { priority: extraction.priority } : {}),
+    ...(extraction.intent !== undefined ? { intent: extraction.intent } : {}),
+  };
+}
+
+/** 完成待办时的核验：manual 直接通过；reply_sent 需关联邮件已成功发信；email_ack 需提供确认邮件 id。 */
+export function assertTaskCompletable(task, { emails = [], traces = [], evidenceEmailId } = {}) {
+  const mode = task?.verification?.mode || task?.verificationMode || 'manual';
+  if (mode === 'manual' || !task?.requiresVerification) return { ok: true };
+  if (mode === 'reply_sent') {
+    const sourceIds = new Set((task.sources || []).map((item) => item.emailId).filter(Boolean));
+    const sourceRefs = new Set([...sourceIds].map(emailReference));
+    const sent = traces.some((trace) => {
+      const matches = sourceIds.has(trace.email_id) || sourceIds.has(trace.emailId)
+        || sourceIds.has(trace.email_ref) || sourceRefs.has(trace.email_ref);
+      return matches && trace.reply_delivery?.status === 'sent';
+    });
+    const emailSent = emails.some((email) => sourceIds.has(email.id) && (
+      email.replyDelivery?.status === 'sent' || email.reply_delivery?.status === 'sent'
+    ));
+    if (!sent && !emailSent) {
+      const error = new Error('该待办要求「已发送回复」作为完成证据，请先采纳并发送关联邮件的回复草稿。');
+      error.status = 400;
+      throw error;
+    }
+    return { ok: true, mode, verifiedAt: new Date().toISOString() };
+  }
+  if (mode === 'scenario_receipt') {
+    const receipt = task.scenarioReceipt?.status;
+    if (!['submitted', 'confirmed', 'sent'].includes(receipt)) {
+      const error = new Error('该待办来自工作台。完成前请在工作台登记已提交、已发送或对方确认。勾选待办不等于已完成。');
+      error.status = 400;
+      throw error;
+    }
+    return { ok: true, mode, verifiedAt: new Date().toISOString() };
+  }
+  if (mode === 'email_ack') {
+    const ackId = String(evidenceEmailId || '').trim();
+    if (!ackId || !emails.some((email) => email.id === ackId)) {
+      const error = new Error('该待办要求「确认邮件」作为完成证据，请提供已收到的确认邮件。');
+      error.status = 400;
+      throw error;
+    }
+    return { ok: true, mode, evidenceEmailId: ackId, verifiedAt: new Date().toISOString() };
+  }
+  return { ok: true };
 }

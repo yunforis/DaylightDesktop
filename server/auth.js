@@ -3,10 +3,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import svgCaptcha from 'svg-captcha';
 import { readInfraConfig } from './infra/config.js';
-import { redisDel, redisGet, redisSet } from './infra/redis.js';
+import { redisConsumeIfEqual, redisGetDel, redisSet } from './infra/redis.js';
 import {
   bumpSessionVersion,
-  consumePasswordReset,
+  resetPasswordWithToken,
   createUser,
   deleteUser,
   findUserByEmail,
@@ -17,17 +17,16 @@ import {
   savePasswordReset,
   touchUserLogin,
   updateUser,
-  updateUserPassword,
 } from './infra/postgres.js';
 import {
   createUserSession,
-  getUserSession,
   listUserSessions,
   revokeAllUserSessions,
   revokeUserSession,
   touchUserSession,
 } from './infra/sessions.js';
 import { publicBaseUrl, sendTemplatedMail, systemMailReady } from './mailer.js';
+
 
 const CAPTCHA_TTL = 300;
 const EMAIL_CODE_TTL = 600;
@@ -75,8 +74,7 @@ export function createCaptcha() {
 export async function verifyCaptcha(id, text) {
   if (!id || !text) return false;
   const key = `captcha:${id}`;
-  const expected = await redisGet(key);
-  await redisDel(key);
+  const expected = await redisGetDel(key);
   if (!expected) return false;
   return String(text).trim().toLowerCase() === String(expected).toLowerCase();
 }
@@ -153,14 +151,12 @@ export async function sendRegisterEmailCode({ email, captchaId, captchaText }) {
 async function consumeRegisterEmailCode(email, code) {
   const cleanEmail = String(email || '').trim().toLowerCase();
   const key = `email-code:register:${cleanEmail}`;
-  const expected = await redisGet(key);
-  if (!expected) return false;
-  if (String(code || '').trim() !== String(expected)) return false;
-  await redisDel(key);
-  return true;
+  return redisConsumeIfEqual(key, String(code || '').trim());
 }
 
-export async function registerUser({ email, username, password, captchaId, captchaText, emailCode }) {
+export async function registerUser({
+  email, username, password, captchaId, captchaText, emailCode,
+}) {
   if (!(await verifyCaptcha(captchaId, captchaText))) {
     throw Object.assign(new Error('图形验证码错误或已过期'), { status: 400 });
   }
@@ -262,16 +258,12 @@ export async function resetPassword({ token, password, captchaId, captchaText })
   if (String(password || '').length < 8) {
     throw Object.assign(new Error('密码至少 8 位'), { status: 400 });
   }
-  const row = await consumePasswordReset(token);
-  if (!row) {
+  const passwordHash = await bcrypt.hash(String(password), 10);
+  const fresh = await resetPasswordWithToken(token, passwordHash);
+  if (!fresh) {
     throw Object.assign(new Error('重置链接无效或已过期'), { status: 400 });
   }
-  const passwordHash = await bcrypt.hash(String(password), 10);
-  await updateUserPassword(row.user_id, passwordHash);
-  const user = await findUserById(row.user_id);
-  await bumpSessionVersion(user.id);
-  await revokeAllUserSessions(user.id);
-  const fresh = await findUserById(user.id);
+  await revokeAllUserSessions(fresh.id);
   await touchUserLogin(fresh.id);
   fresh.last_login_at = new Date().toISOString();
   return issueAuth(fresh);
@@ -297,9 +289,8 @@ export async function currentUserFromAuthHeader(header) {
   const tokenVersion = Number(payload.sv) || 0;
   if (tokenVersion !== currentVersion) return null;
   if (payload.jti) {
-    const session = await getUserSession(user.id, payload.jti);
-    if (!session) return null;
-    await touchUserSession(user.id, payload.jti);
+    const session = await touchUserSession(user.id, payload.jti);
+    if (!session || Number(session.sessionVersion) !== currentVersion) return null;
   }
   return enrichPublicUser(user);
 }
@@ -410,7 +401,7 @@ export async function adminDeleteUser(userId, actorId) {
   return { ok: true };
 }
 
-// Local owner is accessible only after the native shell's one-time HTTP bootstrap.
+// [desktop patch] 本地 owner 仅在原生壳层一次性 HTTP 引导之后可得，不开放云端注册/登录。
 export async function issueDesktopAuth() {
   if (process.env.DAYLIGHT_DESKTOP !== '1') throw new Error('桌面会话不可用');
   const email = 'owner@daylight.local';

@@ -1,17 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle, ArrowRight, BookOpen, Check, CheckCheck, ChevronDown, Clock3,
-  ExternalLink, FileText, GraduationCap, LoaderCircle, Mail, MapPin,
+  Copy, Eye, FileText, GraduationCap, LoaderCircle, Mail, MapPin, MoreHorizontal,
   MessageSquare, RefreshCw, Search, Send, Sparkles, Users, Video,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { TraceReplay } from './TracePanel.jsx';
+import { AgentThinkingChain } from '@/components/agent-thinking';
+import { CandidateProfileModules } from '@/components/candidate-profile';
+import { RichMarkdown } from '@/components/rich-markdown';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -23,43 +34,35 @@ import {
 } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { RagCitations } from '@/components/rag-citations';
+import { openAttachmentViewer } from '@/lib/attachment-open';
 import { cn } from '@/lib/utils';
 import {
-  CHAT_EXAMPLES, EMPTY_RECRUITMENT, FIELD_NAMES, PROFILE_GROUPS,
+  CHAT_EXAMPLES, EMPTY_RECRUITMENT,
   dateTime, isDemo, nameOf, pdfUrl, textOf, toIso, toLocalTime,
 } from '@/lib/recruitment';
 
-function FieldValue({ value, context }) {
-  if (Array.isArray(value)) {
-    return (
-      <div className="space-y-2">
-        {value.map((item, index) => (
-          <div key={index} className="rounded-md border bg-muted/30 px-2.5 py-2">
-            <FieldValue value={item} context={context} />
-          </div>
-        ))}
-      </div>
-    );
+function askLittleDAboutCandidate(candidate) {
+  const name = nameOf(candidate);
+  window.dispatchEvent(new CustomEvent('daylight:open-little-d', {
+    detail: {
+      prompt: `请根据当前邮箱人才库，介绍候选人「${name}」的经历亮点，并说明是否适合进一步面试。`,
+    },
+  }));
+}
+
+async function copyText(value, label = '已复制') {
+  const text = String(value || '').trim();
+  if (!text) {
+    toast.error('没有可复制的内容');
+    return;
   }
-  if (value && typeof value === 'object') {
-    return (
-      <dl className="grid gap-2 text-sm sm:grid-cols-2">
-        {Object.entries(value)
-          .filter(([, item]) => item !== null && item !== '' && item !== undefined && (!Array.isArray(item) || item.length))
-          .map(([key, item]) => (
-            <div key={key} className="min-w-0">
-              <dt className="text-xs text-muted-foreground">
-                {key === 'name' && context !== 'personal' ? '名称' : FIELD_NAMES[key] || key}
-              </dt>
-              <dd className="mt-0.5 break-words"><FieldValue value={item} context={context} /></dd>
-            </div>
-          ))}
-      </dl>
-    );
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(label);
+  } catch {
+    toast.error('复制失败');
   }
-  if (typeof value === 'boolean') return value ? '是' : '否';
-  if (value == null || value === '') return <span className="text-muted-foreground">未提供</span>;
-  return String(value);
 }
 
 export function EmailAttachments({ email, mailboxId, request, onCandidate, onUpdated }) {
@@ -95,39 +98,96 @@ export function EmailAttachments({ email, mailboxId, request, onCandidate, onUpd
               {attachment.error && <p className="mt-1 text-xs text-destructive">{textOf(attachment.error)}</p>}
             </div>
             <div className="flex flex-wrap gap-1.5">
-              <Button size="sm" variant="outline" asChild>
-                <a href={pdfUrl(attachment.id, mailboxId)} target="_blank" rel="noreferrer">
-                  打开 PDF <ExternalLink className="size-3" />
-                </a>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => openAttachmentViewer({
+                  id: attachment.id,
+                  filename: attachment.filename || attachment.name || 'PDF 简历',
+                  contentType: attachment.contentType || 'application/pdf',
+                  size: attachment.size,
+                  url: pdfUrl(attachment.id, mailboxId),
+                  proxyUrl: pdfUrl(attachment.id, mailboxId),
+                })}
+              >
+                预览 <FileText className="size-3" />
               </Button>
-              {attachment.candidateId && (
-                <Button size="sm" variant="secondary" onClick={() => onCandidate(attachment.candidateId)}>
-                  候选人 <ArrowRight className="size-3" />
-                </Button>
-              )}
-              {['failed', 'error'].includes(attachment.status) && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={Boolean(retrying)}
-                  onClick={async () => {
-                    setRetrying(attachment.id); setError('');
-                    try {
-                      await request(`/recruitment/attachments/${encodeURIComponent(attachment.id)}/retry`, 'POST');
-                      if (alive.current) await onUpdated();
-                    } catch (err) {
-                      if (alive.current) setError(err.message);
-                    } finally {
-                      if (alive.current) setRetrying('');
-                    }
-                  }}
-                >
-                  {retrying === attachment.id
-                    ? <LoaderCircle className="size-3 animate-spin" />
-                    : <RefreshCw className="size-3" />}
-                  重试提取
-                </Button>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="secondary">
+                    邮件功能 <MoreHorizontal className="size-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>附件与邮件</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => openAttachmentViewer({
+                      id: attachment.id,
+                      filename: attachment.filename || attachment.name || 'PDF 简历',
+                      contentType: attachment.contentType || 'application/pdf',
+                      size: attachment.size,
+                      url: pdfUrl(attachment.id, mailboxId),
+                      proxyUrl: pdfUrl(attachment.id, mailboxId),
+                    })}
+                  >
+                    <Eye className="size-3.5" />预览简历 PDF
+                  </DropdownMenuItem>
+                  {attachment.candidateId && (
+                    <DropdownMenuItem onClick={() => onCandidate(attachment.candidateId)}>
+                      <Users className="size-3.5" />打开候选人资料
+                    </DropdownMenuItem>
+                  )}
+                  {email?.id && (
+                    <DropdownMenuItem onClick={() => copyText(email.subject, '已复制邮件主题')}>
+                      <Copy className="size-3.5" />复制邮件主题
+                    </DropdownMenuItem>
+                  )}
+                  {email?.sender && (
+                    <DropdownMenuItem onClick={() => copyText(email.sender, '已复制发件人')}>
+                      <Mail className="size-3.5" />复制发件人
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={() => copyText(attachment.filename || attachment.name, '已复制文件名')}
+                  >
+                    <FileText className="size-3.5" />复制附件名
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => window.dispatchEvent(new CustomEvent('daylight:open-little-d', {
+                      detail: {
+                        prompt: `这封求职邮件「${email?.subject || '未命名'}」的简历附件是 ${attachment.filename || 'PDF'}，请帮我摘要要点。`,
+                      },
+                    }))}
+                  >
+                    <Sparkles className="size-3.5" />询问小 D
+                  </DropdownMenuItem>
+                  {['failed', 'error'].includes(attachment.status) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={Boolean(retrying)}
+                        onClick={async () => {
+                          setRetrying(attachment.id); setError('');
+                          try {
+                            await request(`/recruitment/attachments/${encodeURIComponent(attachment.id)}/retry`, 'POST');
+                            if (alive.current) await onUpdated();
+                          } catch (err) {
+                            if (alive.current) setError(err.message);
+                          } finally {
+                            if (alive.current) setRetrying('');
+                          }
+                        }}
+                      >
+                        {retrying === attachment.id
+                          ? <LoaderCircle className="size-3.5 animate-spin" />
+                          : <RefreshCw className="size-3.5" />}
+                        重试提取
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         ))}
@@ -225,21 +285,68 @@ function CandidateCard({ candidate, match, partial, mailboxId, onOpen, onInvite,
             查看资料 <ArrowRight className="size-3" />
           </Button>
           <div className="flex items-center gap-1">
-            {latest?.attachmentId && (
-              <Button size="icon-sm" variant="ghost" asChild>
-                <a href={pdfUrl(latest.attachmentId, mailboxId)} target="_blank" rel="noreferrer" aria-label={`打开${nameOf(candidate)}的 PDF 简历`}>
-                  <FileText className="size-3.5" />
-                </a>
-              </Button>
-            )}
-            {latest?.emailId && (
-              <Button size="icon-sm" variant="ghost" onClick={() => onEmail(latest.emailId)} aria-label={`查看${nameOf(candidate)}的原邮件`}>
-                <Mail className="size-3.5" />
-              </Button>
-            )}
             <Button size="sm" variant="outline" onClick={() => onInvite(candidate)}>
-              邀约 <ArrowRight className="size-3" />
+              邀约 <Send className="size-3" />
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={`${nameOf(candidate)}的更多邮件功能`}>
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>邮件与资料</DropdownMenuLabel>
+                {latest?.emailId && (
+                  <DropdownMenuItem onClick={() => onEmail(latest.emailId)}>
+                    <Mail className="size-3.5" />查看原邮件
+                  </DropdownMenuItem>
+                )}
+                {latest?.attachmentId && (
+                  <DropdownMenuItem
+                    onClick={() => openAttachmentViewer({
+                      id: latest.attachmentId,
+                      filename: `${nameOf(candidate)}.pdf`,
+                      contentType: 'application/pdf',
+                      url: pdfUrl(latest.attachmentId, mailboxId),
+                      proxyUrl: pdfUrl(latest.attachmentId, mailboxId),
+                    })}
+                  >
+                    <Eye className="size-3.5" />预览简历 PDF
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => onOpen(candidate.id)}>
+                  <Users className="size-3.5" />打开完整档案
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onInvite(candidate)}>
+                  <Send className="size-3.5" />生成面试邀约
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => copyText(
+                    personal.email || candidate.email || latest?.email || '',
+                    '已复制候选人邮箱',
+                  )}
+                >
+                  <Copy className="size-3.5" />复制邮箱
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => copyText(nameOf(candidate), '已复制姓名')}>
+                  <Copy className="size-3.5" />复制姓名
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => askLittleDAboutCandidate(candidate)}>
+                  <Sparkles className="size-3.5" />询问小 D
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => window.dispatchEvent(new CustomEvent('daylight:open-little-d', {
+                    detail: {
+                      prompt: `请用 search_knowledge 检索「${nameOf(candidate)}」简历原文，总结项目与技能证据。`,
+                    },
+                  }))}
+                >
+                  <MessageSquare className="size-3.5" />检索简历原文
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </CardContent>
@@ -298,15 +405,67 @@ function CandidateDetail({ candidate, attachments, interviews, mailboxId, onClos
                   </Button>
                 )}
                 {version?.attachmentId && (
-                  <Button variant="outline" asChild>
-                    <a href={pdfUrl(version.attachmentId, mailboxId)} target="_blank" rel="noreferrer">
-                      <FileText className="size-4" />打开 PDF <ExternalLink className="size-3" />
-                    </a>
+                  <Button
+                    variant="outline"
+                    onClick={() => openAttachmentViewer({
+                      id: version.attachmentId,
+                      filename: attachment?.filename || `${nameOf(candidate)}.pdf`,
+                      contentType: attachment?.contentType || 'application/pdf',
+                      size: attachment?.size,
+                      url: pdfUrl(version.attachmentId, mailboxId),
+                      proxyUrl: pdfUrl(version.attachmentId, mailboxId),
+                    })}
+                  >
+                    <Eye className="size-4" />预览简历
                   </Button>
                 )}
                 <Button onClick={() => { onClose(); onInvite(candidate); }}>
                   <Send className="size-4" />生成面试邀约
                 </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      更多 <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuLabel>邮件功能</DropdownMenuLabel>
+                    {version?.emailId && (
+                      <DropdownMenuItem onClick={() => { onClose(); onEmail(version.emailId); }}>
+                        <Mail className="size-3.5" />打开原邮件详情
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onClick={() => copyText(profile.personal?.email || candidate.email || '', '已复制邮箱')}
+                    >
+                      <Copy className="size-3.5" />复制联系邮箱
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => copyText(nameOf(candidate), '已复制姓名')}>
+                      <Copy className="size-3.5" />复制候选人姓名
+                    </DropdownMenuItem>
+                    {attachment?.filename && (
+                      <DropdownMenuItem onClick={() => copyText(attachment.filename, '已复制文件名')}>
+                        <FileText className="size-3.5" />复制简历文件名
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => { onClose(); askLittleDAboutCandidate(candidate); }}>
+                      <Sparkles className="size-3.5" />询问小 D
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        onClose();
+                        window.dispatchEvent(new CustomEvent('daylight:open-little-d', {
+                          detail: {
+                            prompt: `请用 search_knowledge 检索「${nameOf(candidate)}」的简历原文，列出可核验的项目与技能摘录。`,
+                          },
+                        }));
+                      }}
+                    >
+                      <MessageSquare className="size-3.5" />检索简历原文
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
 
@@ -319,20 +478,7 @@ function CandidateDetail({ candidate, attachments, interviews, mailboxId, onClos
               </p>
             )}
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {PROFILE_GROUPS.map(([key, label]) => (
-                <Card key={key} className={cn((key === 'personal' || key === 'intent') && 'md:col-span-2')}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">{label}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {profile[key] && (Array.isArray(profile[key]) ? profile[key].length : Object.keys(profile[key]).length)
-                      ? <FieldValue value={profile[key]} context={key} />
-                      : <p className="text-sm text-muted-foreground">简历未提供</p>}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <CandidateProfileModules profile={profile} />
 
             {interviews.length > 0 && (
               <section className="space-y-2">
@@ -368,30 +514,60 @@ function CandidateDetail({ candidate, attachments, interviews, mailboxId, onClos
 
 function TraceEvidence({ trace, inline = false }) {
   const [now, setNow] = useState(Date.now());
+  const [detailOpen, setDetailOpen] = useState(false);
   const spans = trace?.spans || [];
+  const running = trace?.status === 'running';
   useEffect(() => {
-    if (trace?.status !== 'running') return;
+    if (!running) return;
     const timer = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(timer);
-  }, [trace?.status]);
+  }, [running]);
   if (!trace) return null;
 
   return (
-    <details className={cn('rounded-lg border bg-muted/20', inline && 'mt-2')} open={trace.status === 'running' ? true : undefined}>
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm">
-        <span className="inline-flex items-center gap-2">
-          {trace.status === 'running'
-            ? <LoaderCircle className="size-3.5 animate-spin" />
-            : <CheckCheck className="size-3.5" />}
-          {trace.status === 'running' ? '正在执行' : trace.status === 'failed' ? '执行失败，查看记录' : '查看执行记录'}
-          <span className="text-xs text-muted-foreground">{spans.length} 个实际步骤</span>
-        </span>
-        <ChevronDown className="size-3.5 text-muted-foreground" />
-      </summary>
-      <div className="border-t px-2 py-2">
-        <TraceReplay trace={trace} now={now} showDraft={false} />
-      </div>
-    </details>
+    <div className={cn('space-y-2', inline && 'mt-2')}>
+      <AgentThinkingChain
+        spans={spans}
+        now={now}
+        running={running}
+        defaultOpen={running || inline}
+        cost={{
+          usage: {
+            prompt_tokens: (trace.llm_tokens_in ?? spans.reduce((sum, span) => sum + (span.llm_tokens_in || 0), 0)) || null,
+            completion_tokens: (trace.llm_tokens_out ?? spans.reduce((sum, span) => sum + (span.llm_tokens_out || 0), 0)) || null,
+          },
+          cost_cny: trace.cost_cny ?? null,
+          cost_status: trace.cost_status,
+        }}
+        title={
+          running
+            ? `正在执行 ${spans.length || '…'} 个实际步骤`
+            : trace.status === 'failed'
+              ? `执行失败 · ${spans.length} 步`
+              : `思考过程 · ${spans.length} 步`
+        }
+        footer={(
+          <div className="border-t px-2 py-2">
+            <Collapsible open={detailOpen} onOpenChange={setDetailOpen}>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    {running ? <LoaderCircle className="size-3 animate-spin" /> : <CheckCheck className="size-3" />}
+                    {detailOpen ? '收起完整回放与计量' : '完整回放 · 时间轴与 Token'}
+                  </span>
+                  <ChevronDown className={cn('size-3.5 transition', detailOpen && 'rotate-180')} />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-1 rounded-md border bg-background p-3">
+                  <TraceReplay trace={trace} now={now} showDraft={false} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        )}
+      />
+    </div>
   );
 }
 
@@ -407,7 +583,8 @@ function InterviewReview({ interview, previousInterview, candidate, settings, on
   const [reviewNotice, setReviewNotice] = useState('');
   const sent = interview.status === 'sent';
   const calendarFailed = sent && interview.calendarStatus === 'failed';
-  const demo = isDemo(interview) || isDemo(candidate);
+  const demo = isDemo(interview);
+  const demoCandidate = isDemo(candidate);
   const cancelled = interview.kind === 'cancel';
   const change = (key, value) => { setForm((current) => ({ ...current, [key]: value })); setSaved(false); };
   useEffect(() => { setForm(initial()); }, [interview.meetingUrl, interview.status]);
@@ -415,9 +592,12 @@ function InterviewReview({ interview, previousInterview, candidate, settings, on
   async function act(action) {
     setBusy(action); setError(''); setSaved(false); setReviewNotice('');
     try {
-      const result = await onAction(interview.id, action, { ...form, start: toIso(form.start), end: toIso(form.end) });
+      const result = await onAction(interview.id, action, {
+        ...form, start: toIso(form.start), end: toIso(form.end),
+        confirmDemoSend: action === 'send' && demo,
+      });
       if (result?.interview) setForm(initial(result.interview));
-      if (result?.reviewRequired) setReviewNotice('时间或链接已同步到正文，请核对后再次确认发送。');
+      if (result?.reviewRequired) setReviewNotice('草稿内容已更新，请核对主题、正文、时间和会议安排后再次确认发送。');
       else setSaved(true);
     } catch (err) {
       setError(err.message);
@@ -443,10 +623,13 @@ function InterviewReview({ interview, previousInterview, candidate, settings, on
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           <div className="space-y-4">
-            {demo && (
+            {(demo || demoCandidate) && (
               <Alert>
                 <Sparkles className="size-4" />
-                <AlertDescription>示例使用预置资料，不会创建真实会议或发送真实邮件。</AlertDescription>
+                <AlertDescription>
+                  候选人资料来自预置示例。
+                  {sent ? '此面试邮件已真实发送。' : '请填写真实收件邮箱并核对正文，点击「确认并发送」将通过当前邮箱发送真实邮件。'}
+                </AlertDescription>
               </Alert>
             )}
             {sent && (
@@ -557,11 +740,11 @@ function InterviewReview({ interview, previousInterview, candidate, settings, on
               </div>
               {!cancelled && (
                 <div className="space-y-2">
-                  <Label htmlFor="interview-meeting">会议链接</Label>
+                  <Label htmlFor="interview-meeting">会议地点或链接（可选）</Label>
                   <Input
                     id="interview-meeting"
-                    type="url"
-                    placeholder="填写已有腾讯 / 飞书会议链接，或创建飞书会议"
+                    type="text"
+                    placeholder="可填会议链接、会议号或线下面试地点"
                     value={form.meetingUrl}
                     onChange={(e) => change('meetingUrl', e.target.value)}
                   />
@@ -628,8 +811,8 @@ function InterviewReview({ interview, previousInterview, candidate, settings, on
               保存草稿
             </Button>
             <Button
-              disabled={Boolean(busy) || sent || demo || !form.to.trim() || !form.subject.trim() || !form.body.trim()
-                || (!cancelled && (!form.start || !form.end || !form.meetingUrl.trim()))}
+              disabled={Boolean(busy) || sent || !form.to.trim() || !form.subject.trim() || !form.body.trim()
+                || (!cancelled && (!form.start || !form.end))}
               onClick={() => act('send')}
             >
               {busy === 'send' ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
@@ -727,11 +910,12 @@ export default function Recruitment({
     }
     let saved = await requestRef.current(`/recruitment/interviews/${encodeURIComponent(id)}`, 'PUT', fields);
     if (!alive.current) return;
-    if (kind === 'send' && saved.body !== fields.body) {
+    if (kind === 'send' && (saved.body !== fields.body || saved.subject !== fields.subject)) {
       await reload();
       return { reviewRequired: true, interview: saved };
     }
-    if (kind !== 'save') saved = await requestRef.current(`/recruitment/interviews/${encodeURIComponent(id)}/${kind}`, 'POST');
+    if (kind !== 'save') saved = await requestRef.current(`/recruitment/interviews/${encodeURIComponent(id)}/${kind}`, 'POST',
+      kind === 'send' ? { confirmDemoSend: fields.confirmDemoSend === true } : undefined);
     if (alive.current) { await reload(); if (alive.current) await onUpdated(); }
     return { interview: saved };
   }
@@ -789,7 +973,28 @@ export default function Recruitment({
             {action === 'demo' ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
             体验招聘示例
           </Button>
-          <Button disabled={syncing} onClick={onSync}>
+          <Button
+            variant="outline"
+            disabled={Boolean(action) || Boolean(data.busy)}
+            onClick={async () => {
+              setAction('rag-reindex'); setError('');
+              try {
+                const result = await requestRef.current('/rag/reindex', 'POST');
+                if (alive.current) {
+                  await reload();
+                  toast.success(`已重建索引：${result.chunkCount ?? 0} 个分块`);
+                }
+              } catch (err) {
+                if (alive.current) setError(err.message);
+              } finally {
+                if (alive.current) setAction('');
+              }
+            }}
+          >
+            {action === 'rag-reindex' ? <LoaderCircle className="size-4 animate-spin" /> : <BookOpen className="size-4" />}
+            重建知识索引
+          </Button>
+          <Button disabled={syncing || !onSync} title={onSync ? '同步当前活动邮箱' : '请先在顶栏切换到该工作台绑定的邮箱'} onClick={onSync}>
             {syncing ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}
             同步真实邮箱
           </Button>
@@ -885,8 +1090,18 @@ export default function Recruitment({
                                 <div className="text-xs text-muted-foreground">{textOf(attachment.error) || '提取未完成'}</div>
                               </div>
                               <div className="flex gap-2">
-                                <Button size="sm" variant="outline" asChild>
-                                  <a href={pdfUrl(attachment.id, mailboxId)} target="_blank" rel="noreferrer">原 PDF</a>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openAttachmentViewer({
+                                    id: attachment.id,
+                                    filename: attachment.filename || '附件.pdf',
+                                    contentType: attachment.contentType || 'application/pdf',
+                                    url: pdfUrl(attachment.id, mailboxId),
+                                    proxyUrl: pdfUrl(attachment.id, mailboxId),
+                                  })}
+                                >
+                                  预览
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1005,7 +1220,11 @@ export default function Recruitment({
                   <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     {message.role === 'user' ? '你' : <><Sparkles className="size-3" />招聘助手</>}
                   </div>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</div>
+                  {message.role === 'user' ? (
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</div>
+                  ) : (
+                    <RichMarkdown>{message.content}</RichMarkdown>
+                  )}
 
                   {message.candidateResults && (
                     <div className="space-y-3">
@@ -1054,6 +1273,10 @@ export default function Recruitment({
                     ) : null;
                   })}
 
+                  {message.citations?.length > 0 && (
+                    <RagCitations citations={message.citations} mailboxId={mailboxId} />
+                  )}
+
                   <TraceEvidence inline trace={data.traces.find((trace) => (trace.trace_id || trace.id) === message.traceId)} />
                 </article>
               ))}
@@ -1073,26 +1296,29 @@ export default function Recruitment({
           </ScrollArea>
 
           <form className="space-y-2 border-t p-4" onSubmit={chat}>
-            <Textarea
-              ref={promptRef}
-              aria-label="向招聘助手发送消息"
-              value={prompt}
-              rows={3}
-              placeholder="例如：找有云计算项目经历的同学…"
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  chat(event);
-                }
-              }}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">Enter 发送 · Shift + Enter 换行</span>
-              <Button disabled={!prompt.trim() || Boolean(action) || Boolean(data.busy)} type="submit">
-                {action === 'chat' ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
-                发送
-              </Button>
+            <div className="rounded-xl border bg-muted/20 p-2">
+              <Textarea
+                ref={promptRef}
+                aria-label="向招聘助手发送消息"
+                value={prompt}
+                rows={3}
+                placeholder="例如：找有云计算项目经历的同学…"
+                className="min-h-[4.5rem] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    chat(event);
+                  }
+                }}
+              />
+              <div className="mt-1.5 flex items-center justify-between gap-2 px-0.5">
+                <span className="text-xs text-muted-foreground">Enter 发送 · Shift + Enter 换行</span>
+                <Button size="sm" disabled={!prompt.trim() || Boolean(action) || Boolean(data.busy)} type="submit">
+                  {action === 'chat' ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
+                  发送
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">面试邮件由你审核后发送。筛选依据来自简历，缺失信息会注明。</p>
           </form>

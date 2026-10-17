@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { usesStorageSnapshot, readSnapshotDocument, stageSnapshotDocument, settingsKey } from './storage/index.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dataDir = process.env.DAYLIGHT_DATA_DIR || path.join(root, 'data');
@@ -72,6 +73,10 @@ export function defaultMailTemplates() {
 }
 
 export function readMailTemplates() {
+  if (usesStorageSnapshot()) {
+    const raw = readSnapshotDocument(settingsKey('mail-templates'));
+    return Object.fromEntries(Object.entries(DEFAULTS).map(([key, value]) => [key, { ...value, ...(raw[key] || {}) }]));
+  }
   ensureFile();
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -100,12 +105,19 @@ export function saveMailTemplates(incoming = {}) {
     next[key].html = String(next[key].html || '');
     if (!next[key].subject) throw Object.assign(new Error(`${key} 模板缺少主题`), { status: 400 });
   }
-  ensureFile();
-  fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
+  if (usesStorageSnapshot()) stageSnapshotDocument(settingsKey('mail-templates'), next);
+  else {
+    ensureFile();
+    fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
+  }
   return next;
 }
 
 export function resetMailTemplates() {
+  if (usesStorageSnapshot()) {
+    stageSnapshotDocument(settingsKey('mail-templates'), defaultMailTemplates());
+    return defaultMailTemplates();
+  }
   ensureFile();
   fs.writeFileSync(filePath, `${JSON.stringify(DEFAULTS, null, 2)}\n`);
   return defaultMailTemplates();

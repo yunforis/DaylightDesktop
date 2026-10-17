@@ -3,6 +3,8 @@ import path from 'node:path';
 import { createHmac, createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { readInfraConfig } from './config.js';
+import { isProductionRuntime, requireLocalRuntime } from '../runtime-mode.js';
+import { counter, counterAdd, timer } from '../metrics.js';
 
 const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const dataDir = process.env.DAYLIGHT_DATA_DIR || path.join(root, 'data');
@@ -31,6 +33,7 @@ const CLOUD_PROVIDERS = new Set(OSS_PROVIDERS.filter((item) => item.id !== 'loca
 const READY_PROVIDERS = new Set(OSS_PROVIDERS.filter((item) => item.ready && item.id !== 'local').map((item) => item.id));
 
 function localRoot(config = readInfraConfig().oss) {
+  requireLocalRuntime('Local attachment storage');
   const dir = path.isAbsolute(config.localDir)
     ? config.localDir
     : path.join(dataDir, config.localDir || 'attachments');
@@ -52,7 +55,15 @@ function sanitizeSegment(value, fallback = 'shared') {
     .replace(/[^\w.\-@\u4e00-\u9fa5]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 64);
-  return cleaned || fallback;
+  return !cleaned || cleaned === '.' || cleaned === '..' ? fallback : cleaned;
+}
+
+function validateKey(key) {
+  if (typeof key !== 'string' || !key || key.includes('\\') || /[\x00-\x1f\x7f?#%]/.test(key)
+    || key.split('/').some((part) => !part || part === '.' || part === '..') || /^[a-z]:/i.test(key)) {
+    throw Object.assign(new Error('Invalid attachment key'), { status: 400 });
+  }
+  return key;
 }
 
 /** users/{userFolder}/mailboxes/{mailboxId}/{date}/{uuid}-{filename} */
@@ -66,12 +77,12 @@ export function buildAttachmentKey({
   const userFolder = sanitizeSegment(username || userId || 'workspace', 'workspace');
   const box = sanitizeSegment(mailboxId, 'default');
   const safeName = sanitizeSegment(filename || 'file', 'file');
-  return `users/${userFolder}/mailboxes/${box}/${date}/${randomUUID()}-${safeName}`;
+  return validateKey(`users/${userFolder}/mailboxes/${box}/${date}/${randomUUID()}-${safeName}`);
 }
 
 function publicObjectUrl(config, key) {
   if (config.publicBaseUrl) {
-    return `${String(config.publicBaseUrl).replace(/\/$/, '')}/${key}`;
+    return `${String(config.publicBaseUrl).replace(/\/$/, '')}/${encodePath(key)}`;
   }
   if (config.provider === 'aliyun' && config.bucket && config.endpoint) {
     const host = String(config.endpoint).replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -88,14 +99,23 @@ export function ossMode() {
   return mode;
 }
 
+export function closeOss() {
+  const previous = s3;
+  s3 = null;
+  mode = isProductionRuntime() ? 'unavailable' : 'local';
+  previous?.destroy();
+}
+
 export async function initOss() {
   const config = readInfraConfig({ force: true }).oss;
+  s3?.destroy();
   s3 = null;
-  mode = 'local';
+  mode = isProductionRuntime() ? 'unavailable' : 'local';
   lastError = '';
-  localRoot(config);
+  if (!isProductionRuntime()) localRoot(config);
 
   if (!config.enabled || config.provider === 'local' || !CLOUD_PROVIDERS.has(config.provider)) {
+    requireLocalRuntime('Local attachment storage');
     return { ok: true, mode };
   }
 
@@ -110,6 +130,7 @@ export async function initOss() {
     return { ok: false, mode: 'local', error: lastError };
   }
 
+  let candidate;
   try {
     if (config.provider === 'aliyun' || config.provider === 'us3' || config.provider === 's3') {
       const { S3Client, HeadBucketCommand } = await import('@aws-sdk/client-s3');
@@ -119,9 +140,11 @@ export async function initOss() {
       const client = new S3Client({
         region: config.region || 'oss-cn-beijing',
         endpoint,
-        forcePathStyle: config.provider === 'us3',
+        forcePathStyle: config.forcePathStyle || config.provider === 'us3',
+        requestHandler: { connectionTimeout: 5000, requestTimeout: 10000 },
         credentials,
       });
+      candidate = client;
       await client.send(new HeadBucketCommand({ Bucket: config.bucket }));
       s3 = client;
       mode = config.provider;
@@ -138,17 +161,42 @@ export async function initOss() {
 
     return { ok: true, mode: 'local' };
   } catch (error) {
+    candidate?.destroy();
     s3 = null;
-    mode = 'local';
+    mode = isProductionRuntime() ? 'unavailable' : 'local';
     lastError = error.message;
+    if (isProductionRuntime()) throw error;
     return { ok: false, mode, error: error.message };
   }
 }
 
-export async function ossStatus() {
+export async function ossStatus({ signal } = {}) {
   if (CLOUD_PROVIDERS.has(mode) && (s3 || mode === 'qiniu' || mode === 'upyun')) {
+    if (isProductionRuntime()) {
+      try {
+        if (s3) {
+          const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+          await s3.send(new HeadBucketCommand({ Bucket: readInfraConfig().oss.bucket }), { abortSignal: signal || AbortSignal.timeout(4500) });
+        } else {
+          const config = readInfraConfig().oss;
+          const endpoint = mode === 'qiniu' ? config.publicBaseUrl : `${(config.endpoint || 'https://v0.api.upyun.com').replace(/\/$/, '')}/${config.bucket}/`;
+          if (!endpoint) throw new Error('OSS HEAD endpoint is missing');
+          const headers = {};
+          if (mode === 'upyun') {
+            const date = new Date().toUTCString();
+            const { accessKeyId: operator, secretAccessKey } = resolveCredentials(config);
+            headers.Date = date;
+            headers.Authorization = upyunSign({ method: 'HEAD', date, uri: `/${config.bucket}/`, operator,
+              passwordMd5: createHash('md5').update(secretAccessKey).digest('hex') });
+          }
+          const response = await fetch(endpoint, { method: 'HEAD', headers, signal: signal || AbortSignal.timeout(4500) });
+          if (!response.ok) throw new Error(`OSS HEAD failed: ${response.status}`);
+        }
+      } catch (error) { return { ok: false, mode: 'unavailable', error: error.message }; }
+    }
     return { ok: true, mode };
   }
+  if (isProductionRuntime()) return { ok: false, mode: 'unavailable', error: lastError || 'OSS is not connected' };
   return {
     ok: true,
     mode: 'local',
@@ -250,7 +298,21 @@ async function getUpyun({ config, key }) {
   };
 }
 
-export async function putAttachment({
+/** Instrumented entry point: one duration sample and one byte counter per attempt. */
+export async function putAttachment(options = {}) {
+  const size = Buffer.isBuffer(options.buffer) ? options.buffer.length : Buffer.byteLength(String(options.buffer || ''));
+  const stop = timer('oss.put.ms', { mode });
+  let outcome = 'ok';
+  try { return await putAttachmentImpl(options); }
+  catch (error) { outcome = 'error'; throw error; }
+  finally {
+    stop({ outcome, size });
+    counter('oss.put_total', { mode, outcome });
+    if (outcome === 'ok') counterAdd('oss.bytes_total', size, { mode, op: 'put' });
+  }
+}
+
+async function putAttachmentImpl({
   buffer,
   filename,
   contentType,
@@ -264,6 +326,7 @@ export async function putAttachment({
   const key = prefix
     ? `${String(prefix).replace(/\/$/, '')}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${sanitizeSegment(filename || 'file')}`
     : buildAttachmentKey({ filename, userId, username, mailboxId });
+  validateKey(key);
 
   const resultBase = {
     key,
@@ -322,6 +385,22 @@ export async function putAttachment({
 }
 
 export async function getAttachmentObject(key) {
+  const stop = timer('oss.get.ms', { mode });
+  let outcome = 'ok';
+  try {
+    const result = await getAttachmentObjectImpl(key);
+    if (!result) outcome = 'missing';
+    else counterAdd('oss.bytes_total', result.buffer?.length || 0, { mode, op: 'get' });
+    return result;
+  } catch (error) { outcome = 'error'; throw error; }
+  finally {
+    stop({ outcome });
+    counter('oss.get_total', { mode, outcome });
+  }
+}
+
+async function getAttachmentObjectImpl(key) {
+  validateKey(key);
   const config = readInfraConfig().oss;
   if ((mode === 'aliyun' || mode === 'us3' || mode === 's3') && s3) {
     const { GetObjectCommand } = await import('@aws-sdk/client-s3');
@@ -342,6 +421,7 @@ export async function getAttachmentObject(key) {
     const got = await getUpyun({ config, key });
     return { ...got, storage: 'upyun', publicUrl: publicObjectUrl(config, key) };
   }
+  requireLocalRuntime('Local attachment fallback');
   const full = resolveLocalAttachment(key);
   if (!full) return null;
   return {
@@ -353,13 +433,20 @@ export async function getAttachmentObject(key) {
 }
 
 export function resolveLocalAttachment(key) {
+  validateKey(key);
+  // Callers probe local storage before invoking the authenticated cloud getter.
+  if (isProductionRuntime()) return null;
   const rootDir = localRoot();
-  const full = path.join(rootDir, key);
-  if (!full.startsWith(rootDir) || !fs.existsSync(full)) return null;
-  return full;
+  const full = path.resolve(rootDir, key);
+  if (!fs.existsSync(full)) return null;
+  const realRoot = fs.realpathSync(rootDir);
+  const realFull = fs.realpathSync(full);
+  if (!realFull.startsWith(`${realRoot}${path.sep}`) || !fs.statSync(realFull).isFile()) return null;
+  return realFull;
 }
 
 export function attachmentPublicUrl(key) {
+  validateKey(key);
   return publicObjectUrl(readInfraConfig().oss, key);
 }
 
@@ -399,17 +486,20 @@ export async function testOssConnection(incoming) {
     const client = new S3Client({
       region: config.region || 'oss-cn-beijing',
       endpoint,
-      forcePathStyle: provider === 'us3',
+      forcePathStyle: config.forcePathStyle || provider === 'us3',
+      requestHandler: { connectionTimeout: 5000, requestTimeout: 10000 },
       credentials,
     });
-    await client.send(new HeadBucketCommand({ Bucket: config.bucket }));
-    await client.send(new PutObjectCommand({
+    try {
+      await client.send(new HeadBucketCommand({ Bucket: config.bucket }));
+      await client.send(new PutObjectCommand({
       Bucket: config.bucket,
       Key: probeKey,
       Body: body,
       ContentType: 'text/plain',
     }));
-    await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: probeKey }));
+      await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: probeKey }));
+    } finally { client.destroy(); }
     return { ok: true, mode: provider, message: `${provider} 连通成功（已写入并删除探测对象）` };
   }
 

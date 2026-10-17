@@ -1,0 +1,862 @@
+{
+  "synthetic": true,
+  "createdAt": "2026-10-15",
+  "samples": [
+    {
+      "id": "01",
+      "file": "01_陈知远_云平台后端工程师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "陈知远",
+        "email": "chen.zhiyuan@example.invalid",
+        "phone": "000-0000-0101",
+        "currentCity": "杭州",
+        "age": 27,
+        "birthDate": null
+      },
+      "targetPosition": "云平台后端工程师",
+      "intentText": "期望城市：上海、杭州 | 全职 | 离职状态，录用后两周到岗 | 期望月薪：22k-28k",
+      "checks": [
+        "学校城市为上海，现居地为杭州；不可混淆。",
+        "两个项目及工作成果数值应完整保留。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "上海理工大学 | 本科 | 计算机科学与技术",
+              "2017.09 - 2021.06；学校所在地：上海；已毕业；GPA 3.62/4.00，专业排名 12/120。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历",
+          "rows": [
+            [
+              "澄川云科技（虚构） | 后端工程师 | 全职",
+              "2021.07 - 2026.09；开发 Go 微服务，维护 PostgreSQL、Redis 与 RabbitMQ；负责权限、计费和任务调度模块。",
+              "将批量任务 P95 延迟由 1.8 秒降至 650 毫秒；上线审批流程将发布差错率降低 40%。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "多租户云资源管理平台 | 核心开发",
+              "2024.03 - 2025.12；技术：Go、Kubernetes、PostgreSQL、Redis、Prometheus。",
+              "实现资源配额、异步开通和失败补偿；支持 120 个租户，配置变更平均生效时间小于 10 秒。"
+            ],
+            [
+              "成本分析与告警服务 | 后端负责人",
+              "2025.02 - 2026.06；聚合云账单、按项目分摊成本，基于 RabbitMQ 处理任务；异常账单定位时间缩短 60%。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "专业技能",
+          "rows": [
+            [
+              "Go / SQL / Linux / Docker",
+              "熟悉 REST API、数据库索引、幂等消费和可观测性；参与代码评审与生产故障复盘。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "证书与语言",
+          "rows": [
+            [
+              "软件设计师 | 2022.11",
+              "英语 CET-6：510 分，能够阅读英文技术文档。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "02",
+      "file": "02_许星禾_前端开发工程师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "许星禾",
+        "email": "xu.xinghe@example.invalid",
+        "phone": "000-0000-0102",
+        "currentCity": "南京",
+        "age": 22,
+        "birthDate": null
+      },
+      "targetPosition": "前端开发工程师（应届）",
+      "intentText": "期望城市：南京、上海 | 2027 届校园招聘 | 2027.07 可全职到岗 | 薪资面议",
+      "checks": [
+        "毕业状态应为在读/预计毕业，不能作为已毕业。",
+        "实习与正式工作应区分。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "南京信息工程大学 | 本科在读 | 软件工程",
+              "2023.09 - 2027.06（预计）；学校所在地：南京；GPA 3.78/4.00，专业排名 8/156。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "实习经历",
+          "rows": [
+            [
+              "映桥数字（虚构） | 前端实习生",
+              "2026.06 - 2026.09；以 React、TypeScript 和 Tailwind CSS 开发运营后台；整理 18 个共享组件，首屏资源体积减少 26%。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "校园日程协作网站 | 前端负责人",
+              "2025.10 - 2026.05；技术：React、TypeScript、Vite、FullCalendar。",
+              "实现周/月视图、筛选、表单校验和移动端适配；与两名同学协作，完成 15 个页面与 30 个交互场景。"
+            ],
+            [
+              "无障碍组件练习集 | 独立开发",
+              "2026.03 - 2026.08；实现键盘导航、焦点管理与对比度检查；为按钮、对话框及下拉菜单整理使用示例。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "竞赛与校园经历",
+          "rows": [
+            [
+              "省大学生软件设计竞赛 | 省级二等奖 | 2026.05",
+              "负责交互和前端实现；2024.09 - 2025.06 任校开源社技术部干事，组织 6 次分享。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能与语言",
+          "rows": [
+            [
+              "React / TypeScript / HTML / CSS / Git",
+              "英语 CET-6：532 分；普通话二级甲等。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "03",
+      "file": "03_周予安_数据分析师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "周予安",
+        "email": "zhou.yuan@example.invalid",
+        "phone": "000-0000-0103",
+        "currentCity": "深圳",
+        "age": null,
+        "birthDate": null
+      },
+      "targetPosition": "数据分析师",
+      "intentText": "期望城市：深圳 | 全职 | 在职，需提前一个月通知 | 期望月薪：18k-23k",
+      "checks": [
+        "年龄、出生日期、学校城市留空；不得用毕业年份或现居地推断。",
+        "4.2 个百分点不能误写成 4.2%。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "南岭应用技术学院（虚构） | 本科 | 统计学",
+              "2018.09 - 2022.06；已毕业；均分 86/100。简历未注明学校或校区所在地。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历",
+          "rows": [
+            [
+              "数帆零售研究室（虚构） | 数据分析师 | 全职",
+              "2022.07 - 至今；负责渠道转化漏斗、用户留存及 A/B 实验；每周为产品团队提供分析报告。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "会员留存分析 | 分析负责人",
+              "2024.05 - 2025.02；技术：Python、pandas、SQL、Power BI。",
+              "构建 RFM 分群和月度留存看板；识别新客第二周流失点，配合运营实验使 30 日留存提升 4.2 个百分点。"
+            ],
+            [
+              "促销效果评估 | 数据分析",
+              "2025.04 - 2026.03；制定样本分流与指标口径；检验增量收益与置信区间，避免把整体销量增长直接视为实验效果。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能与证书",
+          "rows": [
+            [
+              "SQL / Python / 统计推断 / 数据可视化",
+              "熟悉窗口函数、回归分析和实验设计；Microsoft PL-300（虚构持证经历），2025.08。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "语言与补充",
+          "rows": [
+            [
+              "英语：可阅读分析报告",
+              "年龄和出生日期未提供；可提供脱敏分析作品，作品页 https://portfolio.example.invalid/zhou-yuan。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "04",
+      "file": "04_李沐_Java 后端工程师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "李沐",
+        "email": "li.mu.backend@example.invalid",
+        "phone": "000-0000-0104",
+        "currentCity": "上海",
+        "age": 26,
+        "birthDate": null
+      },
+      "targetPosition": "Java 后端工程师",
+      "intentText": "期望城市：上海 | 全职 | 在职，30 天内到岗 | 期望月薪：24k-30k",
+      "checks": [
+        "与 05 同名但邮箱、手机号及教育经历不同，应分别建档。",
+        "不可把仅有课程学习写成 Kubernetes 生产经验。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "上海大学 | 本科 | 软件工程",
+              "2018.09 - 2022.06；学校所在地：上海；已毕业。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历",
+          "rows": [
+            [
+              "星泊供应链（虚构） | Java 开发工程师 | 全职",
+              "2022.07 - 至今；负责采购订单、库存锁定和供应商接口；维护 Spring Boot 服务及 MySQL 数据库。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "订单履约与库存服务 | 后端开发",
+              "2023.08 - 2025.11；技术：Java、Spring Boot、MySQL、Redis、RabbitMQ。",
+              "以库存预占和消息重试降低超卖风险；对账耗时从 40 分钟缩短至 12 分钟。"
+            ],
+            [
+              "供应商开放接口 | 核心开发",
+              "2025.06 - 2026.08；实现签名验证、限流和接口版本管理；新增 28 个接口，接入 16 家合成供应商。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能与荣誉",
+          "rows": [
+            [
+              "Java / Spring Boot / MySQL / Redis / RabbitMQ",
+              "2024 年团队质量贡献奖（虚构）；英语 CET-4：525 分。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "个人补充",
+          "rows": [
+            [
+              "协作与交付",
+              "参与需求拆分、接口评审和故障复盘；对云原生仅有课程学习，尚无 Kubernetes 生产项目经历。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "05",
+      "file": "05_李沐_产品设计师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "李沐",
+        "email": "li.mu.design@example.invalid",
+        "phone": "000-0000-0105",
+        "currentCity": "苏州",
+        "age": 24,
+        "birthDate": null
+      },
+      "targetPosition": "产品设计师",
+      "intentText": "期望城市：苏州、杭州 | 全职 | 两周内到岗 | 期望月薪：15k-19k",
+      "checks": [
+        "学校城市为无锡，现居地苏州；作品集应保留。",
+        "与 04 同名不应合并。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "江南大学 | 本科 | 视觉传达设计",
+              "2020.09 - 2024.06；学校所在地：无锡；已毕业；GPA 3.70/4.00。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历",
+          "rows": [
+            [
+              "清野体验设计（虚构） | 产品设计师 | 全职",
+              "2024.07 - 2026.09；负责企业工具的信息架构、交互流程和界面规范；完成 12 次用户访谈。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "企业知识库改版 | 交互与视觉设计",
+              "2025.01 - 2025.10；工具：Figma、FigJam、Adobe Illustrator。",
+              "重新设计搜索与目录导航，完成原型、可用性测试和设计交付；测试任务完成率由 68% 提升至 89%。"
+            ],
+            [
+              "移动端活动报名体验 | 产品设计",
+              "2025.11 - 2026.07；压缩表单步骤，增加报名状态提示；与研发共建 24 个组件及三档屏幕规范。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能与作品",
+          "rows": [
+            [
+              "用户访谈 / 信息架构 / 交互设计 / Figma",
+              "作品集：https://portfolio.example.invalid/li-mu-design；英语 IELTS：6.5（2024.08）。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "荣誉",
+          "rows": [
+            [
+              "校优秀毕业设计 | 2024.06",
+              "课题为公共文化空间预约服务设计；全部设计经历及奖项为合成测试资料。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "06",
+      "file": "06_唐可欣_软件测试工程师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "唐可欣",
+        "email": null,
+        "phone": null,
+        "currentCity": "成都",
+        "age": null,
+        "birthDate": null
+      },
+      "targetPosition": "软件测试工程师",
+      "intentText": "期望城市：成都 | 全职 | 到岗时间面议 | 薪资未注明",
+      "checks": [
+        "personal.email、phone、age、birthDate 应为空。",
+        "不得把真实发件人邮箱填入候选人的简历邮箱。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "成都信息工程大学 | 本科 | 软件工程",
+              "2019.09 - 2023.06；学校所在地：成都；已毕业。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历",
+          "rows": [
+            [
+              "望川软件（虚构） | 测试工程师 | 全职",
+              "2023.07 - 2026.09；负责 Web 管理端与接口测试，维护冒烟用例和缺陷跟踪。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "支付对账测试体系 | 测试负责人",
+              "2024.06 - 2025.06；技术：Python、pytest、Postman、JMeter。",
+              "覆盖退款、重复回调和账单差异场景；接口自动化用例从 80 条增加至 260 条。"
+            ],
+            [
+              "多浏览器回归自动化 | 测试开发",
+              "2025.08 - 2026.08；使用 Playwright 验证 Chromium、Firefox 与 WebKit；回归执行时间由 3 小时缩短至 45 分钟。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "专业技能",
+          "rows": [
+            [
+              "测试设计 / Python / SQL / Playwright",
+              "熟悉等价类、边界值、接口断言和问题复现；能够编写清晰的缺陷报告。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "联系方式说明",
+          "rows": [
+            [
+              "本版未提供邮箱、手机号、出生日期或年龄",
+              "投递人可能是转发者；候选人联系方式以简历明确内容为准。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "07",
+      "file": "07_沈书宁_算法工程师_文字版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 2,
+      "expectedPersonal": {
+        "name": "沈书宁",
+        "email": "shen.shuning@example.invalid",
+        "phone": "000-0000-0107",
+        "currentCity": "北京",
+        "age": 25,
+        "birthDate": null
+      },
+      "targetPosition": "算法工程师 / 机器学习研究工程师",
+      "intentText": "期望城市：北京、上海 | 2027 届校园招聘 | 2027.07 到岗 | 期望月薪：30k-38k",
+      "checks": [
+        "应为两页；教育两段及第 2 页科研、论文、专利、竞赛均需提取。",
+        "硕士在读，专利受理中，不能改成已毕业/已授权。",
+        "第 2 页经历的 evidence.page 应为 2，quote 来自原文。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "东澜理工大学（虚构） | 硕士在读 | 计算机技术",
+              "2024.09 - 2027.06（预计）；学校所在地：上海；研究方向：文档理解与信息抽取；GPA 3.85/4.00。"
+            ],
+            [
+              "北川科技大学（虚构） | 本科 | 人工智能",
+              "2020.09 - 2024.06；学校所在地：北京；已毕业；专业排名 6/98。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "实习经历",
+          "rows": [
+            [
+              "观澜智能研究院（虚构） | 算法实习生",
+              "2026.03 - 2026.08；搭建文档实体识别与关系抽取评测集，独立完成标注一致性检查及误差分析。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "多页文档结构化平台 | 模型与评测开发",
+              "2025.04 - 2026.06；技术：Python、PyTorch、Transformers、FastAPI。",
+              "融合 OCR 与版面特征抽取字段；构建 2,400 页合成评测集，字段 F1 从 0.81 提升至 0.89。"
+            ],
+            [
+              "检索增强问答评估 | 算法开发",
+              "2025.10 - 2026.08；技术：BM25、向量检索、RAG。",
+              "划分检索命中、证据覆盖与回答一致性；对 500 条问题做人工核验，减少无证据回答。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能与语言",
+          "rows": [
+            [
+              "Python / PyTorch / NLP / OCR / SQL",
+              "英语 CET-6：580 分；可撰写英文技术报告；研究成果、论文与专利详见第 2 页。"
+            ]
+          ]
+        },
+        {
+          "page": 2,
+          "title": "科研经历",
+          "rows": [
+            [
+              "复杂表格中的实体对齐 | 硕士课题",
+              "机构：东澜理工大学文档智能实验室（虚构）；2024.11 - 至今。",
+              "研究跨页表格的实体归一与行列关系建模；负责数据设计、模型训练、消融实验和错误归因。"
+            ]
+          ]
+        },
+        {
+          "page": 2,
+          "title": "论文",
+          "rows": [
+            [
+              "Layout-aware Entity Linking for Synthetic Documents",
+              "论文；2026.07；第二作者；虚构研讨会 Synthetic Document Workshop 2026 已录用。",
+              "贡献：设计跨页实体链接评测，完成 4 组消融实验；此论文标题与发表经历均为合成数据。"
+            ]
+          ]
+        },
+        {
+          "page": 2,
+          "title": "专利",
+          "rows": [
+            [
+              "一种面向多页表格的实体对齐方法",
+              "发明专利申请；申请时间：2026.04；状态：受理中，尚未授权；本人为第二发明人。",
+              "申请编号：TEST-PATENT-2026-007（测试编号）；不得将受理状态识别为已授权。"
+            ]
+          ]
+        },
+        {
+          "page": 2,
+          "title": "竞赛与荣誉",
+          "rows": [
+            [
+              "全国大学生人工智能创新赛（虚构） | 国家级二等奖",
+              "2025.11；团队 4 人，本人负责信息抽取和离线评测。"
+            ],
+            [
+              "研究生学业奖学金一等奖 | 校级",
+              "2025.12；东澜理工大学（虚构）；奖励学年内科研与课程综合表现。"
+            ]
+          ]
+        },
+        {
+          "page": 2,
+          "title": "校园与开源经历",
+          "rows": [
+            [
+              "文档智能读书会 | 组织者",
+              "2025.03 - 2026.06；组织 10 次论文分享，整理可复现实验说明。",
+              "开源作品：https://code.example.invalid/shen-shuning/docbench；仅为测试链接。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "08",
+      "file": "08_Zhao Lin_Backend Engineer_英文版.pdf",
+      "isResume": true,
+      "format": "text",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "Zhao Lin",
+        "email": "zhao.lin@example.invalid",
+        "phone": "000-0000-0108",
+        "currentCity": "Shanghai",
+        "age": null,
+        "birthDate": null
+      },
+      "targetPosition": "Backend Engineer",
+      "intentText": "Target cities: Shanghai, Singapore | Full-time | Available in November 2026 | Salary: negotiable",
+      "checks": [
+        "英文日期范围、学历层级及两个学校城市应保留。",
+        "年龄、出生日期未给出，不能推算。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "EDUCATION",
+          "rows": [
+            [
+              "Harbor Institute of Technology (fictional) | MSc in Software Systems",
+              "September 2022 - June 2024; Campus city: Singapore; Graduated; GPA 4.30/5.00."
+            ],
+            [
+              "Westlake Metropolitan College (fictional) | BSc in Computer Science",
+              "September 2018 - June 2022; Campus city: Hangzhou, China; Graduated."
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "EXPERIENCE",
+          "rows": [
+            [
+              "Lantern Systems (fictional) | Backend Engineer | Full-time",
+              "July 2024 - September 2026; Built Python services, designed PostgreSQL schemas and maintained asynchronous workers."
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "PROJECTS",
+          "rows": [
+            [
+              "Document Intake API | Backend developer",
+              "January 2025 - December 2025; Python, FastAPI, PostgreSQL, Docker.",
+              "Designed upload validation and asynchronous parsing; reduced median processing time from 12 seconds to 5 seconds."
+            ],
+            [
+              "Release Observability Dashboard | Service owner",
+              "February 2026 - August 2026; OpenTelemetry, Prometheus, Grafana.",
+              "Added tracing and service-level indicators for six internal services; wrote incident review templates."
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "SKILLS",
+          "rows": [
+            [
+              "Python / FastAPI / PostgreSQL / Docker / Linux",
+              "API design, asynchronous jobs, SQL optimization and production debugging."
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "LANGUAGES & CERTIFICATES",
+          "rows": [
+            [
+              "Mandarin: native; English: IELTS 7.5 (August 2024)",
+              "AWS Certified Cloud Practitioner (synthetic credential), May 2025."
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "ADDITIONAL INFORMATION",
+          "rows": [
+            [
+              "Portfolio: https://portfolio.example.invalid/zhao-lin",
+              "Age and date of birth are not provided. All organizations and career details in this resume are synthetic."
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "09",
+      "file": "09_顾言澈_运维_扫描版.pdf",
+      "isResume": true,
+      "format": "scan",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "顾言澈",
+        "email": "gu.yanche@example.invalid",
+        "phone": "000-0000-0109",
+        "currentCity": "武汉",
+        "age": 28,
+        "birthDate": null
+      },
+      "targetPosition": "运维 / SRE 工程师",
+      "intentText": "期望城市：武汉、上海 | 全职 | 两周内到岗 | 期望月薪：20k-26k",
+      "checks": [
+        "纯图像 PDF，应触发 OCR；不是带文字层的模拟扫描。",
+        "两段全职经历和两个项目应分别保留。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景",
+          "rows": [
+            [
+              "武汉科技大学 | 本科 | 网络工程",
+              "2016.09 - 2020.06；学校所在地：武汉；已毕业。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历",
+          "rows": [
+            [
+              "衡岳信息服务（虚构） | 运维工程师 | 全职",
+              "2020.07 - 2023.12；负责 Linux 主机、Nginx 与数据库备份。"
+            ],
+            [
+              "雾岚云服务（虚构） | SRE 工程师 | 全职",
+              "2024.01 - 2026.09；维护容器平台、监控和告警，参与值班及故障演练。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历",
+          "rows": [
+            [
+              "可观测性与告警治理 | 项目负责人",
+              "2024.04 - 2025.05；技术：Prometheus、Grafana、Loki、OpenTelemetry。",
+              "梳理 160 条告警规则，建立服务分级和处理手册；无效告警数量减少 55%。"
+            ],
+            [
+              "容器发布与回滚流水线 | 运维开发",
+              "2025.07 - 2026.06；技术：Docker、Kubernetes、GitLab CI、Helm。",
+              "增加灰度发布和自动回滚；生产发布平均用时从 25 分钟缩短至 9 分钟。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能与证书",
+          "rows": [
+            [
+              "Linux / Bash / Python / TCP-IP / Kubernetes",
+              "CKA（虚构持证经历），2025.09；英语 CET-4：480 分；可阅读英文运维文档。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    },
+    {
+      "id": "10",
+      "file": "10_林若溪_数据工程师_扫描版.pdf",
+      "isResume": true,
+      "format": "scan",
+      "pageCount": 1,
+      "expectedPersonal": {
+        "name": "林若溪",
+        "email": "lin.ruoxi@example.invalid",
+        "phone": "000-0000-0110",
+        "currentCity": "广州",
+        "age": 25,
+        "birthDate": null
+      },
+      "targetPosition": "数据工程师 / Data Engineer",
+      "intentText": "期望城市：广州、深圳 | Full-time | 2026.11 可到岗 | 期望月薪：21k-27k",
+      "checks": [
+        "纯图像中英混排；技术名、英文项目名和 8 秒等数值需核对。",
+        "OCR 后仍需完成模型结构化，不能仅保存识别全文。"
+      ],
+      "sourceSections": [
+        {
+          "page": 1,
+          "title": "教育背景 / Education",
+          "rows": [
+            [
+              "华南农业大学 | 本科 | 数据科学与大数据技术",
+              "2019.09 - 2023.06；学校所在地：广州；已毕业；GPA 3.65/4.00。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "工作经历 / Experience",
+          "rows": [
+            [
+              "橙屿数据（虚构） | Data Engineer | 全职",
+              "2023.07 - 2026.09；开发批量 ETL 与实时数据链路，负责数据质量、元数据和调度任务。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "项目经历 / Projects",
+          "rows": [
+            [
+              "Real-time Order Pipeline | 数据开发",
+              "2024.02 - 2025.03；技术：Kafka、Flink、PostgreSQL、Python。",
+              "处理订单事件及延迟数据；端到端延迟 P95 小于 8 秒，建立重复事件与数据缺失告警。"
+            ],
+            [
+              "Data Quality Rule Center | 项目核心开发",
+              "2025.05 - 2026.08；技术：Airflow、SQL、dbt、Great Expectations。",
+              "实现 86 条数据质量规则；异常定位平均耗时从 50 分钟缩短至 18 分钟。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "技能 / Skills",
+          "rows": [
+            [
+              "SQL / Python / Kafka / Flink / Airflow / dbt",
+              "熟悉维度建模、增量同步、任务依赖和数据血缘；可独立完成数据链路交付。"
+            ]
+          ]
+        },
+        {
+          "page": 1,
+          "title": "语言与证书 / Languages",
+          "rows": [
+            [
+              "English: IELTS 7.0（2025.06）",
+              "普通话：母语；软件设计师（2024.11）；所有经历为虚构测试资料。"
+            ]
+          ]
+        }
+      ],
+      "note": "人工核对基准；不是程序导入数据，也不是模型输出。字段措辞允许同义改写，空值可为 null 或缺省。"
+    }
+  ]
+}

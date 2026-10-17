@@ -11,7 +11,7 @@ for (const folder of ['server', 'dist']) {
   await fs.cp(path.join(root, folder), path.join(runtime, folder), { recursive: true, filter: source => !source.endsWith('.test.js') && !source.endsWith('.DS_Store') });
 }
 const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-const names = ['@aws-sdk/client-s3', '@napi-rs/canvas', 'amqplib', 'bcryptjs', 'cookie-parser', 'express', 'imapflow', 'ioredis', 'jsonwebtoken', 'mailparser', 'nodemailer', 'pdfjs-dist', 'pg', 'sql.js', 'svg-captcha', 'tesseract.js'];
+const names = ['@aws-sdk/client-s3', '@napi-rs/canvas', 'amqplib', 'bcryptjs', 'cookie-parser', 'express', 'imapflow', 'ioredis', 'jsonwebtoken', 'mailparser', 'nodemailer', 'pdfjs-dist', 'pg', 'sql.js', 'svg-captcha', 'tesseract.js', 'undici'];
 const lock = JSON.parse(await fs.readFile(path.join(root, 'package-lock.json'), 'utf8'));
 const dependencies = Object.fromEntries(names.map(name => [name, lock.packages[`node_modules/${name}`].version]));
 await fs.writeFile(path.join(runtime, 'package.json'), JSON.stringify({ name: 'daylight-desktop-runtime', version: pkg.version, private: true, type: 'module', dependencies }, null, 2));

@@ -1,19 +1,13 @@
 import 'temporal-polyfill/global';
+import 'katex/dist/katex.min.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
-import { setAuthToken } from './lib/auth-api';
-import { installDesktopLinks } from './lib/desktop';
+import { bootstrapDesktopSession } from './lib/desktop';
 
-try {
-  const response = await fetch('/desktop/session');
-  if (response.ok && response.headers.get('content-type')?.includes('application/json')) {
-    const session = await response.json();
-    window.__DAYLIGHT_DESKTOP__ = session.desktop;
-    if (session.desktop) { setAuthToken(session.token); installDesktopLinks(); }
-  }
-} catch { /* The existing error page handles unavailable services. */ }
+// [desktop patch] 先向原生壳层换取本地会话 token，再挂载 App；失败由 RequireAuth 渲染可重试错误页。
+await bootstrapDesktopSession();
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 

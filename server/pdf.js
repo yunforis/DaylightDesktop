@@ -42,7 +42,7 @@ async function prepareLanguages(cachePath, progress) {
 
 function pdfError(cause) {
   const error = cause instanceof Error ? cause : new Error(`PDF/OCR 处理失败：${String(cause)}`);
-  if (error.name === 'PasswordException') return new Error('PDF 已加密，请发送不需要密码的简历 PDF。');
+  if (error.name === 'PasswordException') return new Error('PDF 已加密，请提供不需要密码的 PDF 附件。');
   if (error.name === 'InvalidPDFException' || error.name === 'MissingPDFException') return new Error('PDF 文件损坏或格式无效，请重新导出后发送。');
   return error;
 }
@@ -50,7 +50,7 @@ function pdfError(cause) {
 /** Extract readable text page by page; OCR receives rendered PNG bytes, never a file path. */
 export async function extractPdf(buffer, { context, onProgress, ocr } = {}) {
   if (!buffer?.length) throw new Error('PDF 文件为空，请重新发送。');
-  const span = context?.startSpan('pdf_extract', '读取 PDF 简历', {
+  const span = context?.startSpan('pdf_extract', '读取 PDF 附件', {
     thought: '逐页读取文字层；没有足够文字的页面渲染后进行中英文 OCR。',
     input_snapshot: { bytes: buffer.length },
     tool_calls: [{ name: 'pdf.extract_text', arguments: { bytes: buffer.length, strategy: 'text_then_page_ocr' } }],
@@ -130,14 +130,14 @@ export async function extractPdf(buffer, { context, onProgress, ocr } = {}) {
       }
     }
     const text = pages.map((page) => page.text).filter(Boolean).join('\n\n');
-    if (readableCount(text) < 2) throw new Error('PDF 未提取到可读文字，请提供更清晰的简历或含文字层的 PDF。');
+    if (readableCount(text) < 2) throw new Error('PDF 未提取到可读文字，请提供更清晰的附件或含文字层的 PDF。');
     context?.finishSpan(span, { observation: `已提取 ${pageCount} 页，共 ${text.length} 个字符；正文不写入日志。`,
       output_snapshot: { pageCount, characters: text.length, ocrPages: pages.filter((page) => page.method === 'ocr').length } });
     return { pages, text, pageCount };
   } catch (cause) {
     const error = pdfError(cause);
     if (ocrSpan) context?.finishSpan(ocrSpan, { status: 'failed', error: error.message, observation: '此页 OCR 未完成，可检查网络及文件后重试。' });
-    context?.finishSpan(span, { status: 'failed', error: error.message, observation: '未完成 PDF 提取，本次不写入候选人。' });
+    context?.finishSpan(span, { status: 'failed', error: error.message, observation: '未完成 PDF 提取，请检查附件后重试。' });
     throw error;
   } finally {
     await Promise.allSettled([worker?.terminate(), loadingTask?.destroy()]);

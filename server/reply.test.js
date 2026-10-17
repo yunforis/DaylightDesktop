@@ -217,10 +217,15 @@ async function fixtureServer(t, { settingsOverrides = {}, emailOverrides = {}, t
       emails: [{ ...originalEmail, ...emailOverrides }], lastSync: null }));
     fs.writeFileSync(path.join(directory, 'traces.json'), JSON.stringify([{ ...originalTrace, ...traceOverrides }]));
     fs.writeFileSync(path.join(directory, 'settings.json'), JSON.stringify(storedSettings));
+    fs.writeFileSync(path.join(directory, 'infra.json'), JSON.stringify({
+      postgres: { enabled: false },
+    mq: { enabled: false }, // Isolate transport from any RabbitMQ running on the host.
+      auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
+    }, null, 2));
   }
   const worker = new Worker(`(${serveFixture.toString()})()`, {
     eval: true, workerData: { indexUrl: new URL('./index.js', import.meta.url).href, settings: storedSettings },
-    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_DISABLE_AUTH: '1' },
+    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' },
   });
   t.after(() => worker.terminate());
   const [{ port }] = await once(worker, 'message');

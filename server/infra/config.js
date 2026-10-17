@@ -1,4 +1,3 @@
-import { readSecureJson, writeSecureJson } from '../secure-json.js';
 /**
  * Hot-reloadable infrastructure config.
  * Defaults are local (file / memory / process queue / local attachments).
@@ -7,6 +6,11 @@ import { readSecureJson, writeSecureJson } from '../secure-json.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readSecureJson, writeSecureJson } from '../secure-json.js';
+import { isProductionRuntime, requireLocalRuntime } from '../runtime-mode.js';
+
+// [desktop patch] 桌面端是单用户本地应用：默认不连共享 PG/MQ，配置落盘加密。
+const DESKTOP = process.env.DAYLIGHT_DESKTOP === '1';
 
 const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const dataDir = process.env.DAYLIGHT_DATA_DIR || path.join(root, 'data');
@@ -14,7 +18,7 @@ const configPath = path.join(dataDir, 'infra.json');
 
 const DEFAULTS = {
   postgres: {
-    enabled: process.env.DAYLIGHT_DESKTOP !== '1',
+    enabled: !DESKTOP,
     connectionString: '',
     host: '127.0.0.1',
     port: 5432,
@@ -32,7 +36,7 @@ const DEFAULTS = {
     db: 0,
   },
   mq: {
-    enabled: process.env.DAYLIGHT_DESKTOP !== '1',
+    enabled: !DESKTOP,
     provider: 'rabbitmq', // local | rabbitmq | urocketmq | ukafka（连不上时自动回退进程内队列）
     url: '',
     host: '127.0.0.1',
@@ -59,8 +63,9 @@ const DEFAULTS = {
   auth: {
     jwtSecret: '',
     sessionDays: 14,
-    requireAuth: process.env.DAYLIGHT_DISABLE_AUTH !== '1',
-    allowLocalDemoLogin: process.env.DAYLIGHT_DESKTOP !== '1',
+    // 集成测试 worker 可设 DAYLIGHT_REQUIRE_AUTH=0；正式默认仍要求登录
+    requireAuth: process.env.DAYLIGHT_REQUIRE_AUTH === '0' || process.env.DAYLIGHT_DISABLE_AUTH === '1' ? false : true,
+    allowLocalDemoLogin: !DESKTOP,
     adminEmails: [],
   },
   systemMail: {
@@ -84,10 +89,52 @@ function ensureDir() {
 }
 
 export function defaultInfraConfig() {
+  if (isProductionRuntime()) return productionInfraConfig();
   return structuredClone(DEFAULTS);
 }
 
+function productionInfraConfig() {
+  const env = process.env;
+  const required = ['DAYLIGHT_DATABASE_URL', 'DAYLIGHT_REDIS_URL', 'DAYLIGHT_AMQP_URL', 'DAYLIGHT_JWT_SECRET',
+    'DAYLIGHT_OSS_PROVIDER', 'DAYLIGHT_OSS_BUCKET', 'DAYLIGHT_OSS_ACCESS_KEY', 'DAYLIGHT_OSS_SECRET_KEY'];
+  const missing = required.filter((key) => !env[key]?.trim());
+  if (missing.length) throw new Error(`Production requires environment variables: ${missing.join(', ')}`);
+  if (env.DAYLIGHT_REQUIRE_AUTH === '0' || env.DAYLIGHT_ALLOW_LOCAL_DEMO_LOGIN === '1') {
+    throw new Error('Production requires authentication and disables demo login');
+  }
+  if (env.DAYLIGHT_JWT_SECRET.length < 32) throw new Error('DAYLIGHT_JWT_SECRET must contain at least 32 characters');
+  if (!['s3', 'aliyun', 'us3', 'qiniu', 'upyun'].includes(env.DAYLIGHT_OSS_PROVIDER)) throw new Error('Production requires a supported cloud OSS provider');
+  for (const [key, protocols] of [['DAYLIGHT_DATABASE_URL', ['postgres:', 'postgresql:']], ['DAYLIGHT_REDIS_URL', ['redis:', 'rediss:']], ['DAYLIGHT_AMQP_URL', ['amqp:', 'amqps:']]]) {
+    let url;
+    try { url = new URL(env[key]); } catch { throw new Error(`Invalid ${key}`); }
+    if (!protocols.includes(url.protocol) || !url.hostname) throw new Error(`Invalid ${key}`);
+    if (key === 'DAYLIGHT_DATABASE_URL' && (url.searchParams.get('sslmode') === 'no-verify'
+      || url.searchParams.get('ssl') === 'false' && env.DAYLIGHT_DATABASE_SSL === '1')) {
+      throw new Error('Production PostgreSQL TLS must verify certificates');
+    }
+  }
+  const config = structuredClone(DEFAULTS);
+  config.runtime = 'production';
+  config.managedBy = 'environment';
+  config.postgres = { ...config.postgres, enabled: true, connectionString: env.DAYLIGHT_DATABASE_URL, password: '', ssl: env.DAYLIGHT_DATABASE_SSL === '1' };
+  config.redis = { ...config.redis, enabled: true, url: env.DAYLIGHT_REDIS_URL };
+  config.mq = { ...config.mq, enabled: true, provider: 'rabbitmq', url: env.DAYLIGHT_AMQP_URL, password: '' };
+  config.oss = { enabled: true, provider: env.DAYLIGHT_OSS_PROVIDER, bucket: env.DAYLIGHT_OSS_BUCKET,
+    endpoint: env.DAYLIGHT_OSS_ENDPOINT || '', region: env.DAYLIGHT_OSS_REGION || 'us-east-1',
+    accessKey: env.DAYLIGHT_OSS_ACCESS_KEY, secretKey: env.DAYLIGHT_OSS_SECRET_KEY,
+    publicBaseUrl: env.DAYLIGHT_OSS_PUBLIC_BASE_URL || '', forcePathStyle: env.DAYLIGHT_OSS_FORCE_PATH_STYLE === '1' };
+  config.auth = { ...config.auth, jwtSecret: env.DAYLIGHT_JWT_SECRET, requireAuth: true, allowLocalDemoLogin: false,
+    adminEmails: (env.DAYLIGHT_ADMIN_EMAILS || '').split(',').map((v) => v.trim().toLowerCase()).filter(Boolean) };
+  config.systemMail = { ...config.systemMail, enabled: env.DAYLIGHT_SYSTEM_MAIL_ENABLED === '1',
+    host: env.DAYLIGHT_SYSTEM_MAIL_HOST || '', port: Number(env.DAYLIGHT_SYSTEM_MAIL_PORT || 465),
+    secure: env.DAYLIGHT_SYSTEM_MAIL_SECURE !== '0', user: env.DAYLIGHT_SYSTEM_MAIL_USER || '',
+    pass: env.DAYLIGHT_SYSTEM_MAIL_PASS || '', from: env.DAYLIGHT_SYSTEM_MAIL_FROM || '',
+    publicBaseUrl: env.DAYLIGHT_PUBLIC_BASE_URL || '' };
+  return config;
+}
+
 export function readInfraConfig({ force = false } = {}) {
+  if (isProductionRuntime()) return productionInfraConfig();
   ensureDir();
   if (!fs.existsSync(configPath)) {
     cache = defaultInfraConfig();
@@ -116,6 +163,7 @@ export function readInfraConfig({ force = false } = {}) {
 }
 
 export function saveInfraConfig(next) {
+  requireLocalRuntime('Saving local infrastructure settings');
   ensureDir();
   const merged = {
     ...defaultInfraConfig(),

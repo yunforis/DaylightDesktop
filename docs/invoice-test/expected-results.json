@@ -1,0 +1,398 @@
+{
+  "description": "Human comparison baseline for synthetic attachments; never sent as model responses.",
+  "date": "2026-10-16",
+  "timezone": "Asia/Shanghai",
+  "recipient": "3462740458@qq.com",
+  "cases": [
+    {
+      "caseId": "INV-01",
+      "filename": "01_office-supplies.pdf",
+      "scenario": "PDF 文字层；13% 税率；两条办公用品明细；前导零票号",
+      "format": "pdf",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000001",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-06",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "星河办公用品有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000001",
+        "amount": "310.00",
+        "taxAmount": "40.30",
+        "totalAmount": "350.30",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*办公用品*复印纸",
+            "specification": "A4 80g",
+            "unit": "包",
+            "quantity": "10",
+            "unitPrice": "25.00",
+            "amount": "250.00",
+            "taxRate": "13%",
+            "taxAmount": "32.50"
+          },
+          {
+            "name": "*办公用品*签字笔",
+            "specification": "黑色 0.5mm",
+            "unit": "盒",
+            "quantity": "5",
+            "unitPrice": "12.00",
+            "amount": "60.00",
+            "taxRate": "13%",
+            "taxAmount": "7.80"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 25524,
+      "sha256": "c5f123039a37339fbff73c47328c0b762c00f0da9ca5eed81d11ca823758cbba"
+    },
+    {
+      "caseId": "INV-02",
+      "filename": "02_software-service.pdf",
+      "scenario": "PDF 文字层；6% 服务费；发票代码",
+      "format": "pdf",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000002",
+        "invoiceCode": "011002600002",
+        "invoiceDate": "2026-10-07",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "云杉软件服务有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000002",
+        "amount": "1200.00",
+        "taxAmount": "72.00",
+        "totalAmount": "1272.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*信息技术服务*软件服务费",
+            "specification": "演示版",
+            "unit": "项",
+            "quantity": "1",
+            "unitPrice": "1200.00",
+            "amount": "1200.00",
+            "taxRate": "6%",
+            "taxAmount": "72.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 24413,
+      "sha256": "64d31b0b9be2f983504b7575db4a33bc801eaeff679e3e17092d8ca075d613d3"
+    },
+    {
+      "caseId": "INV-03",
+      "filename": "03_hotel-accommodation.pdf",
+      "scenario": "PDF 文字层；住宿费；两晚；增值税专用发票",
+      "format": "pdf",
+      "expected": {
+        "invoiceType": "电子发票（增值税专用发票）",
+        "invoiceNumber": "00202610160000000003",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-08",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "海棠酒店有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000003",
+        "amount": "840.00",
+        "taxAmount": "50.40",
+        "totalAmount": "890.40",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*住宿服务*住宿费",
+            "specification": "标准间",
+            "unit": "晚",
+            "quantity": "2",
+            "unitPrice": "420.00",
+            "amount": "840.00",
+            "taxRate": "6%",
+            "taxAmount": "50.40"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 25006,
+      "sha256": "c1d8b25b5a0a4ca82921336b7c333a5428dd3595f50f14481cb4950fc0a34610"
+    },
+    {
+      "caseId": "INV-04",
+      "filename": "04_tax-exempt-books.pdf",
+      "scenario": "PDF 文字层；免税图书；0.00 税额",
+      "format": "pdf",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000004",
+        "invoiceCode": "031002600004",
+        "invoiceDate": "2026-10-09",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "青禾图书有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000004",
+        "amount": "264.00",
+        "taxAmount": "0.00",
+        "totalAmount": "264.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*图书*技术图书",
+            "specification": "技术读物",
+            "unit": "本",
+            "quantity": "3",
+            "unitPrice": "88.00",
+            "amount": "264.00",
+            "taxRate": "免税",
+            "taxAmount": "0.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 24071,
+      "sha256": "dd5526745682c77d62e66fc3d9cc8aa332d1927027da9c3b81c9ae232b3dcccc"
+    },
+    {
+      "caseId": "INV-05",
+      "filename": "05_personal-training.pdf",
+      "scenario": "PDF 文字层；个人购买方；缺失购买方税号不得补齐",
+      "format": "pdf",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000005",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-10",
+        "buyerName": "测试用户（虚构）",
+        "buyerTaxId": null,
+        "sellerName": "知行培训有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000005",
+        "amount": "600.00",
+        "taxAmount": "36.00",
+        "totalAmount": "636.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*培训服务*技术培训费",
+            "specification": "线上课程",
+            "unit": "次",
+            "quantity": "1",
+            "unitPrice": "600.00",
+            "amount": "600.00",
+            "taxRate": "6%",
+            "taxAmount": "36.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 24479,
+      "sha256": "5a05ba0c9bc9639c0c5286cf2bf1cb98f8064f50ed98be02e0fe636b3c39f214"
+    },
+    {
+      "caseId": "INV-06",
+      "filename": "06_computer-accessories.png",
+      "scenario": "PNG 图片 OCR；13% 税率；键盘和鼠标两条明细",
+      "format": "png",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000006",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-11",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "启明数码有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000006",
+        "amount": "556.00",
+        "taxAmount": "72.28",
+        "totalAmount": "628.28",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*计算机配件*键盘",
+            "specification": "有线",
+            "unit": "个",
+            "quantity": "2",
+            "unitPrice": "199.00",
+            "amount": "398.00",
+            "taxRate": "13%",
+            "taxAmount": "51.74"
+          },
+          {
+            "name": "*计算机配件*鼠标",
+            "specification": "无线",
+            "unit": "个",
+            "quantity": "2",
+            "unitPrice": "79.00",
+            "amount": "158.00",
+            "taxRate": "13%",
+            "taxAmount": "20.54"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 198500,
+      "sha256": "0f5ecba8e413177aae9c9f24c12a9dea20e9bbb37c5c6d0ac1e13045905dce38"
+    },
+    {
+      "caseId": "INV-07",
+      "filename": "07_passenger-transport.png",
+      "scenario": "PNG 图片 OCR；9% 税率；交通服务",
+      "format": "png",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000007",
+        "invoiceCode": "044002600007",
+        "invoiceDate": "2026-10-12",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "远行交通服务有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000007",
+        "amount": "360.00",
+        "taxAmount": "32.40",
+        "totalAmount": "392.40",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*运输服务*客运服务费",
+            "specification": "城际客运",
+            "unit": "次",
+            "quantity": "2",
+            "unitPrice": "180.00",
+            "amount": "360.00",
+            "taxRate": "9%",
+            "taxAmount": "32.40"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 190290,
+      "sha256": "0116b9d2307c123fcf2348fcb795374d46e05a2dd7b54677c51d771231e49a5b"
+    },
+    {
+      "caseId": "INV-08",
+      "filename": "08_catering.png",
+      "scenario": "PNG 图片 OCR；6% 税率；三条餐饮明细",
+      "format": "png",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000008",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-13",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "竹间餐饮有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000008",
+        "amount": "192.00",
+        "taxAmount": "11.52",
+        "totalAmount": "203.52",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*餐饮服务*工作餐",
+            "specification": "套餐",
+            "unit": "份",
+            "quantity": "4",
+            "unitPrice": "35.00",
+            "amount": "140.00",
+            "taxRate": "6%",
+            "taxAmount": "8.40"
+          },
+          {
+            "name": "*餐饮服务*茶水",
+            "specification": "热茶",
+            "unit": "份",
+            "quantity": "2",
+            "unitPrice": "12.00",
+            "amount": "24.00",
+            "taxRate": "6%",
+            "taxAmount": "1.44"
+          },
+          {
+            "name": "*餐饮服务*点心",
+            "specification": "拼盘",
+            "unit": "份",
+            "quantity": "1",
+            "unitPrice": "28.00",
+            "amount": "28.00",
+            "taxRate": "6%",
+            "taxAmount": "1.68"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 210384,
+      "sha256": "87e541bc071e261de07df883f771199b7057858b8dea491b82ad44d2a933b5e3"
+    },
+    {
+      "caseId": "INV-09",
+      "filename": "09_missing-tax-total.jpg",
+      "scenario": "JPG 图片 OCR；票面税额合计缺失；不得通过减法补齐",
+      "format": "jpg",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000009",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-14",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "微光设计有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000009",
+        "amount": "300.00",
+        "taxAmount": null,
+        "totalAmount": "318.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*设计服务*界面设计费",
+            "specification": "演示页面",
+            "unit": "项",
+            "quantity": "1",
+            "unitPrice": "300.00",
+            "amount": "300.00",
+            "taxRate": "6%",
+            "taxAmount": "18.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "bytes": 356735,
+      "sha256": "f1ef36d675b65e104785811e5b0e4a02795e2b34f04862b5666519611cdd5af6"
+    },
+    {
+      "caseId": "INV-10",
+      "filename": "10_usd-commercial.png",
+      "scenario": "英文 PNG 图片 OCR；USD 币种；缺失代码及购销方税号",
+      "format": "png",
+      "expected": {
+        "invoiceType": "Commercial Invoice",
+        "invoiceNumber": "TEST-USD-0010",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-15",
+        "buyerName": "Daylight Demo Ltd (Fictional)",
+        "buyerTaxId": null,
+        "sellerName": "Northstar Demo Studio (Fictional)",
+        "sellerTaxId": null,
+        "amount": "99.00",
+        "taxAmount": "0.00",
+        "totalAmount": "99.00",
+        "currency": "USD",
+        "items": [
+          {
+            "name": "Demo design subscription",
+            "specification": "Test plan",
+            "unit": "month",
+            "quantity": "2",
+            "unitPrice": "49.50",
+            "amount": "99.00",
+            "taxRate": "0%",
+            "taxAmount": "0.00"
+          }
+        ],
+        "notes": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT."
+      },
+      "bytes": 123918,
+      "sha256": "4c0289033876b9a156aec0a3e75994dbe9fde622231f504c985fcb4a602e29da"
+    }
+  ]
+}

@@ -68,9 +68,9 @@ test('待办优先级以处理时的北京时间今天/明天为 high，其他�
   assert.equal(normalizeTaskTitle('请提交 Daylight 演示报告！'), normalizeTaskTitle('提交　ＤＡＹＬＩＧＨＴ 演示报告。'));
 });
 
-test('同次模型解析保留六类邮件 Tag、摘要、优先级和任务字段', () => {
-  for (const category of ['meeting', 'task', 'notice', 'inquiry', 'invoice', 'promo']) {
-    const extraction = parseExtraction(JSON.stringify(output([], { category, priority: 'low' })));
+test('同次模型解析保留邮件 Tag（含普通沟通/无关）、摘要、优先级和任务字段', () => {
+  for (const category of ['meeting', 'task', 'notice', 'inquiry', 'invoice', 'promo', 'general', 'irrelevant']) {
+    const extraction = parseExtraction(JSON.stringify(output([], { category, priority: 'low', intent: category === 'irrelevant' ? 'noise' : 'fyi' })));
     assert.equal(extraction.category, category);
     assert.equal(extraction.priority, 'low');
     assert.equal(extraction.summary, output().summary);
@@ -307,18 +307,18 @@ test('任务后续完成、编辑及邮件合并不改写原邮件提取快照�
   assert.equal(store.emails[0].extraction.tasks[0].action, 'reopen');
 });
 
-test('已有任务来源追加也遵守本封原子验证，无效日程不会改写任务', async () => {
+test('已有任务可与待匹配日程同封写入；缺失目标不阻断待办合并', async () => {
   const store = emptyStore();
-  await processEmails(store, [email], async () => output(), 'qq');
+  await processEmails(store, [email], async () => output(), 'qq', { enrichAttachments: false });
   const existing = store.tasks[0];
-  const before = structuredClone(store.tasks);
   const reminder = { ...email, id: 'qq:tasks-fixture:100:atomic-reminder' };
-  const invalid = await processEmails(store, [reminder], async () => output([{ ...task, existingTaskId: existing.id }], {
+  const result = await processEmails(store, [reminder], async () => output([{ ...task, existingTaskId: existing.id }], {
     events: [{ action: 'cancel', targetEventId: 'missing-event' }],
-  }), 'qq');
-  assert.equal(invalid.errors.length, 1);
-  assert.deepEqual(store.tasks, before);
-  assert.equal(store.emails.length, 1);
+  }), 'qq', { enrichAttachments: false });
+  assert.deepEqual(result.errors, []);
+  assert.equal(store.emails[0].status, 'needs_match');
+  assert.equal(store.tasks[0].sources.length, 2);
+  assert.equal(store.emails.length, 2);
 });
 
 test('分类、摘要、任务和日程在一次本地模型请求中返回，携带任务去重与日期规则', async (t) => {

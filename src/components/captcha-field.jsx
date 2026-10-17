@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { authRequest } from '@/lib/auth-api';
 
-export function CaptchaField({ value, onChange, onCaptchaId }) {
+export const CaptchaField = forwardRef(function CaptchaField({ value, onChange, onCaptchaId }, ref) {
   const [svg, setSvg] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -20,6 +20,10 @@ export function CaptchaField({ value, onChange, onCaptchaId }) {
       setLoading(false);
     }
   }, [onCaptchaId, onChange]);
+
+  useImperativeHandle(ref, () => ({
+    refresh: () => refresh().catch(() => {}),
+  }), [refresh]);
 
   useEffect(() => {
     refresh().catch(() => {});
@@ -50,4 +54,4 @@ export function CaptchaField({ value, onChange, onCaptchaId }) {
       </div>
     </div>
   );
-}
+});

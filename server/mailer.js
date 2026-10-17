@@ -2,6 +2,7 @@
  * 系统发信（注册验证码等）。凭据来自 data/infra.json 的 systemMail，不写进源码。
  * 正文使用 data/mail-templates.json 中的可配置模板。
  */
+import dns from 'node:dns/promises';
 import nodemailer from 'nodemailer';
 import { readInfraConfig } from './infra/config.js';
 import { renderMailTemplate } from './mail-templates.js';
@@ -17,10 +18,15 @@ export async function sendSystemMail({ to, subject, text, html }) {
   if (!systemMailReady(config)) {
     throw Object.assign(new Error('系统发信邮箱尚未配置，请在管理后台填写 SMTP'), { status: 503 });
   }
+  // Match mailbox replies: use system DNS (including local proxy/hosts rules).
+  const { address } = await dns.lookup(mail.host);
+  const secure = mail.secure !== false;
   const transport = nodemailer.createTransport({
-    host: mail.host,
+    host: address,
     port: Number(mail.port) || 465,
-    secure: mail.secure !== false,
+    secure,
+    tls: { servername: mail.host },
+    ...(!secure ? { requireTLS: true } : {}),
     auth: {
       user: mail.user,
       pass: mail.pass,

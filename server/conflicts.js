@@ -7,10 +7,10 @@ const dayStart = (time) => Math.floor((time + BEIJING_OFFSET) / DAY) * DAY - BEI
 const beijingIso = (time) => new Date(time + BEIJING_OFFSET).toISOString().replace(/(?:\.000)?Z$/, '+08:00');
 
 export function findConflicts(event, existingEvents) {
-  if (event.allDay) return [];
+  if (event.allDay || event.attendanceStatus === 'declined') return [];
   const start = Date.parse(event.start);
   const end = Date.parse(event.end);
-  return existingEvents.filter((other) => !other.allDay && other.status !== 'cancelled' &&
+  return existingEvents.filter((other) => !other.allDay && other.status !== 'cancelled' && other.attendanceStatus !== 'declined' &&
     overlaps(start, end, { start: Date.parse(other.start), end: Date.parse(other.end) }));
 }
 
@@ -20,7 +20,7 @@ export function suggestTimeSlots(event, existingEvents, now = Date.now()) {
   if (!Number.isFinite(duration) || duration <= 0) return [];
 
   const earliest = Math.max(originalStart, Number(now));
-  const busy = existingEvents.filter((other) => !other.allDay && other.status !== 'cancelled')
+  const busy = existingEvents.filter((other) => !other.allDay && other.status !== 'cancelled' && other.attendanceStatus !== 'declined')
     .map((other) => ({ start: Date.parse(other.start), end: Date.parse(other.end) }));
   const latestEnd = busy.reduce((latest, other) => other.end > latest ? other.end : latest, earliest);
   // Search each day in order. Enough days after the last occupied day remain for three full alternatives.

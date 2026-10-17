@@ -1,0 +1,6062 @@
+{
+  "batch": "20261016-be9e6670",
+  "checkedAt": "2026-10-16T01:51:01.543Z",
+  "timezone": "Asia/Shanghai",
+  "inputs": [
+    "work/invoice-mail-live/delivery.json",
+    "docs/invoice-test/expected-results.json",
+    "data/calendar.json",
+    "data/traces.json"
+  ],
+  "scope": "Exact unique subjects from this delivery manifest; no mail body, model content, or unrelated trace is included.",
+  "rules": {
+    "exact": "Original values and types are identical.",
+    "formatting": "Whitespace, full/half width parentheses, or exact decimal equivalence only; raw differences remain listed.",
+    "different": "All other differences, including missing values, changed numbers or text, and extra/missing line items."
+  },
+  "summary": {
+    "expectedEmails": 10,
+    "processedEmails": 10,
+    "pendingCaseIds": [],
+    "invoiceCount": 10,
+    "businessChecksPassed": true,
+    "messageIdsPreserved": false,
+    "rewrittenMessageIdCount": 10,
+    "exactCases": 3,
+    "casesEqualExceptFormatting": 3,
+    "comparedFields": 252,
+    "exactFields": 194,
+    "formattingDifferences": 0,
+    "otherDifferences": 58,
+    "modelCalls": 15,
+    "httpStatuses": [
+      200
+    ],
+    "tokensIn": 62863,
+    "tokensOut": 4361,
+    "tokensCachedIn": 0,
+    "knownCostCny": 0.080307
+  },
+  "cases": [
+    {
+      "caseId": "INV-01",
+      "filename": "01_office-supplies.pdf",
+      "subject": "Daylight invoice test 20261016-be9e6670 01/10 [PDF]",
+      "emailId": "qq:3462740458@qq.com:1632359483:31",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:45:49.487Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000001",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-06",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "星河办公用品有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000001",
+        "amount": "310.00",
+        "taxAmount": "40.30",
+        "totalAmount": "350.30",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*办公用品*复印纸",
+            "specification": "A4 80g",
+            "unit": "包",
+            "quantity": "10",
+            "unitPrice": "25.00",
+            "amount": "250.00",
+            "taxRate": "13%",
+            "taxAmount": "32.50"
+          },
+          {
+            "name": "*办公用品*签字笔",
+            "specification": "黑色 0.5mm",
+            "unit": "盒",
+            "quantity": "5",
+            "unitPrice": "12.00",
+            "amount": "60.00",
+            "taxRate": "13%",
+            "taxAmount": "7.80"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-064e5f78da4306be322ee2d2",
+        "attachmentId": "attachment-7b36ebd691eff1abe724eea1",
+        "attachmentName": "01_office-supplies.pdf",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000001",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-06",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "星河办公用品有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000001",
+        "amount": "310.00",
+        "taxAmount": "40.30",
+        "totalAmount": "350.30",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*办公用品*复印纸",
+            "specification": "A4 80g",
+            "unit": "包",
+            "taxRate": "13%",
+            "quantity": "10",
+            "unitPrice": "25.00",
+            "amount": "250.00",
+            "taxAmount": "32.50"
+          },
+          {
+            "name": "*办公用品*签字笔",
+            "specification": "黑色 0.5mm",
+            "unit": "盒",
+            "taxRate": "13%",
+            "quantity": "5",
+            "unitPrice": "12.00",
+            "amount": "60.00",
+            "taxAmount": "7.80"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000001",
+          "actual": "00202610160000000001",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-06",
+          "actual": "2026-10-06",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "星河办公用品有限公司（虚构）",
+          "actual": "星河办公用品有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000001",
+          "actual": "TESTSELLER00000001",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "310.00",
+          "actual": "310.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "40.30",
+          "actual": "40.30",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "350.30",
+          "actual": "350.30",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "result": "exact"
+        },
+        {
+          "field": "items.length",
+          "expected": 2,
+          "actual": 2,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*办公用品*复印纸",
+          "actual": "*办公用品*复印纸",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "A4 80g",
+          "actual": "A4 80g",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "包",
+          "actual": "包",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "10",
+          "actual": "10",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "25.00",
+          "actual": "25.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "250.00",
+          "actual": "250.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "13%",
+          "actual": "13%",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "32.50",
+          "actual": "32.50",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.name",
+          "expected": "*办公用品*签字笔",
+          "actual": "*办公用品*签字笔",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.specification",
+          "expected": "黑色 0.5mm",
+          "actual": "黑色 0.5mm",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.unit",
+          "expected": "盒",
+          "actual": "盒",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.quantity",
+          "expected": "5",
+          "actual": "5",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.unitPrice",
+          "expected": "12.00",
+          "actual": "12.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.amount",
+          "expected": "60.00",
+          "actual": "60.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.taxRate",
+          "expected": "13%",
+          "actual": "13%",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.taxAmount",
+          "expected": "7.80",
+          "actual": "7.80",
+          "result": "exact"
+        }
+      ],
+      "differences": [],
+      "fieldSummary": {
+        "total": 30,
+        "exact": 30,
+        "formatting": 0,
+        "different": 0
+      },
+      "allFieldsExactlyEqual": true,
+      "allFieldsEqualExceptFormatting": true,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "01_office-supplies.pdf",
+          "actual": "01_office-supplies.pdf"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "01_office-supplies.pdf",
+          "actual": "01_office-supplies.pdf"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 25524,
+          "actual": 25524
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-1@daylight.example>",
+          "actual": "<tencent_894474F79F7A11E635E0A490FE26AE759C07@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-7b36ebd691eff1abe724eea1",
+          "filename": "01_office-supplies.pdf",
+          "contentType": "application/pdf",
+          "size": 25524,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 463,
+          "pageCount": 1
+        }
+      ],
+      "trace": {
+        "traceId": "e58212f3-7a0f-4802-84e8-ab2f0638bda9",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:29.682Z",
+        "endedAt": "2026-10-16T01:45:49.498Z",
+        "latencyMs": 19816,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:29.682Z",
+            "endedAt": "2026-10-16T01:45:49.498Z",
+            "latencyMs": 19816
+          }
+        ],
+        "tokensIn": 6767,
+        "tokensOut": 506,
+        "tokensCachedIn": 0,
+        "costCny": 0.008791,
+        "knownCostCny": 0.008791,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "83bc3a78-e23e-45c4-88a2-0e6e68df5293",
+            "stage": "model",
+            "status": "success",
+            "startedAt": "2026-10-16T01:45:33.950Z",
+            "endedAt": "2026-10-16T01:45:39.510Z",
+            "latencyMs": 5560,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 853,
+            "tokensOut": 48,
+            "tokensCachedIn": 0,
+            "costCny": 0.001045,
+            "usage": {}
+          },
+          {
+            "spanId": "837dc2a6-445c-4ca5-9ea2-e54402debae4",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:45:39.635Z",
+            "endedAt": "2026-10-16T01:45:49.464Z",
+            "latencyMs": 9829,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5914,
+            "tokensOut": 458,
+            "tokensCachedIn": 0,
+            "costCny": 0.007746,
+            "usage": {
+              "prompt_tokens": 5914,
+              "completion_tokens": 458,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 1291
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 668
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 2019
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 181
+          },
+          {
+            "stage": "model",
+            "status": "success",
+            "latencyMs": 5560
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 64
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 47
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 10
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 9829
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 9
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-02",
+      "filename": "02_software-service.pdf",
+      "subject": "Daylight invoice test 20261016-be9e6670 02/10 [PDF]",
+      "emailId": "qq:3462740458@qq.com:1632359483:32",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:46:01.830Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000002",
+        "invoiceCode": "011002600002",
+        "invoiceDate": "2026-10-07",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "云杉软件服务有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000002",
+        "amount": "1200.00",
+        "taxAmount": "72.00",
+        "totalAmount": "1272.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*信息技术服务*软件服务费",
+            "specification": "演示版",
+            "unit": "项",
+            "quantity": "1",
+            "unitPrice": "1200.00",
+            "amount": "1200.00",
+            "taxRate": "6%",
+            "taxAmount": "72.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-7af5c14e8fa1db55d95bf8e8",
+        "attachmentId": "attachment-cdc449ab190142d348450f9b",
+        "attachmentName": "02_software-service.pdf",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000002",
+        "invoiceCode": "011002600002",
+        "invoiceDate": "2026-10-07",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "云杉软件服务有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000002",
+        "amount": "1200.00",
+        "taxAmount": "72.00",
+        "totalAmount": "1272.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*信息技术服务*软件服务费",
+            "specification": "演示版",
+            "unit": "项",
+            "taxRate": "6%",
+            "quantity": "1",
+            "unitPrice": "1200.00",
+            "amount": "1200.00",
+            "taxAmount": "72.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000002",
+          "actual": "00202610160000000002",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": "011002600002",
+          "actual": "011002600002",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-07",
+          "actual": "2026-10-07",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "云杉软件服务有限公司（虚构）",
+          "actual": "云杉软件服务有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000002",
+          "actual": "TESTSELLER00000002",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "1200.00",
+          "actual": "1200.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "72.00",
+          "actual": "72.00",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "1272.00",
+          "actual": "1272.00",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "result": "exact"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 1,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*信息技术服务*软件服务费",
+          "actual": "*信息技术服务*软件服务费",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "演示版",
+          "actual": "演示版",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "项",
+          "actual": "项",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "1",
+          "actual": "1",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "1200.00",
+          "actual": "1200.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "1200.00",
+          "actual": "1200.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "6%",
+          "actual": "6%",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "72.00",
+          "actual": "72.00",
+          "result": "exact"
+        }
+      ],
+      "differences": [],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 22,
+        "formatting": 0,
+        "different": 0
+      },
+      "allFieldsExactlyEqual": true,
+      "allFieldsEqualExceptFormatting": true,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "02_software-service.pdf",
+          "actual": "02_software-service.pdf"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "02_software-service.pdf",
+          "actual": "02_software-service.pdf"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 24413,
+          "actual": 24413
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-2@daylight.example>",
+          "actual": "<tencent_AA11DCB5EB4F989D815142549B36D7B71209@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-cdc449ab190142d348450f9b",
+          "filename": "02_software-service.pdf",
+          "contentType": "application/pdf",
+          "size": 24413,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 432,
+          "pageCount": 1
+        }
+      ],
+      "trace": {
+        "traceId": "ac13facb-121a-425d-975e-d9f105b7c063",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:31.689Z",
+        "endedAt": "2026-10-16T01:46:01.840Z",
+        "latencyMs": 30151,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:31.689Z",
+            "endedAt": "2026-10-16T01:46:01.840Z",
+            "latencyMs": 30151
+          }
+        ],
+        "tokensIn": 6701,
+        "tokensOut": 433,
+        "tokensCachedIn": 0,
+        "costCny": 0.008433,
+        "knownCostCny": 0.008433,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "7b54dce1-242e-4adb-9b33-bab48d93c692",
+            "stage": "model",
+            "status": "success",
+            "startedAt": "2026-10-16T01:45:49.659Z",
+            "endedAt": "2026-10-16T01:45:53.556Z",
+            "latencyMs": 3897,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 823,
+            "tokensOut": 50,
+            "tokensCachedIn": 0,
+            "costCny": 0.001023,
+            "usage": {}
+          },
+          {
+            "spanId": "f6a5fa9b-f813-4097-857f-4e8af37967ac",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:45:53.676Z",
+            "endedAt": "2026-10-16T01:46:01.810Z",
+            "latencyMs": 8134,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5878,
+            "tokensOut": 383,
+            "tokensCachedIn": 0,
+            "costCny": 0.00741,
+            "usage": {
+              "prompt_tokens": 5878,
+              "completion_tokens": 383,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 2
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 191
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 17597
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 53
+          },
+          {
+            "stage": "model",
+            "status": "success",
+            "latencyMs": 3897
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 53
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 35
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 10
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 8134
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 5
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-03",
+      "filename": "03_hotel-accommodation.pdf",
+      "subject": "Daylight invoice test 20261016-be9e6670 03/10 [PDF]",
+      "emailId": "qq:3462740458@qq.com:1632359483:33",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:46:26.316Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税专用发票）",
+        "invoiceNumber": "00202610160000000003",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-08",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "海棠酒店有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000003",
+        "amount": "840.00",
+        "taxAmount": "50.40",
+        "totalAmount": "890.40",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*住宿服务*住宿费",
+            "specification": "标准间",
+            "unit": "晚",
+            "quantity": "2",
+            "unitPrice": "420.00",
+            "amount": "840.00",
+            "taxRate": "6%",
+            "taxAmount": "50.40"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-03f7bec56d614b21da133a54",
+        "attachmentId": "attachment-734c0ceb01d7d68ef6b8cc08",
+        "attachmentName": "03_hotel-accommodation.pdf",
+        "invoiceType": "电子发票（增值税专用发票）",
+        "invoiceNumber": "00202610160000000003",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-08",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "海棠酒店有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000003",
+        "amount": "840.00",
+        "taxAmount": "50.40",
+        "totalAmount": "890.40",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*住宿服务*住宿费",
+            "specification": "标准间",
+            "unit": "晚",
+            "taxRate": "6%",
+            "quantity": "2",
+            "unitPrice": "420.00",
+            "amount": "840.00",
+            "taxAmount": "50.40"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构；本票据不具备税务或报销效力。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税专用发票）",
+          "actual": "电子发票（增值税专用发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000003",
+          "actual": "00202610160000000003",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-08",
+          "actual": "2026-10-08",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "海棠酒店有限公司（虚构）",
+          "actual": "海棠酒店有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000003",
+          "actual": "TESTSELLER00000003",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "840.00",
+          "actual": "840.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "50.40",
+          "actual": "50.40",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "890.40",
+          "actual": "890.40",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 1,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*住宿服务*住宿费",
+          "actual": "*住宿服务*住宿费",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "标准间",
+          "actual": "标准间",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "晚",
+          "actual": "晚",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": "2",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "420.00",
+          "actual": "420.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "840.00",
+          "actual": "840.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "6%",
+          "actual": "6%",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "50.40",
+          "actual": "50.40",
+          "result": "exact"
+        }
+      ],
+      "differences": [
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 21,
+        "formatting": 0,
+        "different": 1
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "03_hotel-accommodation.pdf",
+          "actual": "03_hotel-accommodation.pdf"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "03_hotel-accommodation.pdf",
+          "actual": "03_hotel-accommodation.pdf"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 25006,
+          "actual": 25006
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-3@daylight.example>",
+          "actual": "<tencent_37632712B887D51F31E302B3860C344DAE0A@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-734c0ceb01d7d68ef6b8cc08",
+          "filename": "03_hotel-accommodation.pdf",
+          "contentType": "application/pdf",
+          "size": 25006,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 413,
+          "pageCount": 1
+        }
+      ],
+      "trace": {
+        "traceId": "2f9181ac-69b6-4408-992a-5b8ac8a418ed",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:31.943Z",
+        "endedAt": "2026-10-16T01:46:26.327Z",
+        "latencyMs": 54384,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:31.943Z",
+            "endedAt": "2026-10-16T01:46:26.327Z",
+            "latencyMs": 54384
+          }
+        ],
+        "tokensIn": 6698,
+        "tokensOut": 471,
+        "tokensCachedIn": 0,
+        "costCny": 0.008582,
+        "knownCostCny": 0.008582,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "2ead95df-381f-4c64-b3d4-b60eef091148",
+            "stage": "model",
+            "status": "success",
+            "startedAt": "2026-10-16T01:46:01.982Z",
+            "endedAt": "2026-10-16T01:46:05.908Z",
+            "latencyMs": 3926,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 817,
+            "tokensOut": 62,
+            "tokensCachedIn": 0,
+            "costCny": 0.001065,
+            "usage": {}
+          },
+          {
+            "spanId": "98379817-c861-4b84-9176-9bf1c45d182d",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:46:06.019Z",
+            "endedAt": "2026-10-16T01:46:26.291Z",
+            "latencyMs": 20272,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5881,
+            "tokensOut": 409,
+            "tokensCachedIn": 0,
+            "costCny": 0.007517,
+            "usage": {
+              "prompt_tokens": 5881,
+              "completion_tokens": 409,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 6
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 113
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 29768
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 47
+          },
+          {
+            "stage": "model",
+            "status": "success",
+            "latencyMs": 3926
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 52
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 34
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 11
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 20272
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 7
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-04",
+      "filename": "04_tax-exempt-books.pdf",
+      "subject": "Daylight invoice test 20261016-be9e6670 04/10 [PDF]",
+      "emailId": "qq:3462740458@qq.com:1632359483:34",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:46:40.345Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000004",
+        "invoiceCode": "031002600004",
+        "invoiceDate": "2026-10-09",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "青禾图书有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000004",
+        "amount": "264.00",
+        "taxAmount": "0.00",
+        "totalAmount": "264.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*图书*技术图书",
+            "specification": "技术读物",
+            "unit": "本",
+            "quantity": "3",
+            "unitPrice": "88.00",
+            "amount": "264.00",
+            "taxRate": "免税",
+            "taxAmount": "0.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-03c710b53275de706a2b269e",
+        "attachmentId": "attachment-eb1b6f2507e87044e14d1955",
+        "attachmentName": "04_tax-exempt-books.pdf",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000004",
+        "invoiceCode": "031002600004",
+        "invoiceDate": "2026-10-09",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "青禾图书有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000004",
+        "amount": "264.00",
+        "taxAmount": "0.00",
+        "totalAmount": "264.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*图书*技术图书",
+            "specification": "技术读物",
+            "unit": "本",
+            "taxRate": "免税",
+            "quantity": "3",
+            "unitPrice": "88.00",
+            "amount": "264.00",
+            "taxAmount": "0.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构；本票据不具备税务或报销效力。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000004",
+          "actual": "00202610160000000004",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": "031002600004",
+          "actual": "031002600004",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-09",
+          "actual": "2026-10-09",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "青禾图书有限公司（虚构）",
+          "actual": "青禾图书有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000004",
+          "actual": "TESTSELLER00000004",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "264.00",
+          "actual": "264.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "0.00",
+          "actual": "0.00",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "264.00",
+          "actual": "264.00",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 1,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*图书*技术图书",
+          "actual": "*图书*技术图书",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "技术读物",
+          "actual": "技术读物",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "本",
+          "actual": "本",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "3",
+          "actual": "3",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "88.00",
+          "actual": "88.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "264.00",
+          "actual": "264.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "免税",
+          "actual": "免税",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "0.00",
+          "actual": "0.00",
+          "result": "exact"
+        }
+      ],
+      "differences": [
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 21,
+        "formatting": 0,
+        "different": 1
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "04_tax-exempt-books.pdf",
+          "actual": "04_tax-exempt-books.pdf"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "04_tax-exempt-books.pdf",
+          "actual": "04_tax-exempt-books.pdf"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 24071,
+          "actual": 24071
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-4@daylight.example>",
+          "actual": "<tencent_702CA4A5E97ABD28F1DC3DB79E8459031805@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-eb1b6f2507e87044e14d1955",
+          "filename": "04_tax-exempt-books.pdf",
+          "contentType": "application/pdf",
+          "size": 24071,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 419,
+          "pageCount": 1
+        }
+      ],
+      "trace": {
+        "traceId": "a2feb74d-a8bc-4db4-a454-96bd5c6b8e0f",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:32.107Z",
+        "endedAt": "2026-10-16T01:46:40.358Z",
+        "latencyMs": 68251,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:32.107Z",
+            "endedAt": "2026-10-16T01:46:40.358Z",
+            "latencyMs": 68251
+          }
+        ],
+        "tokensIn": 6700,
+        "tokensOut": 474,
+        "tokensCachedIn": 0,
+        "costCny": 0.008596,
+        "knownCostCny": 0.008596,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "f512b43c-b3e9-456b-a4fe-3175e67ab65a",
+            "stage": "model",
+            "status": "success",
+            "startedAt": "2026-10-16T01:46:26.481Z",
+            "endedAt": "2026-10-16T01:46:29.933Z",
+            "latencyMs": 3452,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 819,
+            "tokensOut": 63,
+            "tokensCachedIn": 0,
+            "costCny": 0.001071,
+            "usage": {}
+          },
+          {
+            "spanId": "ab929336-9225-482a-a144-5cedfc02a1b6",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:46:30.059Z",
+            "endedAt": "2026-10-16T01:46:40.318Z",
+            "latencyMs": 10259,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5881,
+            "tokensOut": 411,
+            "tokensCachedIn": 0,
+            "costCny": 0.007525,
+            "usage": {
+              "prompt_tokens": 5881,
+              "completion_tokens": 411,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 6
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 97
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 54108
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 54
+          },
+          {
+            "stage": "model",
+            "status": "success",
+            "latencyMs": 3452
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 54
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 35
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 17
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 10259
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 8
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-05",
+      "filename": "05_personal-training.pdf",
+      "subject": "Daylight invoice test 20261016-be9e6670 05/10 [PDF]",
+      "emailId": "qq:3462740458@qq.com:1632359483:35",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:46:53.359Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000005",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-10",
+        "buyerName": "测试用户（虚构）",
+        "buyerTaxId": null,
+        "sellerName": "知行培训有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000005",
+        "amount": "600.00",
+        "taxAmount": "36.00",
+        "totalAmount": "636.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*培训服务*技术培训费",
+            "specification": "线上课程",
+            "unit": "次",
+            "quantity": "1",
+            "unitPrice": "600.00",
+            "amount": "600.00",
+            "taxRate": "6%",
+            "taxAmount": "36.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-ee5e661a1ebdbf33a269d5b0",
+        "attachmentId": "attachment-89e0bd50c27451422eadb771",
+        "attachmentName": "05_personal-training.pdf",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000005",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-10",
+        "buyerName": "测试用户（虚构）",
+        "buyerTaxId": null,
+        "sellerName": "知行培训有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000005",
+        "amount": "600.00",
+        "taxAmount": "36.00",
+        "totalAmount": "636.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*培训服务*技术培训费",
+            "specification": "线上课程",
+            "unit": "次",
+            "taxRate": "6%",
+            "quantity": "1",
+            "unitPrice": "600.00",
+            "amount": "600.00",
+            "taxAmount": "36.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000005",
+          "actual": "00202610160000000005",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-10",
+          "actual": "2026-10-10",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "测试用户（虚构）",
+          "actual": "测试用户（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "知行培训有限公司（虚构）",
+          "actual": "知行培训有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000005",
+          "actual": "TESTSELLER00000005",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "600.00",
+          "actual": "600.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "36.00",
+          "actual": "36.00",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "636.00",
+          "actual": "636.00",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "result": "exact"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 1,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*培训服务*技术培训费",
+          "actual": "*培训服务*技术培训费",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "线上课程",
+          "actual": "线上课程",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "次",
+          "actual": "次",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "1",
+          "actual": "1",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "600.00",
+          "actual": "600.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "600.00",
+          "actual": "600.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "6%",
+          "actual": "6%",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "36.00",
+          "actual": "36.00",
+          "result": "exact"
+        }
+      ],
+      "differences": [],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 22,
+        "formatting": 0,
+        "different": 0
+      },
+      "allFieldsExactlyEqual": true,
+      "allFieldsEqualExceptFormatting": true,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "05_personal-training.pdf",
+          "actual": "05_personal-training.pdf"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "05_personal-training.pdf",
+          "actual": "05_personal-training.pdf"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 24479,
+          "actual": 24479
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-5@daylight.example>",
+          "actual": "<tencent_19817B7E3D3DF30670554860D3E0FA69A206@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-89e0bd50c27451422eadb771",
+          "filename": "05_personal-training.pdf",
+          "contentType": "application/pdf",
+          "size": 24479,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 395,
+          "pageCount": 1
+        }
+      ],
+      "trace": {
+        "traceId": "cc95dcad-6fe0-4f1f-93fc-5f23166d5000",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:32.255Z",
+        "endedAt": "2026-10-16T01:46:53.371Z",
+        "latencyMs": 81116,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:32.255Z",
+            "endedAt": "2026-10-16T01:46:53.371Z",
+            "latencyMs": 81116
+          }
+        ],
+        "tokensIn": 6669,
+        "tokensOut": 430,
+        "tokensCachedIn": 0,
+        "costCny": 0.008389,
+        "knownCostCny": 0.008389,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "a4d2e4fc-18d0-4aec-86e2-e5b5a2054cf2",
+            "stage": "model",
+            "status": "success",
+            "startedAt": "2026-10-16T01:46:40.531Z",
+            "endedAt": "2026-10-16T01:46:44.572Z",
+            "latencyMs": 4041,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 806,
+            "tokensOut": 61,
+            "tokensCachedIn": 0,
+            "costCny": 0.00105,
+            "usage": {}
+          },
+          {
+            "spanId": "ee230bcf-1922-42eb-94ca-a4c4b971edda",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:46:44.708Z",
+            "endedAt": "2026-10-16T01:46:53.338Z",
+            "latencyMs": 8630,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5863,
+            "tokensOut": 369,
+            "tokensCachedIn": 0,
+            "costCny": 0.007339,
+            "usage": {
+              "prompt_tokens": 5863,
+              "completion_tokens": 369,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 2
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 101
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 67982
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 60
+          },
+          {
+            "stage": "model",
+            "status": "success",
+            "latencyMs": 4041
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 65
+          },
+          {
+            "stage": "pdf_extract",
+            "status": "success",
+            "latencyMs": 45
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 11
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 8630
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 6
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-06",
+      "filename": "06_computer-accessories.png",
+      "subject": "Daylight invoice test 20261016-be9e6670 06/10 [PNG]",
+      "emailId": "qq:3462740458@qq.com:1632359483:36",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:47:14.699Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000006",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-11",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "启明数码有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000006",
+        "amount": "556.00",
+        "taxAmount": "72.28",
+        "totalAmount": "628.28",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*计算机配件*键盘",
+            "specification": "有线",
+            "unit": "个",
+            "quantity": "2",
+            "unitPrice": "199.00",
+            "amount": "398.00",
+            "taxRate": "13%",
+            "taxAmount": "51.74"
+          },
+          {
+            "name": "*计算机配件*鼠标",
+            "specification": "无线",
+            "unit": "个",
+            "quantity": "2",
+            "unitPrice": "79.00",
+            "amount": "158.00",
+            "taxRate": "13%",
+            "taxAmount": "20.54"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-5dd444a165a74ac8ca89215c",
+        "attachmentId": "attachment-dfebc45b1f0930a8af01bdf6",
+        "attachmentName": "06_computer-accessories.png",
+        "invoiceType": "电子发票〈增值税普通发票)",
+        "invoiceNumber": "00202610160000000006",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-11",
+        "buyerName": "晨光演示科技有限公司〈虚构)",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "启明数码有限公司〈虚构)",
+        "sellerTaxId": "TESTSELLER00000006",
+        "amount": "556.00",
+        "taxAmount": "72.28",
+        "totalAmount": "628.28",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "#计算机配件+键盘",
+            "specification": null,
+            "unit": null,
+            "taxRate": null,
+            "quantity": null,
+            "unitPrice": "199.00",
+            "amount": "398.00",
+            "taxAmount": "51.74"
+          },
+          {
+            "name": "#计算机配件+鼠标",
+            "specification": null,
+            "unit": null,
+            "taxRate": null,
+            "quantity": null,
+            "unitPrice": "79.00",
+            "amount": "158.00",
+            "taxAmount": "20.54"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构;本票据不具备税务或报销效力。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票〈增值税普通发票)",
+          "result": "different"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000006",
+          "actual": "00202610160000000006",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-11",
+          "actual": "2026-10-11",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "启明数码有限公司（虚构）",
+          "actual": "启明数码有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000006",
+          "actual": "TESTSELLER00000006",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "556.00",
+          "actual": "556.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "72.28",
+          "actual": "72.28",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "628.28",
+          "actual": "628.28",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构;本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 2,
+          "actual": 2,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*计算机配件*键盘",
+          "actual": "#计算机配件+键盘",
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "有线",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "个",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "199.00",
+          "actual": "199.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "398.00",
+          "actual": "398.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "13%",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "51.74",
+          "actual": "51.74",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.name",
+          "expected": "*计算机配件*鼠标",
+          "actual": "#计算机配件+鼠标",
+          "result": "different"
+        },
+        {
+          "field": "items.1.specification",
+          "expected": "无线",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.unit",
+          "expected": "个",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.quantity",
+          "expected": "2",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.unitPrice",
+          "expected": "79.00",
+          "actual": "79.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.amount",
+          "expected": "158.00",
+          "actual": "158.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.taxRate",
+          "expected": "13%",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.taxAmount",
+          "expected": "20.54",
+          "actual": "20.54",
+          "result": "exact"
+        }
+      ],
+      "differences": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票〈增值税普通发票)",
+          "result": "different"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "sellerName",
+          "expected": "启明数码有限公司（虚构）",
+          "actual": "启明数码有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构;本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*计算机配件*键盘",
+          "actual": "#计算机配件+键盘",
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "有线",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "个",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "13%",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.name",
+          "expected": "*计算机配件*鼠标",
+          "actual": "#计算机配件+鼠标",
+          "result": "different"
+        },
+        {
+          "field": "items.1.specification",
+          "expected": "无线",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.unit",
+          "expected": "个",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.quantity",
+          "expected": "2",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.taxRate",
+          "expected": "13%",
+          "actual": null,
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 30,
+        "exact": 16,
+        "formatting": 0,
+        "different": 14
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "06_computer-accessories.png",
+          "actual": "06_computer-accessories.png"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "06_computer-accessories.png",
+          "actual": "06_computer-accessories.png"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 198500,
+          "actual": 198500
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-6@daylight.example>",
+          "actual": "<tencent_13C437C5ACBF2762B94FD473303B02A3850A@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-dfebc45b1f0930a8af01bdf6",
+          "filename": "06_computer-accessories.png",
+          "contentType": "image/png",
+          "size": 198500,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 1233
+        }
+      ],
+      "trace": {
+        "traceId": "a1008606-38fb-44ff-9433-251df42fc3c2",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:32.418Z",
+        "endedAt": "2026-10-16T01:47:14.709Z",
+        "latencyMs": 102291,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:32.418Z",
+            "endedAt": "2026-10-16T01:47:14.709Z",
+            "latencyMs": 102291
+          }
+        ],
+        "tokensIn": 5908,
+        "tokensOut": 554,
+        "tokensCachedIn": 0,
+        "costCny": 0.008124,
+        "knownCostCny": 0.008124,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "12364e20-a82e-4daa-a1ab-f75cd4f995bf",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:47:02.881Z",
+            "endedAt": "2026-10-16T01:47:14.676Z",
+            "latencyMs": 11795,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5908,
+            "tokensOut": 554,
+            "tokensCachedIn": 0,
+            "costCny": 0.008124,
+            "usage": {
+              "prompt_tokens": 5908,
+              "completion_tokens": 554,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 10
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 179
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 80753
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 9436
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 12
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 11795
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 7
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-07",
+      "filename": "07_passenger-transport.png",
+      "subject": "Daylight invoice test 20261016-be9e6670 07/10 [PNG]",
+      "emailId": "qq:3462740458@qq.com:1632359483:37",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:47:24.943Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000007",
+        "invoiceCode": "044002600007",
+        "invoiceDate": "2026-10-12",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "远行交通服务有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000007",
+        "amount": "360.00",
+        "taxAmount": "32.40",
+        "totalAmount": "392.40",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*运输服务*客运服务费",
+            "specification": "城际客运",
+            "unit": "次",
+            "quantity": "2",
+            "unitPrice": "180.00",
+            "amount": "360.00",
+            "taxRate": "9%",
+            "taxAmount": "32.40"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-c2cbca71f144d332949c2073",
+        "attachmentId": "attachment-43080ed0fede3d10ea0c2cc5",
+        "attachmentName": "07_passenger-transport.png",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000007",
+        "invoiceCode": "044002600007",
+        "invoiceDate": "2026-10-12",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "远行交通服务有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000007",
+        "amount": "360.00",
+        "taxAmount": "32.40",
+        "totalAmount": "392.40",
+        "currency": "CNY",
+        "items": [],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。购销方、税号和交易均为虚构；本票据不具备税务或报销效力。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000007",
+          "actual": "00202610160000000007",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": "044002600007",
+          "actual": "044002600007",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-12",
+          "actual": "2026-10-12",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "远行交通服务有限公司（虚构）",
+          "actual": "远行交通服务有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000007",
+          "actual": "TESTSELLER00000007",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "360.00",
+          "actual": "360.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "32.40",
+          "actual": "32.40",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "392.40",
+          "actual": "392.40",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 0,
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*运输服务*客运服务费",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "城际客运",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "次",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "180.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "360.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "9%",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "32.40",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        }
+      ],
+      "differences": [
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 0,
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*运输服务*客运服务费",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "城际客运",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "次",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "180.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "360.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "9%",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "32.40",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 12,
+        "formatting": 0,
+        "different": 10
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "07_passenger-transport.png",
+          "actual": "07_passenger-transport.png"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "07_passenger-transport.png",
+          "actual": "07_passenger-transport.png"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 190290,
+          "actual": 190290
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-7@daylight.example>",
+          "actual": "<tencent_173FB1C9FDBCFE94790CB82624B2C9711D05@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-43080ed0fede3d10ea0c2cc5",
+          "filename": "07_passenger-transport.png",
+          "contentType": "image/png",
+          "size": 190290,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 862
+        }
+      ],
+      "trace": {
+        "traceId": "97592142-4de5-4789-af11-b6fa358f7133",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:32.653Z",
+        "endedAt": "2026-10-16T01:47:24.953Z",
+        "latencyMs": 112300,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:32.653Z",
+            "endedAt": "2026-10-16T01:47:24.953Z",
+            "latencyMs": 112300
+          }
+        ],
+        "tokensIn": 5860,
+        "tokensOut": 335,
+        "tokensCachedIn": 0,
+        "costCny": 0.0072,
+        "knownCostCny": 0.0072,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "a84a56c4-8239-452e-b070-46f17ec4ad27",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:47:17.178Z",
+            "endedAt": "2026-10-16T01:47:24.918Z",
+            "latencyMs": 7740,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5860,
+            "tokensOut": 335,
+            "tokensCachedIn": 0,
+            "costCny": 0.0072,
+            "usage": {
+              "prompt_tokens": 5860,
+              "completion_tokens": 335,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 49
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 199
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 101800
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 2396
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 13
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 7740
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 8
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-08",
+      "filename": "08_catering.png",
+      "subject": "Daylight invoice test 20261016-be9e6670 08/10 [PNG]",
+      "emailId": "qq:3462740458@qq.com:1632359483:38",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:47:43.197Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000008",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-13",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "竹间餐饮有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000008",
+        "amount": "192.00",
+        "taxAmount": "11.52",
+        "totalAmount": "203.52",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*餐饮服务*工作餐",
+            "specification": "套餐",
+            "unit": "份",
+            "quantity": "4",
+            "unitPrice": "35.00",
+            "amount": "140.00",
+            "taxRate": "6%",
+            "taxAmount": "8.40"
+          },
+          {
+            "name": "*餐饮服务*茶水",
+            "specification": "热茶",
+            "unit": "份",
+            "quantity": "2",
+            "unitPrice": "12.00",
+            "amount": "24.00",
+            "taxRate": "6%",
+            "taxAmount": "1.44"
+          },
+          {
+            "name": "*餐饮服务*点心",
+            "specification": "拼盘",
+            "unit": "份",
+            "quantity": "1",
+            "unitPrice": "28.00",
+            "amount": "28.00",
+            "taxRate": "6%",
+            "taxAmount": "1.68"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-c0473d2192e1f9bc150c2127",
+        "attachmentId": "attachment-e0c353683c02aba68611cc75",
+        "attachmentName": "08_catering.png",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000008",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-13",
+        "buyerName": "晨光演示科技有限公司〈虚构)",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "竹间餐饮有限公司〈虚构)",
+        "sellerTaxId": "TESTSELLER00000008",
+        "amount": "192.00",
+        "taxAmount": "11.52",
+        "totalAmount": "203.52",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "#和餐饮服务+工作餐",
+            "specification": "套餐",
+            "unit": null,
+            "taxRate": "6%",
+            "quantity": null,
+            "unitPrice": "35.00",
+            "amount": "140.00",
+            "taxAmount": "8.40"
+          },
+          {
+            "name": "#餐饮服务+茶水",
+            "specification": "热茶",
+            "unit": null,
+            "taxRate": "6%",
+            "quantity": null,
+            "unitPrice": "12.00",
+            "amount": "24.00",
+            "taxAmount": "1.44"
+          },
+          {
+            "name": "#餐饮服务+点心",
+            "specification": "拼盘",
+            "unit": null,
+            "taxRate": "6%",
+            "quantity": null,
+            "unitPrice": "28.00",
+            "amount": "28.00",
+            "taxAmount": "1.68"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构;本票据不具备税务或报销效力。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000008",
+          "actual": "00202610160000000008",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-13",
+          "actual": "2026-10-13",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "竹间餐饮有限公司（虚构）",
+          "actual": "竹间餐饮有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000008",
+          "actual": "TESTSELLER00000008",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "192.00",
+          "actual": "192.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "11.52",
+          "actual": "11.52",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "203.52",
+          "actual": "203.52",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构;本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 3,
+          "actual": 3,
+          "result": "exact"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*餐饮服务*工作餐",
+          "actual": "#和餐饮服务+工作餐",
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "套餐",
+          "actual": "套餐",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "份",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "4",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "35.00",
+          "actual": "35.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "140.00",
+          "actual": "140.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "6%",
+          "actual": "6%",
+          "result": "exact"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "8.40",
+          "actual": "8.40",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.name",
+          "expected": "*餐饮服务*茶水",
+          "actual": "#餐饮服务+茶水",
+          "result": "different"
+        },
+        {
+          "field": "items.1.specification",
+          "expected": "热茶",
+          "actual": "热茶",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.unit",
+          "expected": "份",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.quantity",
+          "expected": "2",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.unitPrice",
+          "expected": "12.00",
+          "actual": "12.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.amount",
+          "expected": "24.00",
+          "actual": "24.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.taxRate",
+          "expected": "6%",
+          "actual": "6%",
+          "result": "exact"
+        },
+        {
+          "field": "items.1.taxAmount",
+          "expected": "1.44",
+          "actual": "1.44",
+          "result": "exact"
+        },
+        {
+          "field": "items.2.name",
+          "expected": "*餐饮服务*点心",
+          "actual": "#餐饮服务+点心",
+          "result": "different"
+        },
+        {
+          "field": "items.2.specification",
+          "expected": "拼盘",
+          "actual": "拼盘",
+          "result": "exact"
+        },
+        {
+          "field": "items.2.unit",
+          "expected": "份",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.2.quantity",
+          "expected": "1",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.2.unitPrice",
+          "expected": "28.00",
+          "actual": "28.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.2.amount",
+          "expected": "28.00",
+          "actual": "28.00",
+          "result": "exact"
+        },
+        {
+          "field": "items.2.taxRate",
+          "expected": "6%",
+          "actual": "6%",
+          "result": "exact"
+        },
+        {
+          "field": "items.2.taxAmount",
+          "expected": "1.68",
+          "actual": "1.68",
+          "result": "exact"
+        }
+      ],
+      "differences": [
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "sellerName",
+          "expected": "竹间餐饮有限公司（虚构）",
+          "actual": "竹间餐饮有限公司〈虚构)",
+          "result": "different"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。\n购销方、税号和交易均为虚构;本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*餐饮服务*工作餐",
+          "actual": "#和餐饮服务+工作餐",
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "份",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "4",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.name",
+          "expected": "*餐饮服务*茶水",
+          "actual": "#餐饮服务+茶水",
+          "result": "different"
+        },
+        {
+          "field": "items.1.unit",
+          "expected": "份",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.1.quantity",
+          "expected": "2",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.2.name",
+          "expected": "*餐饮服务*点心",
+          "actual": "#餐饮服务+点心",
+          "result": "different"
+        },
+        {
+          "field": "items.2.unit",
+          "expected": "份",
+          "actual": null,
+          "result": "different"
+        },
+        {
+          "field": "items.2.quantity",
+          "expected": "1",
+          "actual": null,
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 38,
+        "exact": 26,
+        "formatting": 0,
+        "different": 12
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "08_catering.png",
+          "actual": "08_catering.png"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "08_catering.png",
+          "actual": "08_catering.png"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 210384,
+          "actual": 210384
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-8@daylight.example>",
+          "actual": "<tencent_4E0ECC0FC00021754D64EBBD897FEE50F508@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-e0c353683c02aba68611cc75",
+          "filename": "08_catering.png",
+          "contentType": "image/png",
+          "size": 210384,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 1417
+        }
+      ],
+      "trace": {
+        "traceId": "f8269cb8-5596-450b-a6bc-84778fee52f1",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:32.945Z",
+        "endedAt": "2026-10-16T01:47:43.209Z",
+        "latencyMs": 130264,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:32.945Z",
+            "endedAt": "2026-10-16T01:47:43.209Z",
+            "latencyMs": 130264
+          }
+        ],
+        "tokensIn": 5938,
+        "tokensOut": 548,
+        "tokensCachedIn": 0,
+        "costCny": 0.00813,
+        "knownCostCny": 0.00813,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "36d95f65-f794-422a-9bca-6d3f3cc05047",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:47:27.790Z",
+            "endedAt": "2026-10-16T01:47:43.175Z",
+            "latencyMs": 15385,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5938,
+            "tokensOut": 548,
+            "tokensCachedIn": 0,
+            "costCny": 0.00813,
+            "usage": {
+              "prompt_tokens": 5938,
+              "completion_tokens": 548,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 9
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 265
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 111725
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 2761
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 11
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 15385
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 6
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-09",
+      "filename": "09_missing-tax-total.jpg",
+      "subject": "Daylight invoice test 20261016-be9e6670 09/10 [JPG]",
+      "emailId": "qq:3462740458@qq.com:1632359483:39",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:47:53.821Z",
+      "expected": {
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000009",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-14",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "微光设计有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000009",
+        "amount": "300.00",
+        "taxAmount": null,
+        "totalAmount": "318.00",
+        "currency": "CNY",
+        "items": [
+          {
+            "name": "*设计服务*界面设计费",
+            "specification": "演示页面",
+            "unit": "项",
+            "quantity": "1",
+            "unitPrice": "300.00",
+            "amount": "300.00",
+            "taxRate": "6%",
+            "taxAmount": "18.00"
+          }
+        ],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。"
+      },
+      "actual": {
+        "id": "invoice-9c1e2367ed270431521d1ed8",
+        "attachmentId": "attachment-7c3d98fea894d384b74e01b3",
+        "attachmentName": "09_missing-tax-total.jpg",
+        "invoiceType": "电子发票（增值税普通发票）",
+        "invoiceNumber": "00202610160000000009",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-14",
+        "buyerName": "晨光演示科技有限公司（虚构）",
+        "buyerTaxId": "TESTBUYER000000001",
+        "sellerName": "微光设计有限公司（虚构）",
+        "sellerTaxId": "TESTSELLER00000009",
+        "amount": "300.00",
+        "taxAmount": null,
+        "totalAmount": "318.00",
+        "currency": "CNY",
+        "items": [],
+        "notes": "模拟发票，仅用于 Daylight 功能测试，不可报销。购销方、税号和交易均为虚构；本票据不具备税务或报销效力。"
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "电子发票（增值税普通发票）",
+          "actual": "电子发票（增值税普通发票）",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "00202610160000000009",
+          "actual": "00202610160000000009",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-14",
+          "actual": "2026-10-14",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "晨光演示科技有限公司（虚构）",
+          "actual": "晨光演示科技有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": "TESTBUYER000000001",
+          "actual": "TESTBUYER000000001",
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "微光设计有限公司（虚构）",
+          "actual": "微光设计有限公司（虚构）",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": "TESTSELLER00000009",
+          "actual": "TESTSELLER00000009",
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "300.00",
+          "actual": "300.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "318.00",
+          "actual": "318.00",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "CNY",
+          "actual": "CNY",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 0,
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*设计服务*界面设计费",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "演示页面",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "项",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "1",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "300.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "300.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "6%",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "18.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        }
+      ],
+      "differences": [
+        {
+          "field": "notes",
+          "expected": "模拟发票，仅用于 Daylight 功能测试，不可报销。",
+          "actual": "模拟发票，仅用于 Daylight 功能测试，不可报销。购销方、税号和交易均为虚构；本票据不具备税务或报销效力。",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 0,
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "*设计服务*界面设计费",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "演示页面",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "项",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "1",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "300.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "300.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "6%",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "18.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 12,
+        "formatting": 0,
+        "different": 10
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "09_missing-tax-total.jpg",
+          "actual": "09_missing-tax-total.jpg"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "09_missing-tax-total.jpg",
+          "actual": "09_missing-tax-total.jpg"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 356735,
+          "actual": 356735
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-9@daylight.example>",
+          "actual": "<tencent_B78112A5DC27EA97983D804343489ACED709@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-7c3d98fea894d384b74e01b3",
+          "filename": "09_missing-tax-total.jpg",
+          "contentType": "image/jpeg",
+          "size": 356735,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 865
+        }
+      ],
+      "trace": {
+        "traceId": "f09140c0-8096-4af0-9f71-2cca7a3e53cd",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:45:33.268Z",
+        "endedAt": "2026-10-16T01:47:53.832Z",
+        "latencyMs": 140564,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:45:33.268Z",
+            "endedAt": "2026-10-16T01:47:53.832Z",
+            "latencyMs": 140564
+          }
+        ],
+        "tokensIn": 5856,
+        "tokensOut": 332,
+        "tokensCachedIn": 0,
+        "costCny": 0.007184,
+        "knownCostCny": 0.007184,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "a0a01699-8e65-4316-ad5b-8209164abfa8",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:47:45.798Z",
+            "endedAt": "2026-10-16T01:47:53.796Z",
+            "latencyMs": 7998,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5856,
+            "tokensOut": 332,
+            "tokensCachedIn": 0,
+            "costCny": 0.007184,
+            "usage": {
+              "prompt_tokens": 5856,
+              "completion_tokens": 332,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 60
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 252
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 129616
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 2517
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 11
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 7998
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 8
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "INV-10",
+      "filename": "10_usd-commercial.png",
+      "subject": "Daylight invoice test 20261016-be9e6670 10/10 [PNG]",
+      "emailId": "qq:3462740458@qq.com:1632359483:40",
+      "status": "processed",
+      "processedAt": "2026-10-16T01:48:38.594Z",
+      "expected": {
+        "invoiceType": "Commercial Invoice",
+        "invoiceNumber": "TEST-USD-0010",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-15",
+        "buyerName": "Daylight Demo Ltd (Fictional)",
+        "buyerTaxId": null,
+        "sellerName": "Northstar Demo Studio (Fictional)",
+        "sellerTaxId": null,
+        "amount": "99.00",
+        "taxAmount": "0.00",
+        "totalAmount": "99.00",
+        "currency": "USD",
+        "items": [
+          {
+            "name": "Demo design subscription",
+            "specification": "Test plan",
+            "unit": "month",
+            "quantity": "2",
+            "unitPrice": "49.50",
+            "amount": "99.00",
+            "taxRate": "0%",
+            "taxAmount": "0.00"
+          }
+        ],
+        "notes": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT."
+      },
+      "actual": {
+        "id": "invoice-e6f4a8f8f4a03e2753bbf35f",
+        "attachmentId": "attachment-020625e40554aa1522c6a848",
+        "attachmentName": "10_usd-commercial.png",
+        "invoiceType": "Commercial Invoice",
+        "invoiceNumber": "TEST-USD-0010",
+        "invoiceCode": null,
+        "invoiceDate": "2026-10-15",
+        "buyerName": "Daylight Demo Ltd (Fictional)",
+        "buyerTaxId": null,
+        "sellerName": "Northstar Demo Studio (Fictional)",
+        "sellerTaxId": null,
+        "amount": "99.00",
+        "taxAmount": "0.00",
+        "totalAmount": "99.00",
+        "currency": "USD",
+        "items": [],
+        "notes": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT.\nAll organizations and transactions are fictional."
+      },
+      "fields": [
+        {
+          "field": "invoiceType",
+          "expected": "Commercial Invoice",
+          "actual": "Commercial Invoice",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceNumber",
+          "expected": "TEST-USD-0010",
+          "actual": "TEST-USD-0010",
+          "result": "exact"
+        },
+        {
+          "field": "invoiceCode",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "invoiceDate",
+          "expected": "2026-10-15",
+          "actual": "2026-10-15",
+          "result": "exact"
+        },
+        {
+          "field": "buyerName",
+          "expected": "Daylight Demo Ltd (Fictional)",
+          "actual": "Daylight Demo Ltd (Fictional)",
+          "result": "exact"
+        },
+        {
+          "field": "buyerTaxId",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "sellerName",
+          "expected": "Northstar Demo Studio (Fictional)",
+          "actual": "Northstar Demo Studio (Fictional)",
+          "result": "exact"
+        },
+        {
+          "field": "sellerTaxId",
+          "expected": null,
+          "actual": null,
+          "result": "exact"
+        },
+        {
+          "field": "amount",
+          "expected": "99.00",
+          "actual": "99.00",
+          "result": "exact"
+        },
+        {
+          "field": "taxAmount",
+          "expected": "0.00",
+          "actual": "0.00",
+          "result": "exact"
+        },
+        {
+          "field": "totalAmount",
+          "expected": "99.00",
+          "actual": "99.00",
+          "result": "exact"
+        },
+        {
+          "field": "currency",
+          "expected": "USD",
+          "actual": "USD",
+          "result": "exact"
+        },
+        {
+          "field": "notes",
+          "expected": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT.",
+          "actual": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT.\nAll organizations and transactions are fictional.",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 0,
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "Demo design subscription",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "Test plan",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "month",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "49.50",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "99.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "0%",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "0.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        }
+      ],
+      "differences": [
+        {
+          "field": "notes",
+          "expected": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT.",
+          "actual": "SYNTHETIC TEST INVOICE. NOT VALID FOR PAYMENT OR REIMBURSEMENT.\nAll organizations and transactions are fictional.",
+          "result": "different"
+        },
+        {
+          "field": "items.length",
+          "expected": 1,
+          "actual": 0,
+          "result": "different"
+        },
+        {
+          "field": "items.0.name",
+          "expected": "Demo design subscription",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.specification",
+          "expected": "Test plan",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unit",
+          "expected": "month",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.quantity",
+          "expected": "2",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.unitPrice",
+          "expected": "49.50",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.amount",
+          "expected": "99.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxRate",
+          "expected": "0%",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        },
+        {
+          "field": "items.0.taxAmount",
+          "expected": "0.00",
+          "actual": null,
+          "actualMissing": true,
+          "result": "different"
+        }
+      ],
+      "fieldSummary": {
+        "total": 22,
+        "exact": 12,
+        "formatting": 0,
+        "different": 10
+      },
+      "allFieldsExactlyEqual": false,
+      "allFieldsEqualExceptFormatting": false,
+      "checks": [
+        {
+          "name": "unique_email_subject",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "mode",
+          "passed": true,
+          "expected": "qq",
+          "actual": "qq"
+        },
+        {
+          "name": "category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "status",
+          "passed": true,
+          "expected": "imported",
+          "actual": "imported"
+        },
+        {
+          "name": "invoice_status",
+          "passed": true,
+          "expected": "extracted",
+          "actual": "extracted"
+        },
+        {
+          "name": "extraction_category",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "extraction_intent",
+          "passed": true,
+          "expected": "invoice",
+          "actual": "invoice"
+        },
+        {
+          "name": "invoice_count",
+          "passed": true,
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "name": "source_attachment_exists",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "source_attachment_name",
+          "passed": true,
+          "expected": "10_usd-commercial.png",
+          "actual": "10_usd-commercial.png"
+        },
+        {
+          "name": "invoice_attachment_name",
+          "passed": true,
+          "expected": "10_usd-commercial.png",
+          "actual": "10_usd-commercial.png"
+        },
+        {
+          "name": "source_attachment_bytes",
+          "passed": true,
+          "expected": 123918,
+          "actual": 123918
+        },
+        {
+          "name": "source_attachment_text_status",
+          "passed": true,
+          "expected": "success",
+          "actual": "success"
+        },
+        {
+          "name": "invoice_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "attachment_text_errors",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "eventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "cancelledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "rescheduledEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "affectedEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "keptEventIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "taskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "createdTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "mergedTaskIds",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "pendingActions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "conflicts",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_actions",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "extraction_tasks",
+          "passed": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "no_draft_reply",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_user_draft",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "businessChecksPassed": true,
+      "transportChecks": [
+        {
+          "name": "message_id_preserved_by_mail_provider",
+          "passed": false,
+          "expected": "<daylight-invoice-20261016-be9e6670-10@daylight.example>",
+          "actual": "<tencent_94296ABD3FD1C53DBFFE975916B82C84A205@qq.com>"
+        }
+      ],
+      "attachments": [
+        {
+          "id": "attachment-020625e40554aa1522c6a848",
+          "filename": "10_usd-commercial.png",
+          "contentType": "image/png",
+          "size": 123918,
+          "storage": "aliyun",
+          "textStatus": "success",
+          "textCharacters": 1082
+        }
+      ],
+      "trace": {
+        "traceId": "9fd2412b-1749-4395-860c-184bbcdb75fe",
+        "status": "imported",
+        "mode": "qq",
+        "startedAt": "2026-10-16T01:48:29.650Z",
+        "endedAt": "2026-10-16T01:48:38.607Z",
+        "latencyMs": 8957,
+        "attempts": [
+          {
+            "attempt": 1,
+            "status": "imported",
+            "startedAt": "2026-10-16T01:48:29.650Z",
+            "endedAt": "2026-10-16T01:48:38.607Z",
+            "latencyMs": 8957
+          }
+        ],
+        "tokensIn": 5766,
+        "tokensOut": 278,
+        "tokensCachedIn": 0,
+        "costCny": 0.006878,
+        "knownCostCny": 0.006878,
+        "costStatus": "known",
+        "modelCalls": [
+          {
+            "spanId": "f7ef15b4-4d1d-4002-88e6-8b0a59317253",
+            "stage": "extract",
+            "status": "success",
+            "startedAt": "2026-10-16T01:48:32.167Z",
+            "endedAt": "2026-10-16T01:48:38.568Z",
+            "latencyMs": 6401,
+            "model": "gpt-6.1-sol",
+            "httpStatus": 200,
+            "finishReason": "stop",
+            "tokensIn": 5766,
+            "tokensOut": 278,
+            "tokensCachedIn": 0,
+            "costCny": 0.006878,
+            "usage": {
+              "prompt_tokens": 5766,
+              "completion_tokens": 278,
+              "cached_tokens": 0
+            }
+          }
+        ],
+        "stages": [
+          {
+            "stage": "receive_email",
+            "status": "success",
+            "latencyMs": 336
+          },
+          {
+            "stage": "parse",
+            "status": "success",
+            "latencyMs": 571
+          },
+          {
+            "stage": "queue_wait",
+            "status": "success",
+            "latencyMs": 82
+          },
+          {
+            "stage": "attachment_ingest",
+            "status": "success",
+            "latencyMs": 1431
+          },
+          {
+            "stage": "check_calendar",
+            "status": "success",
+            "latencyMs": 12
+          },
+          {
+            "stage": "extract",
+            "status": "success",
+            "latencyMs": 6401
+          },
+          {
+            "stage": "create_task",
+            "status": "success",
+            "latencyMs": 8
+          }
+        ]
+      }
+    }
+  ],
+  "coreFields": {
+    "compared": 90,
+    "exact": 90
+  },
+  "transport": {
+    "smtpAccepted": 10,
+    "inboxConfirmed": 10,
+    "integrity": {
+      "batch": "20261016-be9e6670",
+      "checkedAt": "2026-10-16T01:50:38.409Z",
+      "mailbox": "INBOX",
+      "readOnly": true,
+      "sourceReadUids": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "bodySaved": false,
+      "modelCalled": false,
+      "expectedUidValidity": "1632359483",
+      "results": [
+        {
+          "caseId": "INV-01",
+          "uid": 31,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "01_office-supplies.pdf",
+          "filenameMatches": true,
+          "contentType": "application/pdf",
+          "contentTypeMatches": true,
+          "bytes": 25524,
+          "expectedBytes": 25524,
+          "bytesMatch": true,
+          "sha256": "c5f123039a37339fbff73c47328c0b762c00f0da9ca5eed81d11ca823758cbba",
+          "expectedSha256": "c5f123039a37339fbff73c47328c0b762c00f0da9ca5eed81d11ca823758cbba",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-02",
+          "uid": 32,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "02_software-service.pdf",
+          "filenameMatches": true,
+          "contentType": "application/pdf",
+          "contentTypeMatches": true,
+          "bytes": 24413,
+          "expectedBytes": 24413,
+          "bytesMatch": true,
+          "sha256": "64d31b0b9be2f983504b7575db4a33bc801eaeff679e3e17092d8ca075d613d3",
+          "expectedSha256": "64d31b0b9be2f983504b7575db4a33bc801eaeff679e3e17092d8ca075d613d3",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-03",
+          "uid": 33,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "03_hotel-accommodation.pdf",
+          "filenameMatches": true,
+          "contentType": "application/pdf",
+          "contentTypeMatches": true,
+          "bytes": 25006,
+          "expectedBytes": 25006,
+          "bytesMatch": true,
+          "sha256": "c1d8b25b5a0a4ca82921336b7c333a5428dd3595f50f14481cb4950fc0a34610",
+          "expectedSha256": "c1d8b25b5a0a4ca82921336b7c333a5428dd3595f50f14481cb4950fc0a34610",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-04",
+          "uid": 34,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "04_tax-exempt-books.pdf",
+          "filenameMatches": true,
+          "contentType": "application/pdf",
+          "contentTypeMatches": true,
+          "bytes": 24071,
+          "expectedBytes": 24071,
+          "bytesMatch": true,
+          "sha256": "dd5526745682c77d62e66fc3d9cc8aa332d1927027da9c3b81c9ae232b3dcccc",
+          "expectedSha256": "dd5526745682c77d62e66fc3d9cc8aa332d1927027da9c3b81c9ae232b3dcccc",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-05",
+          "uid": 35,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "05_personal-training.pdf",
+          "filenameMatches": true,
+          "contentType": "application/pdf",
+          "contentTypeMatches": true,
+          "bytes": 24479,
+          "expectedBytes": 24479,
+          "bytesMatch": true,
+          "sha256": "5a05ba0c9bc9639c0c5286cf2bf1cb98f8064f50ed98be02e0fe636b3c39f214",
+          "expectedSha256": "5a05ba0c9bc9639c0c5286cf2bf1cb98f8064f50ed98be02e0fe636b3c39f214",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-06",
+          "uid": 36,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "06_computer-accessories.png",
+          "filenameMatches": true,
+          "contentType": "image/png",
+          "contentTypeMatches": true,
+          "bytes": 198500,
+          "expectedBytes": 198500,
+          "bytesMatch": true,
+          "sha256": "0f5ecba8e413177aae9c9f24c12a9dea20e9bbb37c5c6d0ac1e13045905dce38",
+          "expectedSha256": "0f5ecba8e413177aae9c9f24c12a9dea20e9bbb37c5c6d0ac1e13045905dce38",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-07",
+          "uid": 37,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "07_passenger-transport.png",
+          "filenameMatches": true,
+          "contentType": "image/png",
+          "contentTypeMatches": true,
+          "bytes": 190290,
+          "expectedBytes": 190290,
+          "bytesMatch": true,
+          "sha256": "0116b9d2307c123fcf2348fcb795374d46e05a2dd7b54677c51d771231e49a5b",
+          "expectedSha256": "0116b9d2307c123fcf2348fcb795374d46e05a2dd7b54677c51d771231e49a5b",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-08",
+          "uid": 38,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "08_catering.png",
+          "filenameMatches": true,
+          "contentType": "image/png",
+          "contentTypeMatches": true,
+          "bytes": 210384,
+          "expectedBytes": 210384,
+          "bytesMatch": true,
+          "sha256": "87e541bc071e261de07df883f771199b7057858b8dea491b82ad44d2a933b5e3",
+          "expectedSha256": "87e541bc071e261de07df883f771199b7057858b8dea491b82ad44d2a933b5e3",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-09",
+          "uid": 39,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "09_missing-tax-total.jpg",
+          "filenameMatches": true,
+          "contentType": "image/jpeg",
+          "contentTypeMatches": true,
+          "bytes": 356735,
+          "expectedBytes": 356735,
+          "bytesMatch": true,
+          "sha256": "f1ef36d675b65e104785811e5b0e4a02795e2b34f04862b5666519611cdd5af6",
+          "expectedSha256": "f1ef36d675b65e104785811e5b0e4a02795e2b34f04862b5666519611cdd5af6",
+          "sha256Matches": true,
+          "passed": true
+        },
+        {
+          "caseId": "INV-10",
+          "uid": 40,
+          "subjectMatches": true,
+          "recipientMatches": true,
+          "attachmentCount": 1,
+          "filename": "10_usd-commercial.png",
+          "filenameMatches": true,
+          "contentType": "image/png",
+          "contentTypeMatches": true,
+          "bytes": 123918,
+          "expectedBytes": 123918,
+          "bytesMatch": true,
+          "sha256": "4c0289033876b9a156aec0a3e75994dbe9fde622231f504c985fcb4a602e29da",
+          "expectedSha256": "4c0289033876b9a156aec0a3e75994dbe9fde622231f504c985fcb4a602e29da",
+          "sha256Matches": true,
+          "passed": true
+        }
+      ],
+      "actualUidValidity": "1632359483",
+      "uidValidityMatch": true,
+      "passedCount": 10,
+      "allPassed": true,
+      "completedAt": "2026-10-16T01:50:41.700Z"
+    }
+  },
+  "dedup": {
+    "batch": "20261016-be9e6670",
+    "checkedAt": "2026-10-16T01:53:12.402Z",
+    "scope": "Read-only real IMAP metadata for exactly the ten test UIDs; existing processEmails on an in-memory copy.",
+    "mailboxHost": "imap.qq.com",
+    "expectedEmails": 10,
+    "metadataRecords": 10,
+    "sourceDownloads": 0,
+    "extractorCalls": 0,
+    "duplicateCount": 10,
+    "businessDataUnchanged": true,
+    "lastSyncUpdatedInMemory": true,
+    "passed": true
+  },
+  "browserVerification": "New browser session reached login; no authenticated invoice-page visual verification was performed.",
+  "interpretation": [
+    "10 real SMTP messages were received by real QQ IMAP and processed by the existing automatic sync and configured real model.",
+    "All generated invoices, organization names, identifiers and transactions are fictional. No preset model response was used.",
+    "Extracted status means an invoice record was created; it does not assert complete or accurate recognition of every field.",
+    "Image OCR missed line items in INV-07/09/10 and some fields in INV-06/08. Two PDF notes additionally include a disclaimer printed on the same invoice.",
+    "No business code, OCR parameters or existing authentication settings were changed during this request."
+  ]
+}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Activity, Check, ChevronDown, FileText, LoaderCircle, Mail, X,
 } from 'lucide-react';
@@ -8,7 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { realCostMetric, RealCostSummary, TraceCostDetails } from '@/components/trace-cost-details';
 import { useWorkspace } from '@/context/workspace';
+import { request } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const STATUS = {
@@ -28,14 +31,19 @@ function duration(ms) {
 
 function formatTokens(summary) {
   const real = summary?.qq || summary?.real;
-  if (!real) return '—';
+  if (!real?.count) return '—';
   const total = (real.tokens_in || 0) + (real.tokens_out || 0);
-  return total ? total.toLocaleString('zh-CN') : '—';
+  return total || real.token_coverage_count ? total.toLocaleString('zh-CN') : '未知';
 }
 
 export default function TracesPage() {
+  const [params] = useSearchParams();
   const { emails, traceData, selectedTraceId, setSelectedTraceId, feedbackTrace, isSyncing } = useWorkspace();
-  const traces = traceData.traces || [];
+  const [pinnedTrace, setPinnedTrace] = useState(null);
+  const loadedTraces = traceData.traces || [];
+  const traces = pinnedTrace && !loadedTraces.some((trace) => trace.trace_id === pinnedTrace.trace_id)
+    ? [pinnedTrace, ...loadedTraces]
+    : loadedTraces;
   const [modeFilter, setModeFilter] = useState('all');
   const filtered = useMemo(() => {
     if (modeFilter === 'real') return traces.filter((trace) => trace.mode === 'qq');
@@ -50,13 +58,38 @@ export default function TracesPage() {
   const summary = traceData.summary;
   const real = summary?.qq || summary?.real || {};
   const demo = summary?.demo || {};
+  const cost = realCostMetric(real);
 
   useEffect(() => {
+    const fromUrl = params.get('trace');
+    if (!fromUrl) {
+      setPinnedTrace(null);
+      return undefined;
+    }
+    if (loadedTraces.some((trace) => trace.trace_id === fromUrl)) {
+      setPinnedTrace(null);
+      setSelectedTraceId(fromUrl);
+      return undefined;
+    }
+    let alive = true;
+    request('/traces?scope=all').then((data) => {
+      if (!alive) return;
+      const found = (data.traces || []).find((trace) => trace.trace_id === fromUrl);
+      if (found) {
+        setPinnedTrace(found);
+        setSelectedTraceId(fromUrl);
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [params, loadedTraces, setSelectedTraceId]);
+
+  useEffect(() => {
+    if (params.get('trace')) return;
     if (!selectedTraceId && filtered[0]) setSelectedTraceId(filtered[0].trace_id);
-  }, [filtered, selectedTraceId, setSelectedTraceId]);
+  }, [filtered, selectedTraceId, setSelectedTraceId, params]);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -82,9 +115,9 @@ export default function TracesPage() {
       <Card>
         <CardContent className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4 lg:divide-x">
           <Stat
-            label="已记录的邮件"
-            value={`${traces.length} 封`}
-            hint={`真实 ${real.count || 0} 封 · 示例 ${demo.count || 0} 封`}
+            label="已记录执行"
+            value={`${summary?.total_count ?? traces.length} 条`}
+            hint={`真实邮件 ${real.count || 0} 封 · 示例邮件 ${demo.count || 0} 封`}
           />
           <Stat
             label="累计处理耗时"
@@ -92,20 +125,21 @@ export default function TracesPage() {
             hint="收到到草稿，含重试实际处理耗时"
           />
           <Stat
-            label="真实模型累计 Token"
+            label={real.count > real.token_coverage_count ? '真实模型已知 Token' : '真实模型累计 Token'}
             value={formatTokens(summary)}
-            hint="同步真实邮箱后显示实际用量"
+            hint={real.count ? `完整用量 ${real.token_coverage_count || 0} / ${real.count} 封` : '暂无真实模型调用记录'}
           />
           <Stat
             label="单封真实邮件平均成本"
-            value={real.avg_cost_cents == null ? '未知' : `¥${(real.avg_cost_cents / 100).toFixed(4)}`}
-            hint="同步真实邮箱并配置单价后可量化"
+            value={cost.value}
+            hint={cost.hint}
           />
         </CardContent>
+        <RealCostSummary summary={real} />
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-        <Card>
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">邮件记录</CardTitle>
             <div className="flex flex-wrap gap-1 pt-1">
@@ -134,13 +168,13 @@ export default function TracesPage() {
                     key={trace.trace_id}
                     type="button"
                     className={cn(
-                      'w-full rounded-lg border px-3 py-2 text-left hover:bg-muted/40',
+                      'w-full min-w-0 rounded-lg border px-3 py-2 text-left hover:bg-muted/40',
                       selected?.trace_id === trace.trace_id && 'border-primary bg-accent/40',
                     )}
                     onClick={() => setSelectedTraceId(trace.trace_id)}
                   >
                     <div className="truncate text-sm font-medium">{trace.subject || '无主题'}</div>
-                    <div className="mt-1 flex items-center gap-2">
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
                       <Badge variant="secondary">{STATUS[trace.status] || trace.status}</Badge>
                       <Badge variant="outline">{trace.mode === 'qq' ? '真实' : '示例'}</Badge>
                       <span className="text-[10px] text-muted-foreground">{duration(trace.latency_ms)}</span>
@@ -157,16 +191,17 @@ export default function TracesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           {selected ? (
             <>
               <CardHeader>
-                <CardTitle className="text-base">{selected.subject || '处理记录'}</CardTitle>
+                <CardTitle className="text-base break-words">{selected.subject || '处理记录'}</CardTitle>
                 <CardDescription>
                   {STATUS[selected.status]} · {selected.spans?.length || 0} 个阶段 · {duration(selected.latency_ms)}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <TraceCostDetails trace={selected} />
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   {FLOW.map((step, index) => (
                     <React.Fragment key={step}>
@@ -178,9 +213,9 @@ export default function TracesPage() {
                 <div className="space-y-2">
                   {(selected.spans || []).map((span, index) => (
                     <details key={span.span_id || index} className="rounded-lg border px-3 py-2" open={span.status === 'running' || span.status === 'failed'}>
-                      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
+                      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 text-sm font-medium">
                         <span className="text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
-                        <span className="flex-1">{span.label || STAGES[span.stage] || span.stage}</span>
+                        <span className="min-w-0 flex-1 break-words">{span.label || STAGES[span.stage] || span.stage}</span>
                         <Badge variant="outline">{STATUS[span.status] || span.status}</Badge>
                         <ChevronDown className="size-4 text-muted-foreground" />
                       </summary>

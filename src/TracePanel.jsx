@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight,
-  Clock3, FileText, GitBranch, LoaderCircle, Mail, Pause, Play, RotateCcw,
+  Activity, ArrowRight, Check, ChevronDown,
+  Clock3, FileText, GitBranch, LoaderCircle, Mail,
   Sparkles, WandSparkles, X,
 } from 'lucide-react';
+import { TraceReplayView } from '@/components/trace-replay-view';
+import { Badge } from '@/components/ui/badge';
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { cn } from '@/lib/utils';
 
 const STATUS = { running: '处理中', completed: '已完成', imported: '已完成', success: '已完成', skipped: '已跳过', conflict: '日程冲突', failed: '失败，可重试' };
 const STAGES = { receive_email: '接收邮件', parse: '解析邮件', queue_wait: '等待前序邮件', check_calendar: '检查日历与待办', extract: '模型提取', create_task: '更新日历与待办', draft_reply: '整理回复草稿' };
@@ -30,21 +36,115 @@ function Snapshot({ label, value }) {
   return <details className="trace-snapshot"><summary>{label}<ChevronDown size={13} /></summary><pre>{showSnapshot(value)}</pre></details>;
 }
 
+function EvidenceBlock({ letter, title, hint, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border-b last:border-b-0">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/40">
+        <span className="flex size-6 items-center justify-center rounded-md bg-muted text-[11px] font-semibold text-muted-foreground">{letter}</span>
+        <span className="min-w-0 flex-1">
+          <span className="font-medium">{title}</span>
+          {hint ? <span className="ml-2 text-[11px] text-muted-foreground">{hint}</span> : null}
+        </span>
+        <ChevronDown className={cn('size-3.5 text-muted-foreground transition', open && 'rotate-180')} />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="px-3 pb-3 text-sm leading-relaxed text-muted-foreground">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 export function EvidenceStep({ span, index, now }) {
-  return <article className={`trace-evidence ${span.status === 'failed' ? 'failed' : ''}`}>
-    <div className="trace-evidence-heading"><span className="trace-step-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{span.label || STAGES[span.stage] || span.stage}</h4><p>{span.stage} · {duration(elapsedSpan(span, now))}</p></div><span className={`trace-status ${span.status}`}>{STATUS[span.status] || '已完成'}</span></div>
-    <div className="trace-react-steps">
-      <details className="trace-react-step" open><summary><span className="trace-react-letter">T</span><strong>Thought <small>决策摘要</small></strong><ChevronDown size={13} /></summary><p>{span.thought || '此阶段未记录决策摘要。'}</p></details>
-      <details className="trace-react-step" open><summary><span className="trace-react-letter">A</span><strong>Action <small>实际执行</small></strong><ChevronDown size={13} /></summary><p>{span.action || span.tool_calls?.map((tool) => tool.name).join('、') || '此阶段未记录动作说明。'}</p></details>
-      <details className="trace-react-step" open><summary><span className="trace-react-letter">O</span><strong>Observation <small>返回与观察</small></strong><ChevronDown size={13} /></summary><p>{span.observation || (span.status === 'running' ? '等待返回…' : '此阶段未记录观察摘要。')}</p></details>
-    </div>
-    {span.error && <p className="trace-error" role="alert">{span.error}</p>}
-    <div className="trace-evidence-snapshots"><Snapshot label="输入快照 · 已脱敏 / 截断" value={span.input_snapshot} />
-      {span.tool_calls?.map((tool, i) => <details className="trace-tool-call" key={`${tool.name}-${i}`}><summary><GitBranch size={13} /><strong>{tool.name}</strong><span>工具调用 {i + 1}</span><ChevronDown size={13} /></summary><div><h5>调用参数</h5><pre>{showSnapshot(tool.arguments)}</pre><h5>返回摘要</h5><pre>{showSnapshot(tool.result_summary)}</pre></div></details>)}
-      <Snapshot label="输出快照 · 已脱敏 / 截断" value={span.output_snapshot} />
-      <details className="trace-snapshot trace-span-meta"><summary>Span 标识与计量<ChevronDown size={13} /></summary><dl><div><dt>span_id</dt><dd>{span.span_id}</dd></div><div><dt>parent_span</dt><dd>{span.parent_span || '—'}</dd></div><div><dt>开始时间</dt><dd>{traceClock(span.started_at)} · 北京时间</dd></div><div><dt>Token 输入 / 输出</dt><dd>{!(span.llm_request === true || (span.stage === 'extract' && span.llm_request !== false)) ? '无模型调用' : `${hasNumber(span.llm_tokens_in) ? formatNumber(span.llm_tokens_in) : '未知'} / ${hasNumber(span.llm_tokens_out) ? formatNumber(span.llm_tokens_out) : '未知'}`}</dd></div>{(span.llm_request === true || (span.stage === 'extract' && span.llm_request !== false)) && <div><dt>缓存命中 Token</dt><dd>{hasNumber(span.llm_tokens_cached_in) ? formatNumber(span.llm_tokens_cached_in) : '未知'}</dd></div>}<div><dt>阶段成本</dt><dd>{amount(span.cost_cny)}{span.cost_status === 'price_missing' ? ' · 未配置所需单价' : span.cost_status === 'usage_missing' ? ' · 服务商未返回完整用量' : ''}</dd></div>{span.pricing && <div><dt>本次单价快照</dt><dd>元 / 百万 Token<br />输入 {span.pricing.input_cny_per_million ?? '未知'} · 输出 {span.pricing.output_cny_per_million ?? '未知'} · 缓存 {span.pricing.cached_input_cny_per_million ?? '未知'}</dd></div>}</dl></details>
-    </div>
-  </article>;
+  return (
+    <article className="bg-card">
+      <div className="flex items-start gap-3 border-b px-3 py-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold tabular-nums">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium leading-snug">{span.label || STAGES[span.stage] || span.stage}</h4>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{span.stage} · {duration(elapsedSpan(span, now))}</p>
+        </div>
+        <Badge variant={span.status === 'failed' ? 'destructive' : 'outline'} className="font-normal">
+          {STATUS[span.status] || '已完成'}
+        </Badge>
+      </div>
+      <EvidenceBlock letter="T" title="Thought" hint="决策摘要">
+        <p>{span.thought || '此阶段未记录决策摘要。'}</p>
+      </EvidenceBlock>
+      <EvidenceBlock letter="A" title="Action" hint="实际执行">
+        <p className="font-mono text-xs text-foreground">
+          {span.action || span.tool_calls?.map((tool) => tool.name).join('、') || '此阶段未记录动作说明。'}
+        </p>
+      </EvidenceBlock>
+      <EvidenceBlock letter="O" title="Observation" hint="返回与观察">
+        <p>{span.observation || (span.status === 'running' ? '等待返回…' : '此阶段未记录观察摘要。')}</p>
+      </EvidenceBlock>
+      {span.error && <p className="px-3 py-2 text-sm text-destructive" role="alert">{span.error}</p>}
+      <div className="space-y-1 border-t bg-muted/20 p-2">
+        <Snapshot label="输入快照 · 已脱敏 / 截断" value={span.input_snapshot} />
+        {span.tool_calls?.map((tool, i) => (
+          <details className="rounded-md border bg-background px-2 py-1.5 text-xs" key={`${tool.name}-${i}`}>
+            <summary className="flex cursor-pointer list-none items-center gap-2">
+              <GitBranch size={13} />
+              <strong>{tool.name}</strong>
+              <span className="text-muted-foreground">工具调用 {i + 1}</span>
+            </summary>
+            <div className="mt-2 space-y-2">
+              <div>
+                <h5 className="mb-1 text-muted-foreground">调用参数</h5>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono">{showSnapshot(tool.arguments)}</pre>
+              </div>
+              <div>
+                <h5 className="mb-1 text-muted-foreground">返回摘要</h5>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono">{showSnapshot(tool.result_summary)}</pre>
+              </div>
+            </div>
+          </details>
+        ))}
+        <Snapshot label="输出快照 · 已脱敏 / 截断" value={span.output_snapshot} />
+        <details className="rounded-md border bg-background px-2 py-1.5 text-xs">
+          <summary className="cursor-pointer list-none text-muted-foreground">Span 标识与计量</summary>
+          <dl className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            <div><dt className="text-muted-foreground">span_id</dt><dd className="break-all font-mono">{span.span_id}</dd></div>
+            <div><dt className="text-muted-foreground">parent_span</dt><dd>{span.parent_span || '—'}</dd></div>
+            <div><dt className="text-muted-foreground">开始时间</dt><dd>{traceClock(span.started_at)} · 北京时间</dd></div>
+            <div>
+              <dt className="text-muted-foreground">Token 输入 / 输出</dt>
+              <dd>
+                {!(span.llm_request === true || (span.stage === 'extract' && span.llm_request !== false))
+                  ? '无模型调用'
+                  : `${hasNumber(span.llm_tokens_in) ? formatNumber(span.llm_tokens_in) : '未知'} / ${hasNumber(span.llm_tokens_out) ? formatNumber(span.llm_tokens_out) : '未知'}`}
+              </dd>
+            </div>
+            {(span.llm_request === true || (span.stage === 'extract' && span.llm_request !== false)) && (
+              <div>
+                <dt className="text-muted-foreground">缓存命中 Token</dt>
+                <dd>{hasNumber(span.llm_tokens_cached_in) ? formatNumber(span.llm_tokens_cached_in) : '未知'}</dd>
+              </div>
+            )}
+            <div>
+              <dt className="text-muted-foreground">阶段成本</dt>
+              <dd>
+                {amount(span.cost_cny)}
+                {span.cost_status === 'price_missing' ? ' · 未配置所需单价' : ''}
+                {span.cost_status === 'usage_missing' ? ' · 服务商未返回完整用量' : ''}
+              </dd>
+            </div>
+            {span.pricing && (
+              <div className="sm:col-span-2">
+                <dt className="text-muted-foreground">本次单价快照（元 / 百万 Token）</dt>
+                <dd>
+                  输入 {span.pricing.input_cny_per_million ?? '未知'} · 输出 {span.pricing.output_cny_per_million ?? '未知'} · 缓存 {span.pricing.cached_input_cny_per_million ?? '未知'}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </details>
+      </div>
+    </article>
+  );
 }
 
 function DraftReply({ trace, sourceEmail, onFeedback }) {
@@ -78,48 +178,15 @@ function DraftReply({ trace, sourceEmail, onFeedback }) {
 }
 
 export function TraceReplay({ trace, sourceEmail, now = Date.now(), onFeedback, showDraft = true }) {
-  const spans = trace.spans || [];
-  const attempts = trace.attempts || [];
-  const offsets = new Map();
-  let precedingDuration = 0;
-  for (const attempt of attempts) { offsets.set(attempt.attempt, precedingDuration); precedingDuration += elapsedAttempt(attempt, now); }
-  const spanOffset = (span) => (offsets.get(span.attempt) || 0) + (span.offset_ms || 0);
-  const [cursor, setCursor] = useState(null);
-  const [playing, setPlaying] = useState(false);
-  const currentIndex = cursor === null ? Math.max(0, spans.length - 1) : Math.min(cursor, spans.length - 1);
-  const currentSpan = spans[currentIndex];
-  useEffect(() => {
-    if (!playing) return;
-    const timer = setTimeout(() => {
-      if (currentIndex >= spans.length - 1) setPlaying(false);
-      else setCursor(currentIndex + 1);
-    }, 1400);
-    return () => clearTimeout(timer);
-  }, [playing, currentIndex, spans.length]);
-  const visibleSpans = cursor === null ? spans : spans.slice(0, currentIndex + 1);
-  const totalDuration = Math.max(0, elapsedTrace(trace, now), ...spans.map((span) => spanOffset(span) + elapsedSpan(span, now)));
-  const chartDuration = Math.max(1, totalDuration);
-  const accumulatedDuration = cursor === null ? elapsedTrace(trace, now) : Math.max(0, ...visibleSpans.map((span) => spanOffset(span) + elapsedSpan(span, now)));
-  const tokensIn = visibleSpans.reduce((sum, span) => sum + (span.llm_tokens_in || 0), 0);
-  const tokensOut = visibleSpans.reduce((sum, span) => sum + (span.llm_tokens_out || 0), 0);
-  const hasUnknownUsage = visibleSpans.some((span) => (span.llm_request === true || (span.stage === 'extract' && span.llm_request !== false)) && (!hasNumber(span.llm_tokens_in) || !hasNumber(span.llm_tokens_out)));
-  const hasUnknownCost = visibleSpans.some((span) => span.cost_cny === null || span.cost_cny === undefined);
-  const accumulatedCost = hasUnknownCost ? null : visibleSpans.reduce((sum, span) => sum + span.cost_cny, 0);
-  function chooseStep(index) { setPlaying(false); setCursor(index); }
-  return <div className="trace-replay">
-    <div className="trace-selected-heading"><div><div className="trace-selected-tags"><span className={`trace-mode ${trace.mode}`}>{trace.mode === 'demo' ? '示例 · 预置结果' : trace.kind === 'recruitment' ? '招聘助手' : '真实邮箱'}</span><span className={`trace-status ${trace.status}`}>{STATUS[trace.status]}</span>{attempts.length > 1 && <span className="trace-attempts">共 {attempts.length} 次尝试</span>}</div><h3>{trace.subject || '无主题邮件'}</h3><p>{decisionText(trace.decision)}</p></div><span className="trace-start-clock"><Clock3 size={13} />{traceClock(trace.started_at)}</span></div>
-    {trace.status === 'failed' && trace.match_retry && <p className="trace-error" role="status">待匹配原日程：当前日历没有明确的变更对象，自动同步会暂缓重复模型请求。补充或修正原日程后会自动重试，也可点击「同步真实邮箱」手动重试。</p>}
-    <details className="trace-id"><summary>Trace {trace.trace_id.slice(0, 12)}…<ChevronDown size={12} /></summary><p>trace_id: {trace.trace_id}<br />email_ref: {trace.email_ref}<br />每封邮件保留一条证据链，重试记录追加到同一封邮件。</p></details>
-    {trace.mode === 'demo' && <p className="trace-demo-note"><Sparkles size={13} />示例使用预置提取结果，Token 与成本不计入真实邮件统计。</p>}
-    <div className="trace-replay-controls"><button className="button primary" disabled={!spans.length || trace.status === 'running'} onClick={() => { if (playing) setPlaying(false); else { setCursor(0); setPlaying(true); } }}>{playing ? <Pause size={14} /> : <Play size={14} />}{playing ? '暂停回放' : '完整回放'}</button><div className="trace-step-controls"><button aria-label="上一步" disabled={currentIndex <= 0 || !spans.length} onClick={() => chooseStep(currentIndex - 1)}><ChevronLeft size={15} /></button><span>第 {spans.length ? currentIndex + 1 : 0} / {spans.length} 步</span><button aria-label="下一步" disabled={currentIndex >= spans.length - 1} onClick={() => chooseStep(currentIndex + 1)}><ChevronRight size={15} /></button></div><button className="trace-show-all" onClick={() => { setCursor(null); setPlaying(false); }}><RotateCcw size={12} />{trace.status === 'running' ? '跟随实时进度' : '查看全部'}</button></div>
-    <div className="trace-cumulative" aria-live="polite"><span>累计至此</span><strong>{duration(accumulatedDuration)}<small>耗时</small></strong><strong>{hasUnknownUsage ? '未知' : formatNumber(tokensIn + tokensOut)}<small>Token{!hasUnknownUsage && ` · 输入 ${formatNumber(tokensIn)} / 输出 ${formatNumber(tokensOut)}`}</small></strong><strong>{amount(accumulatedCost)}<small>成本{hasUnknownCost ? ' · 待补齐用量或单价' : ` · ${cents(accumulatedCost)}`}</small></strong></div>
-    <section className="trace-timeline" aria-label="阶段耗时时间轴"><div className="trace-timeline-title"><h4>执行时间轴</h4><span>实际耗时 · {duration(totalDuration)}</span></div><div className="trace-timeline-scale"><span>0</span><span>{duration(totalDuration / 2)}</span><span>{duration(totalDuration)}</span></div>
-      {spans.map((span, index) => <React.Fragment key={span.span_id}>{attempts.length > 1 && (index === 0 || spans[index - 1].attempt !== span.attempt) && <div className="trace-attempt-heading">尝试 {span.attempt}<span>{STATUS[attempts.find((attempt) => attempt.attempt === span.attempt)?.status]} · {traceClock(span.started_at)}</span></div>}<button className={`trace-gantt-row ${index === currentIndex ? 'active' : ''} ${cursor !== null && index > currentIndex ? 'future' : ''}`} onClick={() => chooseStep(index)}><span className="trace-gantt-label">{String(index + 1).padStart(2, '0')} {span.label || STAGES[span.stage] || span.stage}</span><span className="trace-gantt-track"><span className={`trace-gantt-bar ${span.status} stage-${span.stage}`} style={{ left: `${(spanOffset(span) / chartDuration) * 100}%`, width: `${Math.max(.6, (elapsedSpan(span, now) / chartDuration) * 100)}%` }} /></span><span className="trace-gantt-duration">{duration(elapsedSpan(span, now))}</span></button></React.Fragment>)}
-      {!spans.length && <p className="trace-waiting"><LoaderCircle className="spin" size={15} />等待第一步记录…</p>}
-    </section>
-    {currentSpan && <EvidenceStep span={currentSpan} index={currentIndex} now={now} />}
-    {showDraft && trace.status !== 'failed' && (cursor === null || currentIndex === spans.length - 1) && <DraftReply trace={trace} sourceEmail={sourceEmail} onFeedback={onFeedback} />}
-  </div>;
+  return (
+    <TraceReplayView
+      trace={trace}
+      now={now}
+      showDraft={showDraft && trace.status !== 'failed'}
+      renderEvidence={(span, index) => <EvidenceStep span={span} index={index} now={now} />}
+      draftSlot={<DraftReply trace={trace} sourceEmail={sourceEmail} onFeedback={onFeedback} />}
+    />
+  );
 }
 
 export default function TracePanel({ data, emails = [], selectedTraceId, onSelectTrace, onFeedback, onSettings, error, syncing }) {

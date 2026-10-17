@@ -41,26 +41,31 @@ export function ContextActions({ items = [], children, className }) {
           style={{ left: menu.x, top: menu.y }}
           onClick={(event) => event.stopPropagation()}
         >
-          {items.map((item) => (
-            <button
-              key={item.id || item.label}
-              type="button"
-              disabled={item.disabled}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted',
-                item.disabled && 'opacity-50',
-                item.destructive && 'text-destructive',
-              )}
-              onClick={() => {
-                setMenu(null);
-                item.onSelect?.();
-              }}
-            >
-              {item.icon ? <item.icon className="size-3.5 opacity-70" /> : null}
-              <span className="flex-1">{item.label}</span>
-              {item.shortcut ? <span className="text-[10px] text-muted-foreground">{item.shortcut}</span> : null}
-            </button>
-          ))}
+          {items.map((item, index) => {
+            if (item.separator) {
+              return <div key={item.id || `sep-${index}`} className="my-1 border-t" />;
+            }
+            return (
+              <button
+                key={item.id || item.label}
+                type="button"
+                disabled={item.disabled}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted',
+                  item.disabled && 'opacity-50',
+                  item.destructive && 'text-destructive',
+                )}
+                onClick={() => {
+                  setMenu(null);
+                  item.onSelect?.();
+                }}
+              >
+                {item.icon ? <item.icon className="size-3.5 opacity-70" /> : null}
+                <span className="flex-1">{item.label}</span>
+                {item.shortcut ? <span className="text-[10px] text-muted-foreground">{item.shortcut}</span> : null}
+              </button>
+            );
+          })}
         </div>,
         document.body,
       )}

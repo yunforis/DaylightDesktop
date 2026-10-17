@@ -26,8 +26,9 @@ function pdf(text = 'Synthetic candidate resume. Kubernetes cloud computing proj
   return Buffer.from(`${data}xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
 }
 
-function mime({ uid = 1, subject = 'Synthetic application', body = 'Please review the attached resume.', attachment = pdf(), inReplyTo = '' } = {}) {
-  const headers = ['From: Synthetic Candidate <candidate@example.invalid>', `Subject: ${subject}`, `Message-ID: <incoming-${uid}@example.invalid>`,
+function mime({ uid = 1, subject = 'Synthetic application', body = 'Please review the attached resume.', attachment = pdf(), inReplyTo = '',
+  from = 'candidate@example.invalid' } = {}) {
+  const headers = [`From: Synthetic Candidate <${from}>`, `Subject: ${subject}`, `Message-ID: <incoming-${uid}@example.invalid>`,
     'Date: Wed, 14 Oct 2026 09:00:00 +0800', ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`] : []), 'MIME-Version: 1.0'];
   const lines = attachment ? [...headers, 'Content-Type: multipart/mixed; boundary="recruitment-test"', '', '--recruitment-test',
     'Content-Type: text/plain; charset=utf-8', '', body, '--recruitment-test', 'Content-Type: application/pdf',
@@ -45,11 +46,15 @@ async function serveFixture() {
   const { default: dns } = await import('node:dns/promises');
   const { default: nodemailer } = await import('nodemailer');
   const { ImapFlow } = await import('imapflow');
-  let inbox = workerData.inbox, answers = [], calls = [], reads = 0, rawReads = 0, outgoing = [];
+  let inbox = workerData.inbox, answers = [], calls = [], reads = 0, rawReads = 0, outgoing = [], smtpErrors = [];
   mock.timers.enable({ apis: ['setInterval'] });
   mock.method(dns, 'lookup', async () => ({ address: '192.0.2.10', family: 4 }));
   mock.method(nodemailer, 'createTransport', () => ({ async sendMail(mail) {
     outgoing.push(mail);
+    if (smtpErrors.length) {
+      const failure = smtpErrors.shift();
+      throw typeof failure === 'string' ? new Error(failure) : Object.assign(new Error(failure.message), failure);
+    }
     return { accepted: [mail.to], rejected: [], messageId: `<sent-${outgoing.length}@example.invalid>` };
   } }));
   mock.method(ImapFlow.prototype, 'connect', async function () { reads++; this.mailbox = { exists: inbox.length, uidValidity: 42 }; });
@@ -78,6 +83,7 @@ async function serveFixture() {
   parentPort.on('message', (command) => {
     if (command.type === 'answers') answers.push(...command.values);
     if (command.type === 'inbox') inbox = command.values;
+    if (command.type === 'smtpErrors') smtpErrors.push(...command.values);
     parentPort.postMessage({ reads, rawReads, calls, outgoing, remainingAnswers: answers.length });
   });
   const listen = express.application.listen;
@@ -98,10 +104,16 @@ async function fixture(t, inbox = [mime()], directory) {
     fs.writeFileSync(path.join(directory, 'settings.json'), JSON.stringify(settings));
     fs.writeFileSync(path.join(directory, 'calendar.json'), JSON.stringify({ events: [originalEvent], tasks: [], emails: [], lastSync: null }));
     fs.writeFileSync(path.join(directory, 'traces.json'), '[]');
+    fs.writeFileSync(path.join(directory, 'infra.json'), JSON.stringify({
+      postgres: { enabled: false },
+      redis: { enabled: false }, mq: { enabled: false }, oss: { enabled: false },
+      auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
+    }, null, 2));
   }
   const worker = new Worker(`(${serveFixture.toString()})()`, { eval: true,
     workerData: { indexUrl: new URL('./index.js', import.meta.url).href, inbox },
-    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_DISABLE_AUTH: '1' } });
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(https?|all|no)_proxy$/i.test(key))),
+      PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' } });
   t.after(() => worker.terminate());
   const [{ port }] = await once(worker, 'message');
   const command = async (value) => { const result = once(worker, 'message'); worker.postMessage(value); return (await result)[0]; };
@@ -151,7 +163,11 @@ test('招聘 API：真实 MIME/PDF 提取入库、原附件下载、重复同步
   assert.equal((await app.request(`/api/recruitment/candidates/${candidate.id}`)).status, 404);
   assert.equal((await app.request(`/api/recruitment/attachments/${attachment.id}`)).status, 404);
   assert.equal((await app.request(`/api/recruitment/attachments/${attachment.id}?mailbox=missing`)).status, 404);
-  assert.equal((await app.request('/api/recruitment/chat', 'POST', { message: 'stale operation' }, { 'X-Mailbox-Id': 'default' })).status, 409);
+  // Workbench-scoped recruitment may explicitly access an owned mailbox after the top bar switches.
+  const scoped = await app.request(`/api/recruitment/candidates/${candidate.id}`, 'GET', undefined, { 'X-Mailbox-Id': 'default' });
+  assert.equal(scoped.status, 200);
+  assert.equal(scoped.body.id, candidate.id);
+  assert.equal((await app.request('/api/recruitment/chat', 'POST', { message: 'unowned mailbox operation' }, { 'X-Mailbox-Id': 'missing' })).status, 409);
   // Original attachment links carry their mailbox and remain usable after switching.
   assert.deepEqual((await app.request(attachment.url)).body, pdf());
   const stored = JSON.parse(fs.readFileSync(path.join(app.directory, 'calendar.json'), 'utf8'));
@@ -224,8 +240,131 @@ test('招聘 API：模型工具生成草稿、审核发送一次、来信改期�
   assert.equal((await restarted.counts()).outgoing.length, 0, '重启也不会重复发送');
 });
 
+test('招聘 API：示例邀约审核后走SMTP、失败可重试，清示例保留实发记录并能处理后续来信', async (t) => {
+  const app = await fixture(t, []);
+  const imported = await app.request('/api/recruitment/demo', 'POST');
+  assert.equal(imported.status, 200);
+  assert.equal(imported.body.added, 3);
+  const candidate = imported.body.candidates[0];
+  const initial = { start: '2030-04-02T14:00:00+08:00', end: '2030-04-02T15:00:00+08:00' };
+  const moved = { start: '2030-04-03T15:00:00+08:00', end: '2030-04-03T16:00:00+08:00' };
+  await app.answers([
+    { action: 'tool', tool: 'draft_interview', arguments: { candidateId: candidate.id, ...initial,
+      subject: '【预置示例】合成面试邀约', body: '您好，请参加面试。\n（注意：当前为预置示例，仅用于演示，不会真实发送邮件）', meetingUrl: '12312312' } },
+    { action: 'answer', content: '草稿已准备，请审核收件人和正文。' },
+  ]);
+  const chat = await app.request('/api/recruitment/chat', 'POST', { message: '生成合成候选人的面试草稿' });
+  assert.equal(chat.status, 200, JSON.stringify(chat.body));
+  const id = chat.body.interviewIds[0];
+  assert.equal((await app.counts()).outgoing.length, 0);
+  const unconfirmed = await app.request(`/api/recruitment/interviews/${id}/send`, 'POST');
+  assert.equal(unconfirmed.status, 500);
+  assert.match(unconfirmed.body.error, /预置|确认|审核/);
+  assert.equal((await app.counts()).outgoing.length, 0);
+  const reviewed = await app.request(`/api/recruitment/interviews/${id}`, 'PUT', {
+    to: 'reviewed-recipient@daylight-test.com', confirmDemoSend: true,
+  });
+  assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body));
+  assert.equal(reviewed.body.subject, '合成面试邀约');
+  assert.doesNotMatch(reviewed.body.body, /预置示例|不会真实发送/);
+  assert.match(reviewed.body.body, /12312312/);
+  assert.equal(reviewed.body.source, 'demo');
+  assert.equal((await app.counts()).outgoing.length, 0, '保存清理后的审核稿不发信');
+  await app.command({ type: 'smtpErrors', values: [{ message: 'Synthetic SMTP authentication rejected', command: 'AUTH', code: 'EAUTH' }] });
+  const failure = await app.request(`/api/recruitment/interviews/${id}/send`, 'POST', { confirmDemoSend: true });
+  assert.equal(failure.status, 500);
+  assert.match(failure.body.error, /SMTP authentication rejected/);
+  const failed = (await app.talent()).interviews.find((item) => item.id === id);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.source, 'demo');
+  assert.deepEqual((await app.state()).events, [originalEvent]);
+  const sent = await app.request(`/api/recruitment/interviews/${id}/send`, 'POST', { confirmDemoSend: true });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(sent.body.status, 'sent');
+  assert.equal(sent.body.source, 'manual');
+  assert.equal(sent.body.originalSource, 'demo');
+  let counts = await app.counts();
+  assert.equal(counts.outgoing.length, 2, '一次失败尝试后再次向SMTP提交');
+  assert.equal(counts.outgoing[1].from, 'hr@example.invalid');
+  assert.equal(counts.outgoing[1].to, reviewed.body.to);
+  assert.equal(counts.outgoing[1].subject, reviewed.body.subject);
+  assert.equal(counts.outgoing[1].text, reviewed.body.body);
+  assert.equal((await app.request(`/api/recruitment/interviews/${id}/send`, 'POST')).status, 200);
+  assert.equal((await app.counts()).outgoing.length, 2, '成功后重复点击不会再次提交SMTP');
+  assert.equal((await app.request('/api/demo', 'DELETE')).status, 200);
+  const remaining = await app.talent();
+  assert.deepEqual(remaining.candidates.map((item) => item.id), [candidate.id]);
+  assert.equal(remaining.candidates[0].source, 'demo', '人才资料继续显示预置来源');
+  assert.ok(remaining.interviews.some((item) => item.id === id && item.status === 'sent'));
+  const attachment = remaining.attachments.find((item) => item.candidateId === candidate.id);
+  assert.ok(attachment, '实发邀约保留候选人简历附件');
+  assert.equal((await app.request(attachment.url)).status, 200);
+  const stateAfterClear = await app.state();
+  assert.ok(stateAfterClear.emails.some((item) => candidate.versions.some((version) => version.emailId === item.id)), '实发邀约保留简历来源邮件');
+  assert.equal(stateAfterClear.events.length, 2);
+  assert.deepEqual(stateAfterClear.events.find((item) => item.id === originalEvent.id), originalEvent);
+  assert.equal(stateAfterClear.events.find((item) => item.id === sent.body.eventId).source, 'recruitment');
+  const beforeReply = stateAfterClear.events;
+  await app.command({ type: 'inbox', values: [mime({ uid: 2, subject: 'Re: Interview', attachment: null,
+    from: reviewed.body.to, inReplyTo: sent.body.messageId, body: 'Please move the interview to April 3, 15:00.' })] });
+  await app.answers([{ kind: 'reschedule', summary: '合成候选人请求改期', ...moved, body: '您好，确认新的面试时间。' }]);
+  const synced = await app.request('/api/sync/qq', 'POST');
+  assert.equal(synced.status, 200);
+  assert.deepEqual(synced.body.errors, []);
+  assert.deepEqual((await app.state()).events, beforeReply);
+  const draft = (await app.talent()).interviews.find((item) => item.previousInterviewId === id);
+  assert.equal(draft.kind, 'reschedule');
+  assert.equal(draft.source, 'manual');
+  assert.equal(draft.to, reviewed.body.to);
+  const rescheduled = await app.request(`/api/recruitment/interviews/${draft.id}/send`, 'POST');
+  assert.equal(rescheduled.status, 200, JSON.stringify(rescheduled.body));
+  assert.equal(rescheduled.body.status, 'sent');
+  counts = await app.counts();
+  assert.equal(counts.outgoing.length, 3);
+  assert.equal(counts.outgoing[2].to, reviewed.body.to);
+  assert.equal(counts.outgoing[2].inReplyTo, '<incoming-2@example.invalid>');
+  const events = (await app.state()).events;
+  assert.equal(events.find((item) => item.id === sent.body.eventId).status, 'cancelled');
+  assert.equal(events.find((item) => item.id === rescheduled.body.eventId).previousEventId, sent.body.eventId);
+  await app.stop();
+  const restarted = await fixture(t, [], app.directory);
+  assert.equal((await restarted.request(`/api/recruitment/interviews/${draft.id}/send`, 'POST')).status, 200);
+  assert.equal((await restarted.counts()).outgoing.length, 0, '清示例及重启后仍保留发送成功状态');
+});
+
+test('招聘 API：模糊SMTP错误保留unknown，重复请求及重启均不再次发送', async (t) => {
+  const app = await fixture(t);
+  const candidate = await ingest(app);
+  await app.answers([
+    { action: 'tool', tool: 'draft_interview', arguments: { candidateId: candidate.id,
+      start: '2030-04-02T14:00:00+08:00', end: '2030-04-02T15:00:00+08:00',
+      subject: '合成面试邀约', body: '您好，请参加面试。' } },
+    { action: 'answer', content: '请审核草稿。' },
+  ]);
+  const chat = await app.request('/api/recruitment/chat', 'POST', { message: '生成面试草稿' });
+  assert.equal(chat.status, 200, JSON.stringify(chat.body));
+  const id = chat.body.interviewIds[0];
+  await app.command({ type: 'smtpErrors', values: ['Synthetic SMTP connection lost without delivery receipt'] });
+  const route = `/api/recruitment/interviews/${id}/send`;
+  const failure = await app.request(route, 'POST');
+  assert.equal(failure.status, 500);
+  assert.match(failure.body.error, /connection lost/);
+  assert.equal((await app.talent()).interviews.find(item => item.id === id).status, 'unknown');
+  assert.equal((await app.counts()).outgoing.length, 1);
+  assert.deepEqual((await app.state()).events, [originalEvent]);
+  assert.equal((await app.request(route, 'POST')).status, 500);
+  assert.equal((await app.talent()).interviews.find(item => item.id === id).status, 'unknown');
+  assert.equal((await app.counts()).outgoing.length, 1, '模糊失败后再次点击不提交SMTP');
+  await app.stop();
+  const restarted = await fixture(t, [], app.directory);
+  assert.equal((await restarted.request(route, 'POST')).status, 500);
+  assert.equal((await restarted.talent()).interviews.find(item => item.id === id).status, 'unknown');
+  assert.equal((await restarted.counts()).outgoing.length, 0, '重启仍从持久状态阻断发送');
+  assert.deepEqual((await restarted.state()).events, [originalEvent]);
+});
+
 test('招聘 API：飞书凭据保存但不回传；普通附件重试不丢失原日程与待办关联', async (t) => {
-  const app = await fixture(t, [mime({ subject: 'Invoice document', attachment: pdf('Invoice subtotal and reference. This document is not a personal resume.') })]);
+  const app = await fixture(t, [mime({ subject: 'Project document', attachment: pdf('Synthetic project document for review. This document is not a personal resume.') })]);
   const secret = 'synthetic-feishu-secret';
   const configured = await app.request('/api/settings', 'PUT', { feishu: { appId: 'cli_synthetic', appSecret: secret, ownerId: 'ou_synthetic' } });
   assert.equal(configured.status, 200);
@@ -235,24 +374,24 @@ test('招聘 API：飞书凭据保存但不回传；普通附件重试不丢失�
   assert.doesNotMatch(JSON.stringify((await app.state()).settings), /synthetic-feishu-secret/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(app.directory, 'settings.json'), 'utf8')).feishu.appSecret, secret);
   await app.answers([{ error: 'Synthetic extraction temporarily unavailable' }, { isResume: false },
-    { category: 'invoice', priority: 'normal', summary: '发票待核对',
-      events: [{ title: 'Invoice review', start: '2030-05-01T10:00:00+08:00', end: '2030-05-01T11:00:00+08:00' }],
-      tasks: [{ title: '核对发票', priority: 'normal' }] }]);
+    { category: 'notice', priority: 'normal', summary: '项目资料待核对',
+      events: [{ title: 'Document review', start: '2030-05-01T10:00:00+08:00', end: '2030-05-01T11:00:00+08:00' }],
+      tasks: [{ title: '核对项目资料', priority: 'normal' }] }]);
   const synced = await app.request('/api/sync/qq', 'POST');
   assert.equal(synced.status, 200);
   assert.deepEqual(synced.body.errors, []);
   const before = await app.state();
-  assert.equal(before.emails[0].category, 'invoice');
+  assert.equal(before.emails[0].category, 'notice');
   assert.equal(before.emails[0].eventIds.length, 1);
   assert.equal(before.emails[0].taskIds.length, 1);
   const attachment = (await app.talent()).attachments[0];
   assert.equal(attachment.status, 'failed');
-  await app.answers([{ isResume: false, summary: '这是一份发票。', profile: null }]);
+  await app.answers([{ isResume: false, summary: '这是一份项目资料。', profile: null }]);
   const retried = await app.request(`/api/recruitment/attachments/${attachment.id}/retry`, 'POST');
   assert.equal(retried.status, 200, JSON.stringify(retried.body));
   const after = await app.state();
   assert.equal(after.emails.length, 1);
-  assert.equal(after.emails[0].category, 'invoice');
+  assert.equal(after.emails[0].category, 'notice');
   assert.deepEqual(after.emails[0].eventIds, before.emails[0].eventIds);
   assert.deepEqual(after.emails[0].taskIds, before.emails[0].taskIds);
   assert.deepEqual(after.events, before.events);
@@ -287,4 +426,13 @@ test('招聘 API：未确定分类的附件重试失败结束日志，再次恢�
   const calls = (await app.counts()).calls.length;
   assert.equal((await app.request('/api/sync/qq', 'POST')).body.duplicate, 1);
   assert.equal((await app.counts()).calls.length, calls);
+});
+
+test('招聘 API：工作台绑定的非活动邮箱可以读取，未拥有的邮箱仍拒绝', async (t) => {
+  const app = await fixture(t, []);
+  const bound = await app.request('/api/recruitment', 'GET', undefined, { 'X-Mailbox-Id': 'secondary' });
+  assert.equal(bound.status, 200);
+  assert.equal(bound.body.mailboxId, 'secondary');
+  const missing = await app.request('/api/recruitment', 'GET', undefined, { 'X-Mailbox-Id': 'missing-box' });
+  assert.equal(missing.status, 409);
 });

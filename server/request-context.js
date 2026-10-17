@@ -13,3 +13,8 @@ export function getRequestUserId() {
 export function getRequestUser() {
   return storage.getStore()?.user || null;
 }
+
+/** Storage wrappers preserve authentication context when invoked by HTTP or jobs. */
+export function getRequestContext() {
+  return storage.getStore() || {};
+}

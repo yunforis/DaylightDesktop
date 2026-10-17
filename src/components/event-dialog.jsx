@@ -9,8 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useWorkspace } from '@/context/workspace';
-import { createdIds, isCancelled, eventStatus } from '@/lib/domain';
-import { clock, shanghaiDate, shiftDay, today } from '@/lib/time';
+import { createdIds, findManualConflicts, isCancelled, eventStatus } from '@/lib/domain';
+import { clock, eventRange, shanghaiDate, shiftDay, today } from '@/lib/time';
 
 function linkedMails(event, emails) {
   if (!event) return [];
@@ -77,42 +77,94 @@ export function EventDialog() {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [conflicts, setConflicts] = useState([]);
+  const [forceSave, setForceSave] = useState(false);
+  // 只在打开/切换目标时灌入表单；冲突提示等本地状态变化不得清空已填名称
+  const openKey = eventModal
+    ? (eventModal.event?.id || `new:${eventModal.date || ''}`)
+    : '';
 
   React.useEffect(() => {
-    if (!eventModal) { setForm(null); setError(''); return; }
+    if (!eventModal || !openKey) {
+      setForm(null);
+      setError('');
+      setConflicts([]);
+      setForceSave(false);
+      return;
+    }
+    const current = events.find((item) => item.id === eventModal.event?.id) || eventModal.event;
     const fallbackCategory = categories[0]?.id || 'work';
-    const category = categories.some((item) => item.id === event?.category) ? event.category : fallbackCategory;
+    const category = categories.some((item) => item.id === current?.category) ? current.category : fallbackCategory;
     setForm({
-      title: event?.title || '',
-      startDate: event ? shanghaiDate(event.start) : eventModal.date || today,
-      endDate: event ? shanghaiDate(event.allDay ? Date.parse(event.end) - 1 : event.end) : eventModal.date || today,
-      startTime: event ? clock(event.start) : '09:00',
-      endTime: event ? clock(event.end) : '10:00',
-      allDay: event?.allDay || false,
+      title: current?.title || '',
+      startDate: current ? shanghaiDate(current.start) : eventModal.date || today,
+      endDate: current ? shanghaiDate(current.allDay ? Date.parse(current.end) - 1 : current.end) : eventModal.date || today,
+      startTime: current ? clock(current.start) : '09:00',
+      endTime: current ? clock(current.end) : '10:00',
+      allDay: current?.allDay || false,
       category,
-      location: event?.location || '',
-      description: event?.description || '',
+      location: current?.location || '',
+      description: current?.description || '',
     });
-  }, [eventModal, event, categories]);
+    setError('');
+    setConflicts([]);
+    setForceSave(false);
+  }, [openKey]); // eslint-disable-line react-hooks/exhaustive-deps -- 刻意不跟 event/categories 重同步，避免冲突提示后清空输入
 
   if (!form) return null;
-  const change = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const change = (key, value) => {
+    setForceSave(false);
+    setConflicts([]);
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  function buildPayload() {
+    const start = `${form.startDate}T${form.allDay ? '00:00' : form.startTime}:00+08:00`;
+    const end = `${form.allDay ? shiftDay(form.endDate, 1) : form.endDate}T${form.allDay ? '00:00' : form.endTime}:00+08:00`;
+    return {
+      title: form.title.trim(), start, end, allDay: form.allDay,
+      category: form.category, location: form.location, description: form.description,
+    };
+  }
+
+  async function persist(payload) {
+    setBusy(true); setError('');
+    try {
+      await saveEvent(eventModal, payload);
+      setEventModal(null);
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
     if (cancelled) return;
     if (!form.title.trim()) { setError('请填写日程名称'); return; }
-    const start = `${form.startDate}T${form.allDay ? '00:00' : form.startTime}:00+08:00`;
-    const end = `${form.allDay ? shiftDay(form.endDate, 1) : form.endDate}T${form.allDay ? '00:00' : form.endTime}:00+08:00`;
-    if (Date.parse(end) <= Date.parse(start)) { setError('结束时间需要晚于开始时间'); return; }
-    setBusy(true); setError('');
-    try {
-      await saveEvent(eventModal, {
-        title: form.title.trim(), start, end, allDay: form.allDay,
-        category: form.category, location: form.location, description: form.description,
-      });
-      setEventModal(null);
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+    const payload = buildPayload();
+    if (Date.parse(payload.end) <= Date.parse(payload.start)) {
+      setError('结束时间需要晚于开始时间');
+      return;
+    }
+    if (!forceSave) {
+      const hits = findManualConflicts(payload, events, event?.id);
+      if (hits.length) {
+        setConflicts(hits);
+        setError('该时段已有其他日程，请确认是否仍要保存。');
+        return;
+      }
+    }
+    await persist(payload);
+  }
+
+  async function onForceSave() {
+    if (cancelled || busy) return;
+    if (!form.title.trim()) { setError('请填写日程名称'); return; }
+    const payload = buildPayload();
+    if (Date.parse(payload.end) <= Date.parse(payload.start)) {
+      setError('结束时间需要晚于开始时间');
+      return;
+    }
+    setForceSave(true);
+    await persist(payload);
   }
 
   const eventEnded = Boolean(event?.end && Date.parse(event.end) <= Date.now());
@@ -229,6 +281,20 @@ export function EventDialog() {
             />
           )}
 
+          {conflicts.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+              <p className="font-medium text-amber-900 dark:text-amber-100">时段冲突 · {conflicts.length} 项</p>
+              <ul className="space-y-1.5">
+                {conflicts.slice(0, 5).map((item) => (
+                  <li key={item.id} className="text-xs leading-relaxed text-amber-950/80 dark:text-amber-50/80">
+                    <span className="font-medium">{item.title || '未命名'}{item.workbenchName ? ` · ${item.workbenchName}` : ''}</span>
+                    <span className="mt-0.5 block text-muted-foreground">{eventRange(item)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">可改时间后重试，或确认仍要保存（日程会照常写入）。</p>
+            </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter className="gap-2 sm:justify-between">
             {event ? (
@@ -242,7 +308,12 @@ export function EventDialog() {
             ) : <span />}
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={() => setEventModal(null)}>关闭</Button>
-              {!cancelled && (
+              {!cancelled && conflicts.length > 0 && (
+                <Button type="button" variant="secondary" disabled={busy} onClick={onForceSave}>
+                  {busy && <LoaderCircle className="size-4 animate-spin" />}仍要保存
+                </Button>
+              )}
+              {!cancelled && conflicts.length === 0 && (
                 <Button type="submit" disabled={busy}>
                   {busy && <LoaderCircle className="size-4 animate-spin" />}保存
                 </Button>

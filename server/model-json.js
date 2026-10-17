@@ -1,4 +1,5 @@
 import { sanitizeSnapshot, usageMetrics } from './traces.js';
+import { modelFetch } from './model-fetch.js';
 
 export function parseModelJson(content) {
   const text = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
@@ -32,7 +33,7 @@ export async function callJsonModel(settings, messages, { context, label = '模�
     thought: '将当前业务所需资料交给配置的模型，返回结构化结果；日志只记录调用元数据。', tool_calls: [tool] });
   const signal = AbortSignal.timeout(timeoutMs);
   try {
-    const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` }, body: JSON.stringify(request), signal });
+    const response = await modelFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` }, body: JSON.stringify(request), signal });
     const result = await response.json();
     const content = result.choices?.[0]?.message?.content || '';
     tool.result_summary = { http_status: response.status, finish_reason: result.choices?.[0]?.finish_reason || null, output_characters: content.length };
@@ -51,7 +52,10 @@ export async function callJsonModel(settings, messages, { context, label = '模�
     if (span) context.finishSpan(span, { observation: '已收到结构化结果，交由业务工具核对并处理。', output_snapshot: { fields: Object.keys(parsed) } });
     return parsed;
   } catch (error) {
-    const detail = error.message === 'fetch failed' ? '模型接口连接失败，请检查网络或接口地址后重试。' : error.message;
+    let detail = error.message;
+    if (error.message === 'fetch failed' || /UND_ERR_SOCKET|ECONNRESET|socket hang up/i.test(String(error.cause?.code || error.cause?.message || ''))) {
+      detail = '模型接口连接失败（中转站断开或不可达）。请检查 Base URL/网络，或换一个可用的 OpenAI 兼容中转后重试。';
+    }
     const message = sanitizeSnapshot(signal.aborted ? `模型请求超过 ${timeoutMs / 1000} 秒，请重试。` : detail,
       [settings.apiKey, settings.authorizationCode, settings.feishu?.appSecret]);
     if (span) context.finishSpan(span, { status: 'failed', error: message, observation: message });

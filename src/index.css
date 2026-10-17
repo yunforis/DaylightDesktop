@@ -515,6 +515,10 @@ html[data-accent] .landing-atmosphere,
 .workspace-shell {
   position: relative;
   isolation: isolate;
+  /* 工作区锁在视口内，只有主内容区滚动，侧栏账号区不会跟着整页上移 */
+  height: 100svh;
+  max-height: 100svh;
+  overflow: hidden;
 }
 
 .workspace-atmosphere {
@@ -530,8 +534,9 @@ html:not([data-accent]) .workspace-atmosphere {
 }
 
 .workspace-shell > *:not(.workspace-atmosphere) {
-  position: relative;
+  /* 勿设 position:relative，以免干扰侧栏 fixed 贴视口 */
   z-index: 1;
+  min-height: 0;
 }
 
 html[data-accent] [data-slot="sidebar-inset"] {
@@ -1205,6 +1210,12 @@ html[data-accent] .sticky.top-0.border-b {
   outline-offset: 1px;
 }
 
+/* 已改用自定义 Dialog 展示「另外 N 个」；若 FC 仍误开 popover 则直接藏掉 */
+.studio-calendar .fc-more-popover,
+.fc-more-popover {
+  display: none !important;
+}
+
 /* 悬停 / 键盘聚焦：日期格高亮，并显示右上角 ➕ */
 .studio-calendar [role="cell"]:has(.fc-daylight-cell-top) {
   cursor: default;
@@ -1222,7 +1233,9 @@ html[data-accent] .sticky.top-0.border-b {
   pointer-events: auto;
 }
 
-.studio-calendar [role="listitem"] {
+/* 仅月视图 dayGrid 的事件行；timegrid 的 listitem 不能加左右 margin，否则并排重叠会挤乱 */
+.studio-calendar .fc-daygrid-body [role="listitem"],
+.studio-calendar .fc-daygrid-event {
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -1231,7 +1244,8 @@ html[data-accent] .sticky.top-0.border-b {
   font-size: 0.6875rem;
 }
 
-.studio-calendar [role="listitem"]:hover {
+.studio-calendar .fc-daygrid-body [role="listitem"]:hover,
+.studio-calendar .fc-daygrid-event:hover {
   background: color-mix(in oklab, var(--foreground) 5%, transparent) !important;
 }
 
@@ -1255,22 +1269,132 @@ html[data-accent] .sticky.top-0.border-b {
   color: var(--foreground);
 }
 
-/* 周/日：studio-admin 风格实心色块 */
-.studio-calendar .fc-daylight-block.fc-daylight-solid {
-  border: none !important;
-  border-radius: 0.45rem;
-  box-shadow: none;
+/* 周/日：苹果风格半透明块 + 左边色条；去掉 classic 黑/灰描边环 */
+.studio-calendar {
+  --fc-classic-ring-color: transparent;
+  --fc-event-border-color: transparent;
 }
-.studio-calendar [role="listitem"]:has(.fc-daylight-solid),
-.studio-calendar a:has(.fc-daylight-solid),
-.studio-calendar [class*="event"]:has(.fc-daylight-solid) {
-  border: none !important;
-  background: transparent !important;
+
+/* FC React v7 classic 用哈希类名；A3h = 0 0 0 1px 描边环（丑边框来源） */
+.studio-calendar .fc-classic-A3h,
+.studio-calendar [class*="fc-classic"]:has(> .fc-daylight-block),
+.studio-calendar [class*="fc-classic"]:has(> .fc-daylight-pill),
+.studio-calendar [class*="fc-classic"]:has(> .fc-daylight-row) {
   box-shadow: none !important;
-  margin: 1px 2px !important;
+  outline: none !important;
+  border-color: transparent !important;
+}
+
+.studio-calendar .fc-daylight-block {
+  /* 不用 border:none，避免盖掉内联左边色条 */
+  border-top: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+  border-left-width: 3px !important;
+  border-left-style: solid !important;
+  border-radius: 0 0.45rem 0.45rem 0;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0.25rem 0.4rem 0.25rem 0.45rem !important;
+  container-type: inline-size;
+}
+
+/* FC v7 哈希宿主：重叠列之间留缝，避免贴死 */
+.studio-calendar [class*="fc-classic"]:has(> .fc-daylight-block) {
+  margin-inline: 1.5px !important;
+  border-radius: 0.45rem !important;
+  overflow: hidden;
+}
+
+.studio-calendar .fc-timegrid-event,
+.studio-calendar a.fc-timegrid-event,
+.studio-calendar [class*="timegrid"] [class*="event"],
+.studio-calendar [class*="timeGrid"] [class*="event"] {
+  border: none !important;
+  border-width: 0 !important;
+  background: transparent !important;
+  /* classic .fc-classic-A3h 的 0 0 0 1px 描边是丑边框来源 */
+  box-shadow: none !important;
+  outline: none !important;
+  margin: 0 2px !important;
   padding: 0 !important;
   overflow: hidden;
   border-radius: 0.45rem;
+  min-width: 0 !important;
+}
+
+.studio-calendar .fc-timegrid-event:hover,
+.studio-calendar .fc-timegrid-event:focus,
+.studio-calendar .fc-timegrid-event:focus-visible,
+.studio-calendar a.fc-timegrid-event:hover,
+.studio-calendar a.fc-timegrid-event:focus-visible {
+  box-shadow: none !important;
+  outline: none !important;
+  filter: brightness(0.97);
+}
+
+.studio-calendar .fc-timegrid-event-harness {
+  margin: 0 !important;
+}
+
+.studio-calendar .fc-timegrid-event .fc-event-main,
+.studio-calendar .fc-timegrid-event .fc-event-main-frame {
+  height: 100%;
+  min-width: 0;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+@container (max-width: 4.5rem) {
+  .fc-daylight-block-time {
+    display: none;
+  }
+}
+
+/* 月视图「另外 N 个」链接（点击走自定义 Dialog） */
+.studio-calendar .fc-daygrid-body .fc-daylight-more,
+.studio-calendar .fc-daygrid-body a.fc-daylight-more {
+  display: inline-flex !important;
+  align-items: center;
+  margin: 1px 4px !important;
+  padding: 0.15rem 0.4rem !important;
+  border: none !important;
+  border-radius: 0.3rem !important;
+  background: color-mix(in oklab, var(--foreground) 5%, transparent) !important;
+  color: var(--muted-foreground) !important;
+  box-shadow: none !important;
+  font-size: 0.6875rem !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+}
+
+.studio-calendar .fc-daygrid-body .fc-daylight-more:hover {
+  background: color-mix(in oklab, var(--foreground) 9%, transparent) !important;
+  color: var(--foreground) !important;
+}
+
+/* 周/日：重叠列间距；内边距避免字贴边 */
+.studio-calendar .fc-timegrid-event {
+  margin: 0 2px !important;
+}
+
+.studio-calendar .fc-daylight-block {
+  padding: 0.25rem 0.4rem 0.25rem 0.45rem !important;
+}
+
+/* 极窄重叠列：收紧内边距 */
+@container (max-width: 2.75rem) {
+  .fc-daylight-block {
+    padding-inline: 0.2rem !important;
+    font-size: 0.625rem !important;
+  }
+}
+
+@container (max-width: 5.5rem) {
+  .fc-daylight-block-time {
+    display: none;
+  }
 }
 
 .studio-calendar [class*="now-indicator"] {
@@ -1337,18 +1461,14 @@ html[data-accent] .sticky.top-0.border-b {
 }
 
 .studio-calendar .fc-daylight-block {
-  border-radius: 0.4rem;
+  border-radius: 0 0.45rem 0.45rem 0;
   height: 100%;
   box-sizing: border-box;
 }
 
-/* 去掉 classic 主题在 timed 事件上的白底描边外壳 */
-.studio-calendar [role="listitem"]:has(.fc-daylight-block),
-.studio-calendar [role="listitem"]:has(.fc-daylight-pill),
-.studio-calendar a:has(.fc-daylight-block),
-.studio-calendar a:has(.fc-daylight-pill),
-.studio-calendar [class*="event"]:has(.fc-daylight-block),
-.studio-calendar [class*="event"]:has(.fc-daylight-pill) {
+/* 月视图 dayGrid 事件：去掉 classic 白底描边，勿波及 timegrid harness */
+.studio-calendar .fc-daygrid-event,
+.studio-calendar a.fc-daygrid-event {
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -1358,13 +1478,12 @@ html[data-accent] .sticky.top-0.border-b {
   padding: 0 !important;
 }
 
-.studio-calendar [role="listitem"]:has(.fc-daylight-block) .fc-daylight-block,
-.studio-calendar a:has(.fc-daylight-block) .fc-daylight-block {
+.studio-calendar .fc-timegrid-event .fc-daylight-block {
   min-height: 100%;
 }
 
-.studio-calendar [role="cell"]:has(.fc-daylight-block):hover {
-  background: color-mix(in oklab, var(--foreground) 3%, transparent);
+.studio-calendar .fc-timegrid-col:hover {
+  background: color-mix(in oklab, var(--foreground) 2%, transparent);
 }
 
 /* 年视图（FC React v7）：role=list 月卡网格 + 点状日程 */
@@ -1569,3 +1688,5 @@ html[data-accent] .sticky.top-0.border-b {
 .studio-calendar [role="listitem"]:has(.fc-daylight-block.is-personal) {
   background: transparent !important;
 }
+
+.fc-daylight-declined { opacity:.55; text-decoration:line-through; }

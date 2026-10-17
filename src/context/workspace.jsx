@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { toast } from 'sonner';
 import { getRequestMailboxId, request, setRequestMailboxId } from '@/lib/api';
 import { syncChanges, withConflicts } from '@/lib/domain';
+import { isActiveJob, useBackgroundJobs } from '@/hooks/use-background-jobs';
 
 const WorkspaceContext = createContext(null);
 const VIEW_KEY = 'daylight.mailbox-view';
@@ -22,6 +23,9 @@ export function WorkspaceProvider({ children }) {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [selectedEmailId, setSelectedEmailId] = useState(() => new URLSearchParams(window.location.search).get('email'));
+  const [selectedEmailMailboxId, setSelectedEmailMailboxId] = useState(() => new URLSearchParams(window.location.search).get('mailbox'));
+  const [highlightQuote, setHighlightQuote] = useState('');
+  const [invoiceExtracting, setInvoiceExtracting] = useState('');
   const [selectedTraceId, setSelectedTraceId] = useState(null);
   const [eventModal, setEventModal] = useState(null);
   const [viewMode, setViewModeState] = useState(() => localStorage.getItem(VIEW_KEY) || 'active');
@@ -32,11 +36,12 @@ export function WorkspaceProvider({ children }) {
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
 
-  const isSyncing = syncing || Boolean(traceData.sync?.running || state?.sync?.running);
+  const [jobsVersion, setJobsVersion] = useState(0);
   const events = useMemo(() => withConflicts(state?.events), [state?.events]);
   const tasks = state?.tasks || [];
   const emails = state?.emails || [];
-  const selectedEmail = emails.find((email) => email.id === selectedEmailId);
+  const selectedEmail = emails.find((email) => email.id === selectedEmailId
+    && (!selectedEmailMailboxId || !email.mailboxId || email.mailboxId === selectedEmailMailboxId));
   const isMixedView = viewMode === 'all' || String(viewMode).startsWith('tag:');
 
   const applyData = useCallback((calendar, logs) => {
@@ -79,6 +84,13 @@ export function WorkspaceProvider({ children }) {
     applyData(calendar.value, logs);
   }, [applyData]);
 
+  const backgroundJobs = useBackgroundJobs(state?.settings.activeMailboxId || '', () => {
+    setJobsVersion((value) => value + 1);
+    reload().catch(() => {});
+  });
+  const isSyncing = syncing || Boolean(traceData.sync?.running || state?.sync?.running)
+    || backgroundJobs.jobs.some((job) => ['mail-sync', 'mail_sync', 'mail.sync'].includes(job.kind) && isActiveJob(job));
+
   async function setViewMode(mode) {
     const next = mode || 'active';
     localStorage.setItem(VIEW_KEY, next);
@@ -86,6 +98,7 @@ export function WorkspaceProvider({ children }) {
     setViewModeState(next);
     mailboxEpoch.current += 1;
     setSelectedEmailId(null);
+    setSelectedEmailMailboxId(null);
     await reload();
   }
 
@@ -94,6 +107,7 @@ export function WorkspaceProvider({ children }) {
     setRequestMailboxId(mailboxId);
     setState(null);
     setSelectedEmailId(null);
+    setSelectedEmailMailboxId(null);
     setSelectedTraceId(null);
     setSyncResult(null);
     setEventModal(null);
@@ -115,6 +129,7 @@ export function WorkspaceProvider({ children }) {
       await reload();
       if (emailId) {
         setSelectedEmailId(emailId);
+        setSelectedEmailMailboxId(settings.activeMailboxId);
         const url = new URL(window.location.href);
         url.searchParams.set('email', emailId);
         window.history.replaceState({}, '', url);
@@ -127,47 +142,97 @@ export function WorkspaceProvider({ children }) {
     }
   }
 
-  function openEmail(id) {
-    if (!emails.some((email) => email.id === id)) {
+  function openEmail(id, mailboxId = null, quote = '') {
+    const email = emails.find((item) => item.id === id && (!mailboxId || !item.mailboxId || item.mailboxId === mailboxId));
+    if (!email) {
       toast.error('本地没有找到这封邮件');
       return;
     }
     setSelectedEmailId(id);
+    setHighlightQuote(typeof quote === 'string' ? quote : '');
+    const sourceMailboxId = email.mailboxId || mailboxId || state?.settings.activeMailboxId;
+    setSelectedEmailMailboxId(sourceMailboxId || null);
     const url = new URL(window.location.href);
     url.searchParams.set('email', id);
-    if (state?.settings.activeMailboxId) url.searchParams.set('mailbox', state.settings.activeMailboxId);
+    if (sourceMailboxId) url.searchParams.set('mailbox', sourceMailboxId);
     if (window.location.href !== url.href) window.history.pushState({}, '', url);
   }
 
   function closeEmail() {
     setSelectedEmailId(null);
+    setSelectedEmailMailboxId(null);
+    setHighlightQuote('');
     const url = new URL(window.location.href);
     url.searchParams.delete('email');
     window.history.replaceState({}, '', url);
   }
 
   async function sync(mode) {
-    if (mode === 'qq' && (!state.settings.mailboxReady || !state.settings.modelReady)) {
-      toast.message('请先完成邮箱与模型配置');
-      return { needSettings: true };
+    if (mode === 'qq') {
+      const mailboxReady = Boolean(state.settings.mailboxReady);
+      const modelReady = Boolean(state.settings.modelReady);
+      if (!mailboxReady || !modelReady) {
+        const tip = !mailboxReady && !modelReady
+          ? '请先完成邮箱与模型配置'
+          : !mailboxReady
+            ? '邮箱尚未配置完整（地址、授权码、收发服务器），请到设置 → 邮箱填写并保存'
+            : '模型尚未配置：请到设置 → 模型填写 API Key 并保存（仅配邮箱不能同步）';
+        toast.message(tip);
+        return {
+          needSettings: true,
+          needMailbox: !mailboxReady,
+          needModel: !modelReady,
+          settingsTab: !mailboxReady ? 'mailbox' : 'model',
+        };
+      }
     }
     setSyncing(true);
     setSelectedTraceId(null);
+    const epoch = mailboxEpoch.current;
     try {
-      const result = await request(`/sync/${mode}`, 'POST');
+      const result = await request(`/sync/${mode}`, 'POST', undefined, { idempotencyKey: crypto.randomUUID() });
+      if (epoch !== mailboxEpoch.current) return result;
+      if (result.job) {
+        backgroundJobs.trackJob(result.job);
+        setSyncResult(null);
+        toast.message('同步任务已提交，可在「后台任务」查看进度');
+        return result;
+      }
       setSyncResult(result);
       await reload();
       const changes = syncChanges(result);
-      if (result.errors.length) toast.error(`${changes ? `${changes}。` : ''}${result.errors.length} 封处理失败`);
+      if (result.errors?.length) toast.error(`${changes ? `${changes}。` : ''}${result.errors.length} 封处理失败`);
       else if (changes) toast.success(changes);
-      else toast.message(result.duplicate ? `${result.duplicate} 封已处理，已跳过` : '没有新增日程或待办');
+      else toast.message(result.duplicate ? `${result.duplicate} 封已处理，已跳过` : '没有新增日程、待办或发票');
       return result;
+    } catch (error) {
+      toast.error('同步未完成，请检查邮箱与模型配置后重试。');
+      await reload().catch(() => {});
+      throw error;
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function extractInvoices(email) {
+    const mailboxId = email.mailboxId || state?.settings.activeMailboxId || '';
+    setInvoiceExtracting(`${mailboxId}:${email.id}`);
+    try {
+      const result = await request(`/emails/${encodeURIComponent(email.id)}/extract-invoices`, 'POST', {}, { mailboxId });
+      await reload();
+      const updated = result.email || result;
+      const count = updated.extraction?.invoices?.length || 0;
+      if (updated.invoiceStatus === 'failed') toast.error('发票提取失败，可查看原件并重试');
+      else if (updated.invoiceStatus === 'partial') toast.message(`已提取 ${count} 张发票，部分附件待重试`);
+      else if (count) toast.success(`已提取 ${count} 张发票`);
+      else toast.message('未在附件中识别到发票，请查看原件');
+      return updated;
     } catch (error) {
       toast.error(error.message);
       await reload().catch(() => {});
       throw error;
     } finally {
-      setSyncing(false);
+      setInvoiceExtracting('');
     }
   }
 
@@ -183,17 +248,41 @@ export function WorkspaceProvider({ children }) {
     toast.success('日程已删除');
   }
 
-  async function changeTaskStatus(id, status) {
-    await request(`/tasks/${encodeURIComponent(id)}`, 'PUT', { status });
-    await reload();
-    toast.success(status === 'done' ? '待办已完成' : '待办已恢复');
+  async function changeTaskStatus(id, status, extra = {}) {
+    try {
+      await request(`/tasks/${encodeURIComponent(id)}`, 'PUT', { status, ...extra });
+      await reload();
+      toast.success(status === 'done' ? '待办已完成' : '待办已恢复');
+    } catch (error) {
+      toast.error(error.message);
+      throw error;
+    }
+  }
+
+  async function updateTask(id, patch) {
+    try {
+      await request(`/tasks/${encodeURIComponent(id)}`, 'PUT', patch);
+      await reload();
+      toast.success('待办已更新');
+    } catch (error) {
+      toast.error(error.message);
+      throw error;
+    }
   }
 
   async function saveSettings(data) {
     const settings = await request('/settings', 'PUT', data);
     if (settings.activeMailboxId !== getRequestMailboxId()) resetMailboxContext(settings.activeMailboxId);
     await reload();
-    toast.success(settings.syncStarted ? `已保存并切换到 ${settings.email}` : '配置已保存');
+    if (settings.mailboxReady && !settings.modelReady) {
+      toast.message('邮箱已保存。同步还需要模型 API Key：请打开「模型」页填写并保存');
+    } else if (!settings.mailboxReady && settings.modelReady) {
+      toast.message('模型已保存。同步还需要完善邮箱授权码与服务器');
+    } else if (settings.syncStarted) {
+      toast.success(`已保存并切换到 ${settings.email || '当前邮箱'}`);
+    } else {
+      toast.success('配置已保存');
+    }
     return settings;
   }
 
@@ -205,14 +294,23 @@ export function WorkspaceProvider({ children }) {
 
   async function feedbackTrace(traceId, action, draft) {
     const epoch = mailboxEpoch.current;
-    const sending = action === 'accepted' && traceData.traces.find((trace) => trace.trace_id === traceId)?.mode === 'qq';
+    const trace = traceData.traces.find((item) => item.trace_id === traceId);
+    const sending = action === 'accepted' && trace?.mode === 'qq';
+    if (sending) {
+      const recipient = emails.find((email) => email.trace_id === traceId);
+      const body = draft ?? recipient?.userDraft ?? trace?.user_draft ?? recipient?.draftReply ?? trace?.draft_reply ?? '';
+      const ok = window.confirm(
+        `确认发送回复？\n\n收件人：${recipient?.replyTo || recipient?.sender || '来信者'}\n主题：Re: ${recipient?.subject || trace?.subject || ''}\n\n正文预览：\n${String(body).slice(0, 280)}${String(body).length > 280 ? '…' : ''}`,
+      );
+      if (!ok) return;
+    }
     const updated = sending
       ? await request(`/traces/${encodeURIComponent(traceId)}/send`, 'POST')
       : await request(`/traces/${encodeURIComponent(traceId)}/feedback`, 'PUT', { action, ...(draft === undefined ? {} : { draft }) });
     if (epoch !== mailboxEpoch.current) return;
     setTraceData((current) => ({
       ...current,
-      traces: current.traces.map((trace) => (trace.trace_id === traceId ? updated : trace)),
+      traces: current.traces.map((item) => (item.trace_id === traceId ? updated : item)),
     }));
     if (action === 'modified') {
       setState((current) => current
@@ -234,7 +332,10 @@ export function WorkspaceProvider({ children }) {
       const params = new URLSearchParams(window.location.search);
       if (params.get('mailbox') && params.get('mailbox') !== getRequestMailboxId()) {
         switchMailbox(params.get('mailbox'), params.get('email')).catch((error) => toast.error(error.message));
-      } else setSelectedEmailId(params.get('email'));
+      } else {
+        setSelectedEmailId(params.get('email'));
+        setSelectedEmailMailboxId(params.get('mailbox'));
+      }
     };
     window.addEventListener('popstate', followUrl);
     return () => window.removeEventListener('popstate', followUrl);
@@ -290,11 +391,13 @@ export function WorkspaceProvider({ children }) {
   }, [traceData.sync]);
 
   const value = {
-    state, loadError, reload, events, tasks, emails, selectedEmail, selectedEmailId,
+    state, loadError, reload, events, tasks, emails, selectedEmail, selectedEmailId, highlightQuote,
     traceData, selectedTraceId, setSelectedTraceId, syncResult, isSyncing,
     eventModal, setEventModal, openEmail, closeEmail, switchMailbox, sync,
-    saveEvent, deleteEvent, changeTaskStatus, saveSettings, clearDemo, feedbackTrace,
+    saveEvent, deleteEvent, changeTaskStatus, updateTask, saveSettings, clearDemo, feedbackTrace,
     viewMode, setViewMode, isMixedView, commandOpen, setCommandOpen,
+    invoiceExtracting, extractInvoices,
+    ...backgroundJobs, jobsVersion,
   };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

@@ -12,13 +12,67 @@ export const mailboxProviders = [
   { id: 'icloud', name: 'iCloud 邮箱', imapHost: 'imap.mail.me.com', smtpHost: 'smtp.mail.me.com', smtpPort: 587 },
   { id: 'yahoo', name: 'Yahoo Mail', imapHost: 'imap.mail.yahoo.com', smtpHost: 'smtp.mail.yahoo.com', smtpPort: 465 },
   { id: 'zoho', name: 'Zoho Mail', imapHost: 'imap.zoho.com', smtpHost: 'smtp.zoho.com', smtpPort: 465 },
+  // 部分接入网络的 993 会断连；143 强制 STARTTLS 已通过证书校验、登录及 INBOX 实连验证。
+  { id: 'shanghaitech', name: '上海科技大学（Coremail）', imapHost: 'mail.shanghaitech.edu.cn', imapPort: 143, imapSecure: false, smtpHost: 'mail.shanghaitech.edu.cn', smtpPort: 465 },
   { id: 'custom', name: '其他邮箱 / 自定义 IMAP·SMTP', imapHost: '', smtpHost: '', smtpPort: 465 },
 ].map((provider) => ({
   ...provider,
-  imapPort: 993,
-  imapSecure: true,
+  imapPort: provider.imapPort ?? 993,
+  imapSecure: provider.imapSecure ?? true,
   smtpSecure: provider.smtpPort === 465,
 }));
+
+/** 根据注册/登录邮箱域名推断 IMAP 预设（仅作预填，用户仍可改）。 */
+export function guessMailboxProvider(email) {
+  const domain = String(email || '').split('@')[1]?.trim().toLowerCase() || '';
+  if (!domain) return 'qq';
+  const map = {
+    'qq.com': 'qq',
+    'foxmail.com': 'qq',
+    '163.com': '163',
+    '126.com': '126',
+    'yeah.net': 'yeah',
+    'gmail.com': 'gmail',
+    'googlemail.com': 'gmail',
+    'outlook.com': 'outlook',
+    'hotmail.com': 'outlook',
+    'live.com': 'outlook',
+    'msn.com': 'outlook',
+    'icloud.com': 'icloud',
+    'me.com': 'icloud',
+    'mac.com': 'icloud',
+    'yahoo.com': 'yahoo',
+    'yahoo.com.cn': 'yahoo',
+    'zoho.com': 'zoho',
+    'shanghaitech.edu.cn': 'shanghaitech',
+    'alumni.shanghaitech.edu.cn': 'shanghaitech',
+  };
+  if (map[domain]) return map[domain];
+  if (domain.endsWith('.exmail.qq.com') || domain.includes('exmail')) return 'foxmail';
+  return 'custom';
+}
+
+function providerFamily(id) {
+  if (id === 'qq' || id === 'foxmail') return 'qq';
+  if (id === 'outlook' || id === 'office365') return 'outlook';
+  if (id === '163' || id === '126' || id === 'yeah') return 'netease';
+  return id;
+}
+
+/** 邮箱地址域名与所选类型明显不符时返回说明，否则 null。 */
+export function providerEmailMismatch(email, providerId) {
+  const expected = guessMailboxProvider(email);
+  const current = String(providerId || '').trim() || 'custom';
+  if (!email || !expected || expected === 'custom' || current === 'custom') return null;
+  if (providerFamily(expected) === providerFamily(current)) return null;
+  const expectedMeta = mailboxProviders.find((item) => item.id === expected);
+  const currentMeta = mailboxProviders.find((item) => item.id === current);
+  return {
+    expected,
+    current,
+    message: `邮箱地址像是「${expectedMeta?.name || expected}」，但类型选成了「${currentMeta?.name || current}」。请把「邮箱类型」改成匹配的预设后再测，否则会连错服务器。`,
+  };
+}
 
 /** tokenPrice* 为可选参考单价（元/百万 Token），随预设填入设置，可改；不是账单。 */
 export const modelProviders = [

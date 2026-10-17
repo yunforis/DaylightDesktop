@@ -1,9 +1,10 @@
+import { normalizeInvitationPreferences } from './invitations-preferences.js';
 import { readSecureJson, writeSecureJson } from './secure-json.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { mailboxProviders, modelProviders, FIELD_HELP } from './providers.js';
+import { mailboxProviders, modelProviders, FIELD_HELP, guessMailboxProvider } from './providers.js';
 import { FETCH_RANGE_OPTIONS, SYNC_STRATEGY_OPTIONS } from './fetch-policy.js';
 import {
   DEFAULT_CALENDAR_CATEGORIES, normalizeCalendarCategories,
@@ -11,18 +12,26 @@ import {
 import {
   DEFAULT_MAIL_FILTERS, FILTER_FIELDS, FILTER_OPS, ensureMailFilters, normalizeMailFilters,
 } from './mail-filters.js';
-import { getRequestUserId } from './request-context.js';
+import { getRequestUser, getRequestUserId, getRequestContext } from './request-context.js';
+import { isProductionRuntime } from './runtime-mode.js';
+import {
+  usesStorageSnapshot, readSnapshotDocument, stageSnapshotDocument,
+  calendarKey, settingsKey, storageStatus,
+} from './storage/index.js';
 
-export { mailboxProviders, modelProviders, FIELD_HELP, FETCH_RANGE_OPTIONS, SYNC_STRATEGY_OPTIONS };
+export { createStorageSnapshot, runStorageSnapshot, withStorageSnapshot, withStorageCommit, withStorageTransaction, commitStorage, flushStorage, discardStorage } from './storage/index.js';
+
+export { mailboxProviders, modelProviders, FIELD_HELP, FETCH_RANGE_OPTIONS, SYNC_STRATEGY_OPTIONS, guessMailboxProvider };
 export { DEFAULT_CALENDAR_CATEGORIES, normalizeCalendarCategories };
 export { DEFAULT_MAIL_FILTERS, FILTER_FIELDS, FILTER_OPS, ensureMailFilters, normalizeMailFilters };
 
 const USER_PREF_KEYS = [
   'baseUrl', 'apiKey', 'model', 'tokenPriceIn', 'tokenPriceOut', 'tokenPriceCachedIn',
-  'calendarCategories', 'mailFilters',
+  'calendarCategories', 'mailFilters', 'invitationPreferences', 'calendarSync', 'activeMailboxId',
 ];
 
 function readRawSettings() {
+  if (usesStorageSnapshot()) return readSnapshotDocument(settingsKey('default'));
   return read('settings', {
     email: '', authorizationCode: '', baseUrl: 'https://api.deepseek.com/v1',
     apiKey: '', model: 'deepseek-chat', fetchLimit: 15, userPrefs: {},
@@ -39,12 +48,47 @@ function normalizeUserPref(pref = {}) {
     tokenPriceCachedIn: pref.tokenPriceCachedIn ?? null,
     calendarCategories: pref.calendarCategories,
     mailFilters: pref.mailFilters,
+    calendarSync: pref.calendarSync,
+    invitationPreferences: normalizeInvitationPreferences(pref.invitationPreferences),
+    activeMailboxId: pref.activeMailboxId || null,
   };
+}
+
+/** 登录用户只看见自己的邮箱；无 ownerUserId 的旧数据留给未登录/测试。 */
+function mailboxOwnerId(mailbox) {
+  return mailbox?.ownerUserId || mailbox?.userId || null;
+}
+
+function emptyOwnedMailbox(userId) {
+  const short = String(userId || 'user').replace(/-/g, '').slice(0, 10);
+  const accountEmail = String(getRequestUser()?.email || '').trim().toLowerCase();
+  const providerId = guessMailboxProvider(accountEmail);
+  const provider = mailboxProviders.find((item) => item.id === providerId) || mailboxProviders[0];
+  return normalizeMailbox({
+    id: `mb-${short}`,
+    ownerUserId: userId,
+    email: accountEmail,
+    authorizationCode: '',
+    provider: provider.id,
+    imapHost: provider.imapHost,
+    imapPort: provider.imapPort,
+    imapSecure: provider.imapSecure,
+    smtpHost: provider.smtpHost,
+    smtpPort: provider.smtpPort,
+    smtpSecure: provider.smtpSecure,
+  });
+}
+
+function mailboxesForUser(allMailboxes, userId) {
+  const all = (allMailboxes || []).map(normalizeMailbox);
+  if (!userId) return all.length ? all : [normalizeMailbox({ id: 'default' })];
+  const owned = all.filter((mailbox) => mailboxOwnerId(mailbox) === userId);
+  if (owned.length) return owned.map((mailbox) => ({ ...mailbox, ownerUserId: userId }));
+  return [emptyOwnedMailbox(userId)];
 }
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const directory = process.env.DAYLIGHT_DATA_DIR || path.join(root, 'data');
-fs.mkdirSync(directory, { recursive: true });
 
 export function today() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
@@ -77,14 +121,17 @@ function seed() {
 function read(name, initial, targetDirectory = directory) {
   const filename = path.join(targetDirectory, `${name}.json`);
   if (!fs.existsSync(filename)) write(name, initial, targetDirectory);
+  // [desktop patch] settings 含邮箱授权码与模型 API Key，落盘加密；其余 JSON 保持明文。
   return name === 'settings' ? readSecureJson(filename) : JSON.parse(fs.readFileSync(filename, 'utf8'));
 }
 
 function write(name, data, targetDirectory = directory) {
   fs.mkdirSync(targetDirectory, { recursive: true });
   const filename = path.join(targetDirectory, `${name}.json`);
-  if (name === 'settings') writeSecureJson(filename, data);
-  else { fs.writeFileSync(`${filename}.tmp`, JSON.stringify(data, null, 2)); fs.renameSync(`${filename}.tmp`, filename); }
+  if (name === 'settings') { writeSecureJson(filename, data); return; }
+  // [desktop patch] 非 settings 走临时文件 + rename，避免崩溃时留下半截 JSON。
+  fs.writeFileSync(`${filename}.tmp`, JSON.stringify(data, null, 2));
+  fs.renameSync(`${filename}.tmp`, filename);
 }
 
 export const MAILBOX_TAG_OPTIONS = [
@@ -125,14 +172,22 @@ export function normalizeMailbox(mailbox) {
 
 export function readSettings() {
   const stored = readRawSettings();
-  const mailboxes = stored.mailboxes?.length ? stored.mailboxes.map(normalizeMailbox) : [normalizeMailbox({
+  const userId = getRequestUserId();
+  const legacyMailboxes = stored.mailboxes?.length ? stored.mailboxes.map(normalizeMailbox) : [normalizeMailbox({
     id: 'default', email: stored.email || '', authorizationCode: stored.authorizationCode || '',
     fetchLimit: stored.fetchLimit || 15, provider: stored.provider || 'qq',
   })];
-  const activeMailboxId = mailboxes.some((mailbox) => mailbox.id === stored.activeMailboxId) ? stored.activeMailboxId : mailboxes[0].id;
-  const current = mailboxes.find((mailbox) => mailbox.id === activeMailboxId);
-  const userId = getRequestUserId();
+  const mailboxes = mailboxesForUser(legacyMailboxes, userId);
   const userPref = userId && stored.userPrefs?.[userId] ? normalizeUserPref(stored.userPrefs[userId]) : null;
+  const explicitMailboxId = getRequestContext().mailboxId;
+  if (explicitMailboxId !== undefined && !legacyMailboxes.some(box => box.id === explicitMailboxId && (!userId || mailboxOwnerId(box) === userId))) {
+    throw Object.assign(new Error('Mailbox does not belong to this owner'), { status: 403, code: 'STORAGE_MAILBOX_FORBIDDEN' });
+  }
+  const preferredActive = explicitMailboxId ?? (userPref?.activeMailboxId || stored.activeMailboxId);
+  const activeMailboxId = mailboxes.some((mailbox) => mailbox.id === preferredActive)
+    ? preferredActive
+    : mailboxes[0].id;
+  const current = mailboxes.find((mailbox) => mailbox.id === activeMailboxId);
   const source = userPref ? { ...stored, ...userPref } : stored;
   const calendarCategories = normalizeCalendarCategories(
     source.calendarCategories?.length ? source.calendarCategories : DEFAULT_CALENDAR_CATEGORIES,
@@ -142,13 +197,20 @@ export function readSettings() {
       ? source.mailFilters
       : DEFAULT_MAIL_FILTERS,
   );
-  return {
+  const merged = {
     tokenPriceIn: null, tokenPriceOut: null, tokenPriceCachedIn: null, ...stored, ...current, ...userPref,
     mailboxes, activeMailboxId, calendarCategories, mailFilters,
+    calendarSync: userId ? stored.userPrefs?.[userId]?.calendarSync || stored.calendarSync || {oauthApps:{},connections:[]} : stored.calendarSync,
+    invitationPreferences: normalizeInvitationPreferences(source.invitationPreferences),
     userPrefs: stored.userPrefs || {},
     modelScope: userPref ? 'user' : 'shared',
     prefsUserId: userId || null,
   };
+  // 用户偏好里空的 apiKey 不要盖掉共享演示 Key
+  if (userPref && !merged.apiKey && stored.apiKey) merged.apiKey = stored.apiKey;
+  if (userPref && !merged.baseUrl && stored.baseUrl) merged.baseUrl = stored.baseUrl;
+  if (userPref && !merged.model && stored.model) merged.model = stored.model;
+  return merged;
 }
 
 export function saveSettings(settings) {
@@ -156,20 +218,45 @@ export function saveSettings(settings) {
   const userId = getRequestUserId();
   const {
     baseUrl, apiKey, model, tokenPriceIn, tokenPriceOut, tokenPriceCachedIn, activeMailboxId, mailboxes,
-    calendarCategories, mailFilters, feishu,
+    calendarCategories, mailFilters, invitationPreferences, feishu,
+    ragEnabled, ragEmbeddings, embeddingModel,
   } = settings;
+
+  const incomingMailboxes = (mailboxes || []).map(normalizeMailbox);
+  if (usesStorageSnapshot() && userId) {
+    const others = new Set((stored.mailboxes || []).filter(box => mailboxOwnerId(box) !== userId).map(box => box.id));
+    if (incomingMailboxes.some(box => others.has(box.id))) {
+      throw Object.assign(new Error('Mailbox id belongs to another owner'), { status: 403, code: 'STORAGE_MAILBOX_FORBIDDEN' });
+    }
+  }
+  let nextMailboxes;
+  if (userId) {
+    const others = (stored.mailboxes || [])
+      .map(normalizeMailbox)
+      .filter((mailbox) => mailboxOwnerId(mailbox) !== userId);
+    const owned = incomingMailboxes.map((mailbox) => ({ ...mailbox, ownerUserId: userId }));
+    nextMailboxes = [...others, ...owned];
+  } else {
+    nextMailboxes = incomingMailboxes.length ? incomingMailboxes : (stored.mailboxes || []);
+  }
 
   const shared = {
     ...stored,
-    activeMailboxId,
-    mailboxes,
+    activeMailboxId: userId ? stored.activeMailboxId : activeMailboxId,
+    mailboxes: nextMailboxes,
     ...(feishu ? { feishu } : (stored.feishu ? { feishu: stored.feishu } : {})),
+    ragEnabled: ragEnabled === undefined ? (stored.ragEnabled !== false) : Boolean(ragEnabled),
+    ragEmbeddings: ragEmbeddings === undefined ? (stored.ragEmbeddings === true) : Boolean(ragEmbeddings),
+    embeddingModel: embeddingModel === undefined
+      ? (stored.embeddingModel || '')
+      : String(embeddingModel || '').trim(),
   };
 
   const modelFields = {
     baseUrl, apiKey, model, tokenPriceIn, tokenPriceOut, tokenPriceCachedIn,
     calendarCategories: normalizeCalendarCategories(calendarCategories),
     mailFilters: normalizeMailFilters(mailFilters),
+    invitationPreferences: normalizeInvitationPreferences(invitationPreferences),
   };
 
   let payload;
@@ -179,6 +266,7 @@ export function saveSettings(settings) {
       ...prevPref,
       ...modelFields,
       apiKey: apiKey || prevPref.apiKey || '',
+      activeMailboxId: activeMailboxId || prevPref.activeMailboxId || null,
     };
     payload = {
       ...shared,
@@ -190,6 +278,7 @@ export function saveSettings(settings) {
       tokenPriceCachedIn: stored.tokenPriceCachedIn ?? null,
       calendarCategories: stored.calendarCategories,
       mailFilters: stored.mailFilters,
+      invitationPreferences: stored.invitationPreferences,
       userPrefs: {
         ...(stored.userPrefs || {}),
         [userId]: nextPref,
@@ -203,11 +292,8 @@ export function saveSettings(settings) {
     };
   }
 
-  write('settings', payload);
-  import('./infra/calendar-pg.js').then(({ calendarPgEnabled, upsertAppSettings }) => {
-    if (!calendarPgEnabled()) return;
-    upsertAppSettings(payload).catch(() => {});
-  }).catch(() => {});
+  if (usesStorageSnapshot()) stageSnapshotDocument(settingsKey('default'), payload);
+  else write('settings', payload);
 }
 
 // The existing mailbox keeps its original files. New accounts start with empty data.
@@ -216,105 +302,49 @@ export function mailboxDirectory(mailboxId = readSettings().activeMailboxId) {
 }
 
 export function readStore(mailboxId = readSettings().activeMailboxId) {
+  if (usesStorageSnapshot()) return { tasks: [], ...readSnapshotDocument(calendarKey(mailboxId)) };
   return { tasks: [], ...read('calendar', mailboxId === 'default' ? seed() : { events: [], emails: [], tasks: [], lastSync: null }, mailboxDirectory(mailboxId)) };
 }
 
 export function saveStore(data, mailboxId = readSettings().activeMailboxId) {
   const payload = { ...data, updatedAt: new Date().toISOString() };
-  write('calendar', payload, mailboxDirectory(mailboxId));
-  // 启用 PostgreSQL 时双写：库为权威副本，本地 JSON 作缓存与离线回退。
-  import('./infra/calendar-pg.js').then(({ calendarPgEnabled, upsertMailboxCalendar }) => {
-    if (!calendarPgEnabled()) return;
-    upsertMailboxCalendar(mailboxId, payload).catch(() => {});
-  }).catch(() => {});
+  if (usesStorageSnapshot()) stageSnapshotDocument(calendarKey(mailboxId), payload);
+  else write('calendar', payload, mailboxDirectory(mailboxId));
 }
 
 /** 外部日历 OAuth / CalDAV 连接（写在 settings.json，不经 userPrefs 裁剪）。 */
 export function readCalendarSync() {
-  return readRawSettings().calendarSync || { oauthApps: {}, connections: [] };
+  const stored=readRawSettings(), userId=getRequestUserId();
+  if(userId) return stored.userPrefs?.[userId]?.calendarSync || stored.calendarSync || {oauthApps:{},connections:[]};
+  return stored.calendarSync || { oauthApps: {}, connections: [] };
 }
 
 export function saveCalendarSync(calendarSync) {
   const stored = readRawSettings();
-  const payload = { ...stored, calendarSync };
-  write('settings', payload);
-  import('./infra/calendar-pg.js').then(({ calendarPgEnabled, upsertAppSettings }) => {
-    if (!calendarPgEnabled()) return;
-    upsertAppSettings(payload).catch(() => {});
-  }).catch(() => {});
+  const userId=getRequestUserId();
+  const payload = userId ? {...stored,userPrefs:{...stored.userPrefs,[userId]:{...stored.userPrefs?.[userId],calendarSync}}} : { ...stored, calendarSync };
+  if (usesStorageSnapshot()) stageSnapshotDocument(settingsKey('default'), payload);
+  else write('settings', payload);
   return calendarSync;
 }
 
 export function calendarStorageInfo() {
-  let configured = false;
-  let connected = false;
-  try {
-    const infraPath = path.join(directory, 'infra.json');
-    if (fs.existsSync(infraPath)) {
-      const infra = readSecureJson(infraPath);
-      configured = infra?.postgres?.enabled === true;
-    }
-  } catch { /* ignore */ }
-  // 运行时是否真正连上池（enabled 但连不上时仍回退 JSON）
-  try {
-    // lazy require via dynamic path avoided; probe file flag from last boot note is enough for UI
-    connected = configured;
-  } catch { /* ignore */ }
-  const primary = configured && connected ? 'postgres' : 'json';
+  const status = storageStatus();
+  const configured = usesStorageSnapshot();
+  const connected = configured && status.connected;
+  const primary = configured ? 'postgres' : 'json';
   return {
     primary,
     configured,
-    cache: 'json',
-    note: primary === 'postgres'
-      ? '默认已启用 PostgreSQL：日程/邮件/待办写入数据库，本地 JSON 为缓存与离线回退；启动时取较新一侧回填。连不上库时自动回退 JSON。'
-      : (configured
-        ? 'PostgreSQL 已配置但当前未连通，已回退本地 JSON；请检查本机数据库后重启服务。'
-        : '当前使用本地 JSON。默认配置会尝试启用 PostgreSQL（连不上则自动回退）。'),
+    connected,
+    cache: configured ? 'snapshot' : 'json',
+    note: configured ? 'PostgreSQL 快照读取；修改需显式提交，版本冲突拒绝覆盖，无文件回退。' : '本地 JSON 开发模式。',
   };
 }
 
-export async function hydrateStoreFromPostgres(mailboxId = readSettings().activeMailboxId) {
-  const {
-    calendarPgEnabled, loadMailboxCalendar, upsertMailboxCalendar,
-    loadAppSettings, upsertAppSettings,
-  } = await import('./infra/calendar-pg.js');
-  if (!calendarPgEnabled()) return { ok: false, reason: 'postgres-disabled' };
-
-  const remoteSettings = await loadAppSettings();
-  const settingsPath = path.join(directory, 'settings.json');
-  let settingsSource = 'noop';
-  if (remoteSettings && !fs.existsSync(settingsPath)) {
-    write('settings', remoteSettings);
-    settingsSource = 'postgres';
-  } else if (fs.existsSync(settingsPath)) {
-    await upsertAppSettings(read('settings', {}));
-    settingsSource = 'local-migrated';
-  }
-
-  const id = mailboxId || readSettings().activeMailboxId;
-  const remote = await loadMailboxCalendar(id);
-  const localPath = path.join(mailboxDirectory(id), 'calendar.json');
-  const hasLocal = fs.existsSync(localPath);
-  const local = hasLocal ? readStore(id) : null;
-  if (remote && (!hasLocal || isSparseCalendar(local) || isRemoteNewer(remote, local))) {
-    write('calendar', remote, mailboxDirectory(id));
-    return { ok: true, source: 'postgres', settingsSource };
-  }
-  if (hasLocal) {
-    await upsertMailboxCalendar(id, readStore(id));
-    return { ok: true, source: 'local-migrated', settingsSource };
-  }
-  return { ok: true, source: 'noop', settingsSource };
-}
-
-function isSparseCalendar(store) {
-  return !(store.events?.length || store.emails?.length || store.tasks?.length);
-}
-
-function isRemoteNewer(remote, local) {
-  const remoteAt = Date.parse(remote?.updatedAt || remote?.lastSync || 0) || 0;
-  const localAt = Date.parse(local?.updatedAt || local?.lastSync || 0) || 0;
-  return remoteAt > localAt;
+export async function hydrateStoreFromPostgres() {
+  // Kept for legacy boot callers. Import/export belongs to the deployment migration task.
+  return { ok: false, reason: isProductionRuntime() ? 'explicit-migration-required' : 'local-json-mode' };
 }
 
 function publicMailbox(mailbox) {
@@ -334,10 +364,23 @@ function publicMailbox(mailbox) {
 
 export function publicSettings(settings = readSettings()) {
   const { authorizationCode, apiKey, mailboxes, userPrefs, feishu, calendarSync, ...visible } = settings;
-  return { ...visible, ...publicMailbox(settings.mailboxes?.find((mailbox) => mailbox.id === settings.activeMailboxId) || normalizeMailbox(settings)),
-    mailboxes: (mailboxes || [normalizeMailbox(settings)]).map(publicMailbox), mailboxProviders, modelProviders, fieldHelp: FIELD_HELP,
+  const active = publicMailbox(
+    settings.mailboxes?.find((mailbox) => mailbox.id === settings.activeMailboxId) || normalizeMailbox(settings),
+  );
+  const accountEmail = String(getRequestUser()?.email || '').trim().toLowerCase();
+  const needsMailboxSetup = Boolean(getRequestUserId() && !active.mailboxReady && (accountEmail || active.email));
+  return {
+    ...visible,
+    ...active,
+    mailboxes: (mailboxes || [normalizeMailbox(settings)]).map(publicMailbox),
+    mailboxProviders,
+    modelProviders,
+    fieldHelp: FIELD_HELP,
     mailboxTagOptions: MAILBOX_TAG_OPTIONS,
-    fetchRangeOptions: FETCH_RANGE_OPTIONS, syncStrategyOptions: SYNC_STRATEGY_OPTIONS,
+    fetchRangeOptions: FETCH_RANGE_OPTIONS,
+    syncStrategyOptions: SYNC_STRATEGY_OPTIONS,
+    accountEmail,
+    needsMailboxSetup,
     feishu: {
       appId: feishu?.appId || '',
       ownerId: feishu?.ownerId || '',
@@ -351,5 +394,10 @@ export function publicSettings(settings = readSettings()) {
     modelScope: settings.modelScope || 'shared',
     prefsUserId: settings.prefsUserId || null,
     calendarStorage: calendarStorageInfo(),
-    hasApiKey: Boolean(apiKey), modelReady: Boolean(settings.baseUrl && apiKey && settings.model) };
+    hasApiKey: Boolean(apiKey),
+    modelReady: Boolean(settings.baseUrl && apiKey && settings.model),
+    ragEnabled: settings.ragEnabled !== false,
+    ragEmbeddings: settings.ragEmbeddings === true,
+    embeddingModel: settings.embeddingModel || '',
+  };
 }

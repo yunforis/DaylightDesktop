@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useInRouterContext, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Home, RefreshCw, ServerCrash, ShieldAlert, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PublicThemeControls } from '@/components/public-theme-controls';
@@ -31,6 +31,92 @@ const PRESETS = {
   },
 };
 
+function NavLink({ to, className, children }) {
+  const inRouter = useInRouterContext();
+  if (inRouter) {
+    return <Link to={to} className={className}>{children}</Link>;
+  }
+  return <a href={to} className={className}>{children}</a>;
+}
+
+function ErrorActionsPlain({ showBack, homeTo, onRetry }) {
+  function goBack() {
+    if (window.history.length > 1) window.history.back();
+    else window.location.assign(homeTo);
+  }
+  return (
+    <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+      {showBack && (
+        <Button variant="outline" onClick={goBack}>
+          <ArrowLeft className="size-4" />
+          返回上页
+        </Button>
+      )}
+      <Button variant="outline" asChild>
+        <a href={homeTo}>
+          <Home className="size-4" />
+          回首页
+        </a>
+      </Button>
+      <Button asChild>
+        <a href="/app">进入工作区</a>
+      </Button>
+      {onRetry && (
+        <Button variant="secondary" onClick={onRetry}>
+          <RefreshCw className="size-4" />
+          重试
+        </Button>
+      )}
+      {!onRetry && (
+        <Button variant="secondary" onClick={() => window.location.reload()}>
+          <RefreshCw className="size-4" />
+          刷新页面
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ErrorActionsRouted({ showBack, homeTo, onRetry }) {
+  const navigate = useNavigate();
+  return (
+    <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+      {showBack && (
+        <Button variant="outline" onClick={() => navigate(-1)}>
+          <ArrowLeft className="size-4" />
+          返回上页
+        </Button>
+      )}
+      <Button variant="outline" asChild>
+        <Link to={homeTo}>
+          <Home className="size-4" />
+          回首页
+        </Link>
+      </Button>
+      <Button asChild>
+        <Link to="/app">进入工作区</Link>
+      </Button>
+      {onRetry && (
+        <Button variant="secondary" onClick={onRetry}>
+          <RefreshCw className="size-4" />
+          重试
+        </Button>
+      )}
+      {!onRetry && (
+        <Button variant="secondary" onClick={() => window.location.reload()}>
+          <RefreshCw className="size-4" />
+          刷新页面
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ErrorActions(props) {
+  const inRouter = useInRouterContext();
+  return inRouter ? <ErrorActionsRouted {...props} /> : <ErrorActionsPlain {...props} />;
+}
+
 export function ErrorPage({
   code = '404',
   title,
@@ -40,7 +126,6 @@ export function ErrorPage({
   showBack = true,
   embedded = false,
 }) {
-  const navigate = useNavigate();
   const preset = PRESETS[code] || PRESETS[500];
   const Icon = preset.icon;
   const heading = title || preset.title;
@@ -62,9 +147,9 @@ export function ErrorPage({
             }}
           />
           <header className="relative z-[1] flex items-center justify-between px-5 py-4">
-            <Link to={homeTo} className="font-[family-name:var(--font-display)] text-sm font-semibold tracking-tight">
+            <NavLink to={homeTo} className="font-[family-name:var(--font-display)] text-sm font-semibold tracking-tight">
               Daylight
-            </Link>
+            </NavLink>
             <PublicThemeControls />
           </header>
         </>
@@ -73,43 +158,15 @@ export function ErrorPage({
         ? 'mx-auto w-full max-w-lg'
         : 'relative z-[1] mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-6 pb-16 text-center animate-in fade-in slide-in-from-bottom-2 duration-500'}
       >
-        <div className="mb-5 flex size-14 items-center justify-center rounded-2xl border bg-card shadow-sm mx-auto">
+        <div className="mb-5 mx-auto flex size-14 items-center justify-center rounded-2xl border bg-card shadow-sm">
           <Icon className="size-6 text-muted-foreground" />
         </div>
         <p className="font-[family-name:var(--font-display)] text-5xl font-semibold tracking-tight tabular-nums text-muted-foreground/80">
           {displayCode}
         </p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight">{heading}</h1>
-        <p className="mt-3 text-sm leading-relaxed text-muted-foreground text-pretty">{body}</p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-          {showBack && (
-            <Button variant="outline" onClick={() => navigate(-1)}>
-              <ArrowLeft className="size-4" />
-              返回上页
-            </Button>
-          )}
-          <Button variant="outline" asChild>
-            <Link to={homeTo}>
-              <Home className="size-4" />
-              回首页
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link to="/app">进入工作区</Link>
-          </Button>
-          {onRetry && (
-            <Button variant="secondary" onClick={onRetry}>
-              <RefreshCw className="size-4" />
-              重试
-            </Button>
-          )}
-          {!onRetry && (
-            <Button variant="secondary" onClick={() => window.location.reload()}>
-              <RefreshCw className="size-4" />
-              刷新页面
-            </Button>
-          )}
-        </div>
+        <p className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">{body}</p>
+        <ErrorActions showBack={showBack} homeTo={homeTo} onRetry={onRetry} />
       </main>
     </div>
   );

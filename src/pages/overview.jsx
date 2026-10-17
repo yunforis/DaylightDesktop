@@ -44,7 +44,9 @@ export default function OverviewPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button disabled={isSyncing} onClick={() => sync('qq').then((r) => r?.needSettings && navigate('/app/settings'))}>
+          <Button disabled={isSyncing} onClick={() => sync('qq').then((r) => {
+            if (r?.needSettings) navigate(`/app/settings?tab=${r.settingsTab || 'mailbox'}`);
+          })}>
             {isSyncing ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}
             同步邮箱
           </Button>

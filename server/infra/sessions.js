@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readInfraConfig } from './config.js';
-import { redisDel, redisGet, redisKeys, redisSet } from './redis.js';
+import { redisDel, redisGet, redisKeys, redisSet, redisTouchSession } from './redis.js';
 
 function sessionTtlSeconds() {
   const days = Number(readInfraConfig().auth.sessionDays) || 14;
@@ -33,13 +33,10 @@ export async function createUserSession(user, meta = {}) {
 export async function touchUserSession(userId, jti) {
   if (!userId || !jti) return null;
   const key = sessionKey(userId, jti);
-  const raw = await redisGet(key);
+  const raw = await redisTouchSession(key, new Date().toISOString(), sessionTtlSeconds());
   if (!raw) return null;
   try {
-    const payload = JSON.parse(raw);
-    payload.lastSeenAt = new Date().toISOString();
-    await redisSet(key, JSON.stringify(payload), sessionTtlSeconds());
-    return payload;
+    return JSON.parse(raw);
   } catch {
     return null;
   }

@@ -1,8 +1,25 @@
+import { consumeCalendarOAuthState } from './calendar-oauth-state.js';
+import { createCalendarSubscription, resolveCalendarSubscription } from './calendar-subscription.js';
+import { mobileCors } from './mobile-cors.js';
+import { decideInvitation, invitationStates, saveInvitationPreferences } from './invitations.js';
+import { scenarioRouter } from './scenarios/routes.js';
+import { classifyApiPath } from './api-surface.js';
+import { isProductionRuntime } from './runtime-mode.js';
+import { storageHttpMiddleware } from './storage-http.js';
+import { serviceHealth, installShutdown } from './service-health.js';
+import { counter, gauge, metricsEnabled, timer } from './metrics.js';
+import { jobRepository, enqueueMail, requestJobKey, queueCalendarExport } from './job-service.js';
+import { createJobRouter, publicJob } from './job-api.js';
+import { createCalendarRecoveryRouter } from './calendar-api.js';
+import { getPostgresPool } from './infra/postgres.js';
+import { commitStorage } from './storage/index.js';
+import { syncLocalTaskStatus, syncLocalEventStatus } from './scenarios/service.js';
 import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+// [desktop patch] 原生壳层的桌面会话引导；vite 改为按需动态导入（见文件末尾）。
 import { mountDesktopHttp } from './desktop-http.js';
 import {
   readStore, saveStore, readSettings, saveSettings, publicSettings, normalizeMailbox,
@@ -11,21 +28,27 @@ import {
 import { exampleEmails, exampleChanges, exampleTasks, exampleConflicts } from './fixtures.js';
 import {
   readMailboxEmails, sendMailboxReply, extractEvents, importEmail, processEmails, EXTRACTION_VERSION,
-  testMailboxConnection, testModelConnection,
+  resolveEmailMatch, testMailboxConnection, testModelConnection,
 } from './agent.js';
-import { createTraceRecorder, readTraces, saveTraces, summarizeTraces, sanitizeReplyDraft, emailReference } from './traces.js';
+import { assertTaskCompletable } from './tasks.js';
+import { createTraceRecorder, readTraces, saveTraces, summarizeTraces, sanitizeReplyDraft, emailReference, appendRecruitmentTraces } from './traces.js';
 import { readPrompts, savePrompts, resetPrompts } from './prompts.js';
+import {
+  readReportPrompts, saveReportPrompts, resetReportPrompts,
+  upsertReportPreset, deleteReportPreset,
+} from './report-prompts.js';
 import { dbStatus, listPromptRevisions } from './db.js';
 import { exportBackup, restoreBackup } from './backup.js';
 import { refreshIdleWatcher, idleStatus } from './idle-sync.js';
-import { bootInfra, infraHealth, publicInfraConfig, readInfraConfig, reloadInfra } from './infra/index.js';
+import { bootInfra, infraHealth, publicInfraConfig, readInfraConfig, reloadInfra, sharedRuntimeReady } from './infra/index.js';
 import { mergeInfraSecrets } from './infra/config.js';
 import { enqueue, listJobs, registerWorker, testQueueConnection } from './infra/queue.js';
 import { getAttachmentObject, resolveLocalAttachment, testOssConnection } from './infra/oss.js';
 import {
   adminCreateUser, adminDeleteUser, adminForceLogoutUser, adminGetUser,
   adminListUsers, adminRevokeUserSession, adminUpdateUser,
-  createCaptcha, currentUserFromAuthHeader, loginUser, registerUser,
+  createCaptcha, currentUserFromAuthHeader,
+  loginUser, registerUser,
   requestPasswordReset, requireAdminFromHeader, resetPassword,
   sendRegisterEmailCode,
 } from './auth.js';
@@ -34,26 +57,93 @@ import { sendTemplatedMail, systemMailReady } from './mailer.js';
 import {
   TEMPLATE_META, readMailTemplates, resetMailTemplates, saveMailTemplates,
 } from './mail-templates.js';
-import { runAssistantChat } from './assistant.js';
+import {
+  readOnboardingGuideAsync, resetOnboardingGuide, saveOnboardingGuide,
+} from './onboarding-guide.js';
+import { runAssistantChat, normalizeTime, requiredTitle, validPriority } from './assistant.js';
+import { runAssistantRequest } from './assistant-requests.js';
+import { listAssistantDrafts, getAssistantDraft, updateAssistantDraft, discardAssistantDraft, sendAssistantDraft, createAssistantDraft } from './assistant-actions.js';
+import { buildAdminSearchIndex, runAdminAssistantChat } from './admin-assistant.js';
 import { normalizeCalendarCategories } from './calendar-categories.js';
 import { normalizeMailFilters } from './mail-filters.js';
 import { runWithRequestContext } from './request-context.js';
 import { getRecruitmentState, runRecruitmentChat, updateInterview, prepareInterviewMeeting, sendInterview, importRecruitmentDemo, isRecruitmentBusy } from './recruitment.js';
-import { readRecruitment, updateRecruitment, getAttachment, attachmentPath } from './recruitment-store.js';
-import { processRecruitmentEmail, extractResumeAttachment, resumeRecord } from './resumes.js';
+import { readRecruitment, updateRecruitment, getAttachment, readAttachmentBytes } from './recruitment-store.js';
+import { processRecruitmentEmail, extractResumeAttachment, resumeRecord, mergeRecruitmentAttachments, recruitmentAttachmentTexts } from './resumes.js';
+import { reextractInvoiceEmail } from './invoice-extraction.js';
+import { enrichEmailWithAttachmentText } from './attachment-text.js';
 import {
   publicCalendarSync, saveCalendarOAuthApps, upsertCalendarConnection, removeCalendarConnection,
   buildOAuthStartUrl, completeOAuthCallback, storeToIcs, queueExternalSync, syncEventExternal,
+  setExternalSyncRequireConfirm, confirmPendingExternalSync, dismissPendingExternalSync,
 } from './external-calendar.js';
 import {
   listMaterials, addMaterial, updateMaterial, removeMaterial, readMaterialFile,
   generateEventReport, deleteReport, MATERIAL_KINDS,
 } from './event-aftermath.js';
+import {
+  isRagEnabled, listChunks, ragSearch, reindexMailboxAttachments,
+  ingestEmailKnowledge, reindexMailboxEmails, askMailboxKnowledge,
+} from './rag/index.js';
+
+function collectPeerTasks(activeMailboxId) {
+  const settings = readSettings();
+  const peers = [];
+  for (const mailbox of settings.mailboxes || []) {
+    if (mailbox.id === activeMailboxId) continue;
+    const store = readStore(mailbox.id);
+    for (const task of store.tasks || []) {
+      if (task.source === 'demo') continue;
+      peers.push({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        dueAt: task.dueAt,
+        deadlineText: task.deadlineText,
+        priority: task.priority,
+        status: task.status,
+        assignee: task.assignee || '',
+        mailboxId: mailbox.id,
+        mailboxEmail: mailbox.email || '',
+      });
+    }
+  }
+  return peers;
+}
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const app = express();
+// [desktop patch] 必须在任何业务中间件之前挂载：校验回环地址 / Origin / 壳层一次性 token。
 mountDesktopHttp(app);
+// [desktop patch] 桌面端是单用户本地应用，不提供管理端接口（保留代码，仅屏蔽路由）。
+if (process.env.DAYLIGHT_DESKTOP === '1') app.use('/api/admin', (req, res) => res.status(404).json({ error: '接口不存在。' }));
+app.use('/api', mobileCors());
+const productionRuntime = isProductionRuntime();
+const health = serviceHealth({ role: 'api', checkReady: async () => {
+  if (!productionRuntime) return true;
+  if (!await sharedRuntimeReady()) return false;
+  await getPostgresPool().query('SELECT 1 FROM daylight_jobs LIMIT 1');
+  return true;
+} });
+app.use((req, res, next) => { health.respond(req, res).then(handled => { if (!handled) next(); }).catch(next); });
 app.use(express.json({ limit: '12mb' }));
+// Request-level metrics: one sample per finished request plus an in-flight gauge.
+// Health probes are excluded so readiness polling cannot drown out business traffic.
+let httpInflight = 0;
+app.use((req, res, next) => {
+  if (!metricsEnabled() || req.path.startsWith('/health')) return next();
+  const stop = timer('http.request.ms', { method: req.method });
+  httpInflight += 1;
+  gauge('http.inflight', httpInflight, 'count');
+  res.on('finish', () => {
+    httpInflight -= 1;
+    const route = req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : 'unmatched';
+    const klass = `${Math.floor(res.statusCode / 100)}xx`;
+    stop({ status: res.statusCode, class: klass, route });
+    counter('http.requests_total', { method: req.method, status: res.statusCode, class: klass, route });
+  });
+  next();
+});
 
 await bootInfra();
 
@@ -73,25 +163,62 @@ app.use('/api', (req, res, next) => {
     } catch {
       user = null;
     }
+    if(!user && req.path==='/calendar.ics' && req.query.subscription) {
+      const subscription=await resolveCalendarSubscription(req.query.subscription);
+      if(subscription) {user=subscription.user;req.subscriptionMailboxId=subscription.mailboxId;}
+    }
     const requireAuth = readInfraConfig().auth.requireAuth;
+    if(req.path==='/calendar.ics' && requireAuth && !user) return res.status(401).json({error:'需要有效的私密日历订阅。'});
     if (requireAuth && !AUTH_PUBLIC.has(req.path) && !req.path.startsWith('/attachments/')) {
       if (!user) return res.status(401).json({ error: '请先登录' });
     }
     req.user = user || undefined;
-    runWithRequestContext({ userId: user?.id || null, user }, () => {
+    runWithRequestContext({ userId: user?.id || null, user }, next);
+  })().catch(next);
+});
+if (productionRuntime) app.use('/api', storageHttpMiddleware());
+app.use('/api', (req, res, next) => {
+  try {
       const mailboxId = req.get('X-Mailbox-Id');
-      if (mailboxId && !['/state', '/settings'].includes(req.path) && !req.path.startsWith('/mailboxes/') &&
-          mailboxId !== readSettings().activeMailboxId) {
+      const settingsForMailbox = readSettings();
+      const ownedMailbox = Boolean(mailboxId) && (settingsForMailbox.mailboxes || []).some((item) => item.id === mailboxId);
+      const workbenchScoped = req.path.startsWith('/recruitment') || req.path.startsWith('/rag/') || req.path.startsWith('/jobs');
+      if (mailboxId && mailboxId !== settingsForMailbox.activeMailboxId && !(ownedMailbox && workbenchScoped) &&
+          !['/state', '/settings'].includes(req.path) && !req.path.startsWith('/mailboxes/') &&
+          !/^\/emails\/[^/]+\/extract-invoices$/.test(req.path)) {
         return res.status(409).json({ error: '当前邮箱已切换，请刷新后再操作。' });
       }
       next();
-    });
-  })().catch(next);
+  } catch (error) { next(error); }
 });
 const api = (handler) => async (req, res, next) => {
   try { await handler(req, res); } catch (error) { next(error); }
 };
+
+// Only shared-storage business paths are enabled until legacy network workflows migrate.
+// The classification lives in api-surface.js so api-surface.test.js can assert that every
+// route registered below is a deliberate production/legacy decision.
+if (productionRuntime) app.use('/api', (req, res, next) => {
+  const verdict = classifyApiPath(req.path);
+  if (verdict.status === 'legacy_workflow') {
+    return res.status(503).json({ code: 'WORKFLOW_NOT_MIGRATED', error: '此旧版直接发信入口尚未迁移，请使用助手的审核发送流程。' });
+  }
+  if (verdict.status !== 'production') {
+    // An unclassified path means a route was added without a production decision: say so in
+    // the log instead of leaving operators to guess why a feature answers 503.
+    if (verdict.status === 'unclassified') {
+      console.warn(JSON.stringify({ event: 'unclassified_api_path', path: req.path, method: req.method }));
+    }
+    return res.status(503).json({ code: 'WORKFLOW_NOT_MIGRATED', error: '此流程尚未迁入共享存储任务执行，生产模式暂不开放。' });
+  }
+  next();
+});
+
+app.use('/api/scenarios', scenarioRouter);
+app.use('/api/calendar-sync', createCalendarRecoveryRouter());
+if (productionRuntime) app.use('/api/jobs', createJobRouter({ repository: jobRepository(), enqueueMail }));
 const sendingReplies = new Set();
+const invoiceExtractions = new Set();
 
 function saveTraceFields(mailboxId, traceId, fields) {
   const traces = readTraces(mailboxId);
@@ -117,6 +244,20 @@ function decorateTasks(tasks, mailboxId) {
 
 app.get('/api/state', (req, res) => {
   const settings = readSettings();
+  const requestedMailbox = String(req.query.mailbox || '').trim();
+  if (requestedMailbox) {
+    const mailbox = (settings.mailboxes || []).find((item) => item.id === requestedMailbox);
+    if (!mailbox) return res.status(404).json({ error: '邮箱不存在。' });
+    const store = readStore(mailbox.id);
+    const events = (store.events || []).map((event) => ({ ...event, mailboxId: mailbox.id, mailboxEmail: mailbox.email, mailboxTag: mailboxTagLabel(mailbox) }));
+    const emails = (store.emails || []).map((email) => ({ ...email, mailboxId: mailbox.id, mailboxEmail: mailbox.email, mailboxTag: mailboxTagLabel(mailbox) }));
+    const tasks = decorateTasks(store.tasks, mailbox.id).map((task) => ({
+      ...task, mailboxEmail: mailbox.email, mailboxTag: mailboxTagLabel(mailbox),
+    }));
+    return res.json({
+      ...store, events, emails, tasks, mailboxId: mailbox.id, viewScope: 'mailbox', settings: publicSettings(settings),
+    });
+  }
   const scope = String(req.query.scope || 'active');
   const tag = String(req.query.tag || '').trim();
 
@@ -163,21 +304,21 @@ app.get('/api/traces', (req, res) => {
   if (scope === 'all') {
     const traces = [];
     for (const mailbox of settings.mailboxes || []) {
-      for (const trace of readTraces(mailbox.id)) {
-        traces.push({ ...trace, mailboxId: mailbox.id, mailboxEmail: mailbox.email });
-      }
+      const mailboxTraces = readTraces(mailbox.id).map((trace) => ({ ...trace, mailboxId: mailbox.id, mailboxEmail: mailbox.email }));
+      traces.push(...appendRecruitmentTraces(mailboxTraces, readRecruitment(mailbox.id).traces, mailbox));
     }
     traces.sort((a, b) => String(b.created_at || b.started_at || '').localeCompare(String(a.created_at || a.started_at || '')));
     return res.json({
       traces: traces.slice(0, 200),
       mailboxId: 'all',
-      summary: summarizeTraces(traces),
+      summary: summarizeTraces(traces, { mailOnly: true }),
       sync: syncState,
     });
   }
   const mailboxId = settings.activeMailboxId;
-  const traces = readTraces();
-  res.json({ traces, mailboxId, summary: summarizeTraces(traces), sync: syncState.mailboxId && syncState.mailboxId !== mailboxId
+  const mailbox = (settings.mailboxes || []).find((item) => item.id === mailboxId) || { id: mailboxId, email: '' };
+  const traces = appendRecruitmentTraces(readTraces(), readRecruitment(mailboxId).traces, mailbox);
+  res.json({ traces, mailboxId, summary: summarizeTraces(traces, { mailOnly: true }), sync: syncState.mailboxId && syncState.mailboxId !== mailboxId
     ? { running: false, status: 'idle', stage: '', processed: 0, total: 0 } : syncState });
 });
 app.put('/api/traces/:id/feedback', (req, res) => {
@@ -234,6 +375,16 @@ app.post('/api/traces/:id/send', api(async (req, res) => {
     sendingReplies.delete(trace.trace_id);
   }
 }));
+app.get('/api/invitations', api(async (req,res)=>res.json(await invitationStates())));
+app.put('/api/invitation-preferences', api(async (req,res)=>res.json(saveInvitationPreferences(req.body))));
+app.put('/api/invitations/:id', api(async (req,res)=>{
+  if(syncing) return res.status(409).json({error:'正在同步邮件，请稍后确认邀请。'});
+  const key=`attendance:${readSettings().activeMailboxId}:${req.params.id}`;
+  if(sendingReplies.has(key)) return res.status(409).json({error:'邀请正在保存，请稍后重试。'});
+  sendingReplies.add(key);
+  try {res.json(await decideInvitation(req.params.id,req.body?.decision));}
+  finally {sendingReplies.delete(key);}
+}));
 app.post('/api/events', (req, res) => {
   const store = readStore();
   const event = { ...req.body, id: randomUUID(), source: 'manual', status: 'active' };
@@ -257,7 +408,10 @@ app.delete('/api/events/:id', (req, res) => {
   store.events = store.events.filter((item) => item.id !== req.params.id);
   saveStore(store);
   if (event) queueExternalSync(store, event, 'delete');
-  res.json({ ok: true });
+  if (!event?.scenarioActionId) return res.json({ ok: true });
+  syncLocalEventStatus(event.scenarioActionId, 'removed')
+    .then(() => res.json({ ok: true }))
+    .catch((error) => res.status(error.status || 500).json({ error: error.message }));
 });
 app.get('/api/events/:id/materials', (req, res) => {
   try { res.json(listMaterials(req.params.id)); }
@@ -308,21 +462,87 @@ app.delete('/api/events/:id/reports/:reportId', (req, res) => {
 app.get('/api/material-kinds', (_req, res) => {
   res.json({ kinds: MATERIAL_KINDS });
 });
+app.post('/api/tasks', (req,res)=>{
+  try {
+    const input=req.body || {};
+    const task={id:randomUUID(),title:requiredTitle(input.title,'待办'),dueAt:input.dueAt ? normalizeTime(input.dueAt,'截止时间','18:00:00') : null,
+      priority:input.priority===undefined?'normal':validPriority(input.priority),assignee:String(input.assignee||'').trim().slice(0,200),
+      description:String(input.description||'').trim().slice(0,20000),status:'pending',completedAt:null,source:'manual',createdAt:new Date().toISOString(),sources:[]};
+    const store=readStore();store.tasks.push(task);saveStore(store);res.status(201).json(task);
+  } catch(error) {res.status(error.status||400).json({error:error.message});}
+});
 app.put('/api/tasks/:id', (req, res) => {
-  const { status, assignee } = req.body;
+  const { title, status, assignee, dueAt, priority, description, evidenceEmailId } = req.body;
   const store = readStore();
   const task = store.tasks.find((item) => item.id === req.params.id);
   if (!task) return res.status(404).json({ error: '待办不存在。' });
+  if(title!==undefined) {try {task.title=requiredTitle(title,'待办');}catch(error){return res.status(400).json({error:error.message});}}
   if (status !== undefined) {
     if (!['pending', 'done'].includes(status)) return res.status(400).json({ error: '请选择待办或已完成。' });
+    if (status === 'done') {
+      try {
+        const verified = assertTaskCompletable(task, {
+          emails: store.emails || [],
+          traces: readTraces(readSettings().activeMailboxId),
+          evidenceEmailId,
+        });
+        if (verified.verifiedAt) {
+          task.verification = {
+            ...(task.verification || {}),
+            mode: verified.mode || task.verification?.mode || 'manual',
+            status: 'verified',
+            verifiedAt: verified.verifiedAt,
+            ...(verified.evidenceEmailId ? { evidenceEmailId: verified.evidenceEmailId } : {}),
+          };
+        }
+      } catch (error) {
+        return res.status(error.status || 400).json({ error: error.message });
+      }
+    }
     task.status = status;
     task.completedAt = status === 'done' ? new Date().toISOString() : null;
+    if (status === 'pending' && task.verification) {
+      task.verification = { ...task.verification, status: 'pending', verifiedAt: null };
+    }
   }
   if (assignee !== undefined) task.assignee = String(assignee || '').trim();
+  if (description !== undefined) task.description = String(description || '').trim();
+  if (dueAt !== undefined) {
+    try {task.dueAt=dueAt ? normalizeTime(dueAt,'截止时间','18:00:00') : null;}
+    catch(error){return res.status(400).json({error:error.message});}
+  }
+  if (priority !== undefined) {
+    if (!['high', 'normal', 'low'].includes(priority)) return res.status(400).json({ error: '优先级无效。' });
+    task.priority = priority;
+  }
   saveStore(store);
-  res.json(task);
+  if (!task.scenarioActionId || status === undefined) return res.json(task);
+  syncLocalTaskStatus(task.scenarioActionId, task.status)
+    .then(() => res.json(task))
+    .catch((error) => res.status(error.status || 500).json({ error: error.message }));
 });
-app.put('/api/settings', (req, res) => {
+app.post('/api/emails/:id/resolve-match', (req, res) => {
+  try {
+    const store = readStore();
+    const email = resolveEmailMatch(store, req.params.id, {
+      pendingActionId: req.body?.pendingActionId,
+      targetEventId: req.body?.targetEventId,
+      resolution: req.body?.resolution || 'apply',
+      mode: req.body?.mode || 'qq',
+    });
+    saveStore(store);
+    if (req.body?.resolution === 'create' || req.body?.resolution === 'apply') {
+      const created = (email.createdEventIds || []).map((id) => store.events.find((item) => item.id === id)).filter(Boolean);
+      const cancelled = (email.cancelledEventIds || []).map((id) => store.events.find((item) => item.id === id)).filter(Boolean);
+      queueExternalSync(store, created, 'create', { save: () => saveStore(store) });
+      queueExternalSync(store, cancelled.filter((item) => item.status === 'cancelled'), 'delete');
+    }
+    res.json(email);
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+app.put('/api/settings', api(async (req, res) => {
   if (syncing || sendingReplies.size || isRecruitmentBusy() || retryingAttachments.size) return res.status(409).json({ error: '请等当前邮件同步或回复发送结束后再保存设置。' });
   const existing = readSettings();
   const email = String(req.body.email ?? existing.email).trim();
@@ -374,26 +594,35 @@ app.put('/api/settings', (req, res) => {
       return res.status(400).json({ error: 'Token 单价请填写大于等于 0 的人民币金额，或留空。' });
     }
   }
-  if (req.body.feishu) settings.feishu = { appId: String(req.body.feishu.appId ?? existing.feishu?.appId ?? '').trim(),
-    ownerId: String(req.body.feishu.ownerId ?? existing.feishu?.ownerId ?? '').trim(),
-    appSecret: req.body.feishu.appSecret || existing.feishu?.appSecret || '' };
+  if (req.body.feishu) {
+    settings.feishu = { appId: String(req.body.feishu.appId ?? existing.feishu?.appId ?? '').trim(),
+      ownerId: String(req.body.feishu.ownerId ?? existing.feishu?.ownerId ?? '').trim(),
+      appSecret: req.body.feishu.appSecret || existing.feishu?.appSecret || '' };
+  }
+  if (req.body.ragEnabled !== undefined) settings.ragEnabled = Boolean(req.body.ragEnabled);
+  if (req.body.ragEmbeddings !== undefined) settings.ragEmbeddings = Boolean(req.body.ragEmbeddings);
+  if (req.body.embeddingModel !== undefined) {
+    settings.embeddingModel = String(req.body.embeddingModel || '').trim();
+  }
   saveSettings(settings);
   const saved = readSettings();
-  refreshIdleWatcher(runSync);
-  const syncStarted = current.id !== existing.activeMailboxId && startMailboxSync(saved);
-  res.json({ ...publicSettings(saved), syncStarted: Boolean(syncStarted) });
-});
-app.post('/api/mailboxes/:id/activate', (req, res) => {
+  if (!productionRuntime) refreshIdleWatcher(runSync);
+  const job = productionRuntime && current.id !== existing.activeMailboxId ? await enqueueSwitchSync(req, saved) : null;
+  const syncStarted = job || (current.id !== existing.activeMailboxId && startMailboxSync(saved));
+  res.json({ ...publicSettings(saved), syncStarted: Boolean(syncStarted), ...(job ? { job: publicJob(job) } : {}) });
+}));
+app.post('/api/mailboxes/:id/activate', api(async (req, res) => {
   if (syncing || sendingReplies.size || isRecruitmentBusy() || retryingAttachments.size) return res.status(409).json({ error: '请等当前邮件同步或回复发送结束后再切换邮箱。' });
   const settings = readSettings();
   if (!settings.mailboxes.some((mailbox) => mailbox.id === req.params.id)) return res.status(404).json({ error: '邮箱配置不存在。' });
   const changed = settings.activeMailboxId !== req.params.id;
   if (changed) saveSettings({ ...settings, activeMailboxId: req.params.id });
   const saved = readSettings();
-  refreshIdleWatcher(runSync);
-  const syncStarted = changed && startMailboxSync(saved);
-  res.json({ ...publicSettings(saved), syncStarted: Boolean(syncStarted) });
-});
+  if (!productionRuntime) refreshIdleWatcher(runSync);
+  const job = productionRuntime && changed ? await enqueueSwitchSync(req, saved) : null;
+  const syncStarted = job || (changed && startMailboxSync(saved));
+  res.json({ ...publicSettings(saved), syncStarted: Boolean(syncStarted), ...(job ? { job: publicJob(job) } : {}) });
+}));
 
 app.get('/api/prompts', (req, res) => {
   res.json(readPrompts());
@@ -411,6 +640,29 @@ app.post('/api/prompts/reset', (req, res) => {
 app.get('/api/prompts/revisions', api(async (req, res) => {
   res.json({ revisions: await listPromptRevisions(30) });
 }));
+app.get('/api/report-prompts', (req, res) => {
+  res.json(readReportPrompts());
+});
+app.put('/api/report-prompts', (req, res) => {
+  try {
+    res.json(saveReportPrompts(req.body?.presets));
+  } catch (error) {
+    res.status(400).json({ error: error.message || '保存失败' });
+  }
+});
+app.post('/api/report-prompts/reset', (req, res) => {
+  res.json(resetReportPrompts());
+});
+app.post('/api/report-prompts/presets', (req, res) => {
+  try {
+    res.json(upsertReportPreset(req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message || '保存失败' });
+  }
+});
+app.delete('/api/report-prompts/presets/:id', (req, res) => {
+  res.json(deleteReportPreset(req.params.id));
+});
 app.get('/api/persistence', api(async (req, res) => {
   const health = await infraHealth();
   const db = await dbStatus();
@@ -429,6 +681,22 @@ app.get('/api/persistence', api(async (req, res) => {
 app.get('/api/calendar-sync', (req, res) => {
   res.json(publicCalendarSync());
 });
+app.put('/api/calendar-sync/require-confirm', (req, res) => {
+  res.json(setExternalSyncRequireConfirm(Boolean(req.body?.requireConfirm)));
+});
+app.post('/api/calendar-sync/pending/confirm', (req, res) => {
+  const store = readStore();
+  const result = confirmPendingExternalSync(store, {
+    ids: req.body?.ids,
+    all: Boolean(req.body?.all),
+    save: () => saveStore(store),
+  });
+  res.status(productionRuntime ? 202 : 200).json({ ...result, ...publicCalendarSync() });
+});
+app.post('/api/calendar-sync/pending/dismiss', (req, res) => {
+  const result = dismissPendingExternalSync({ ids: req.body?.ids, all: Boolean(req.body?.all) });
+  res.json({ ...result, ...publicCalendarSync() });
+});
 app.put('/api/calendar-sync/oauth-apps', (req, res) => {
   saveCalendarOAuthApps(req.body || {});
   res.json(publicCalendarSync());
@@ -439,23 +707,25 @@ app.post('/api/calendar-sync/connections', (req, res) => {
 app.delete('/api/calendar-sync/connections/:id', (req, res) => {
   res.json(removeCalendarConnection(req.params.id));
 });
-app.get('/api/calendar-sync/oauth/start/:provider', (req, res) => {
+app.get('/api/calendar-sync/oauth/start/:provider', api(async (req, res) => {
   try {
-    const { url } = buildOAuthStartUrl(req.params.provider, req);
+    const { url } = await buildOAuthStartUrl(req.params.provider, req);
     res.json({ url });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }
-});
+}));
 app.get('/api/calendar-sync/oauth/callback', api(async (req, res) => {
+  let nativeReturn=false;
   try {
     if (req.query.error) {
-      return res.redirect(`/app/settings?calendarSync=error&message=${encodeURIComponent(req.query.error)}`);
+      nativeReturn=(await consumeCalendarOAuthState(req.query.state)).native;
+      throw new Error('日历授权未完成，请重新连接。');
     }
-    await completeOAuthCallback({ code: req.query.code, state: req.query.state, req });
-    res.redirect('/app/settings?tab=calendar&calendarSync=ok');
+    const connection=await completeOAuthCallback({ code: req.query.code, state: req.query.state, req });
+    res.redirect(connection.native ? 'daylight://calendar-connected?status=ok' : '/app/settings?tab=calendar&calendarSync=ok');
   } catch (error) {
-    res.redirect(`/app/settings?tab=calendar&calendarSync=error&message=${encodeURIComponent(error.message)}`);
+    res.redirect(nativeReturn || error.nativeOAuth ? 'daylight://calendar-connected?status=error' : `/app/settings?tab=calendar&calendarSync=error&message=${encodeURIComponent(error.message)}`);
   }
 }));
 app.post('/api/calendar-sync/test/:id', api(async (req, res) => {
@@ -479,8 +749,12 @@ app.post('/api/calendar-sync/test/:id', api(async (req, res) => {
   if (!hit?.ok) return res.status(502).json({ error: hit?.error || '外部日历写入失败', results });
   res.json({ ok: true, message: '已成功写入并删除测试事件', results });
 }));
+app.post('/api/calendar-sync/subscription', api(async (req,res)=>res.json(await createCalendarSubscription())));
 app.get('/api/calendar.ics', (req, res) => {
-  const store = readStore(req.query.mailboxId || undefined);
+  const settings=readSettings();
+  const mailboxId=req.subscriptionMailboxId || req.query.mailboxId || settings.activeMailboxId;
+  if(!settings.mailboxes.some(box=>box.id===mailboxId) || (req.subscriptionMailboxId && req.query.mailboxId && req.query.mailboxId!==req.subscriptionMailboxId)) return res.status(403).json({error:'无权访问这个日历。'});
+  const store = readStore(mailboxId);
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="daylight.ics"');
   res.send(storeToIcs(store));
@@ -495,6 +769,9 @@ app.post('/api/calendar-sync/export', api(async (req, res) => {
       error: '尚未连接外部日历。请先到设置 → 外部日历完成 Google / Outlook / CalDAV 连接，或先下载 ICS。',
       icsPath: '/api/calendar.ics',
     });
+  }
+  if (productionRuntime) {
+    return res.status(202).json(queueCalendarExport(store, active, connections));
   }
   let ok = 0;
   let failed = 0;
@@ -535,7 +812,7 @@ app.get('/api/backup', (req, res) => {
 app.post('/api/backup/restore', (req, res) => {
   if (syncing || sendingReplies.size) return res.status(409).json({ error: '请等当前同步或发信结束后再恢复备份。' });
   const result = restoreBackup(req.body);
-  refreshIdleWatcher(runSync);
+  if (!productionRuntime) refreshIdleWatcher(runSync);
   res.json({ ...result, settings: publicSettings(readSettings()) });
 });
 
@@ -567,14 +844,23 @@ app.post('/api/test/model', api(async (req, res) => {
 
 app.delete('/api/demo', (req, res) => {
   if (syncing || isRecruitmentBusy()) return res.status(409).json({ error: '请等当前处理结束后再清除示例。' });
+  const mailboxId = readSettings().activeMailboxId;
+  const recruitment = readRecruitment(mailboxId);
+  const realCandidateIds = new Set(recruitment.interviews.filter((interview) => interview.source !== 'demo').map((interview) => interview.candidateId));
+  const preservedVersions = recruitment.candidates.filter((candidate) => candidate.source === 'demo' && realCandidateIds.has(candidate.id))
+    .flatMap((candidate) => candidate.versions);
+  const preservedEmailIds = new Set(preservedVersions.map((version) => version.emailId));
+  const preservedAttachmentIds = new Set(preservedVersions.map((version) => version.attachmentId));
   const store = readStore();
   store.events = store.events.filter((event) => event.source !== 'demo');
-  store.emails = store.emails.filter((email) => email.mode !== 'demo');
+  store.emails = store.emails.filter((email) => email.mode !== 'demo' || preservedEmailIds.has(email.id));
   store.tasks = store.tasks.filter((task) => task.source !== 'demo');
   saveStore(store);
   saveTraces(readTraces().filter((trace) => trace.mode !== 'demo'));
-  updateRecruitment(readSettings().activeMailboxId, (data) => {
-    for (const key of ['candidates', 'interviews', 'attachments', 'messages']) data[key] = data[key].filter((item) => item.source !== 'demo');
+  updateRecruitment(mailboxId, (data) => {
+    data.candidates = data.candidates.filter((candidate) => candidate.source !== 'demo' || realCandidateIds.has(candidate.id));
+    data.attachments = data.attachments.filter((attachment) => attachment.source !== 'demo' || preservedAttachmentIds.has(attachment.id));
+    for (const key of ['interviews', 'messages']) data[key] = data[key].filter((item) => item.source !== 'demo');
     data.traces = data.traces.filter((trace) => trace.mode !== 'demo');
   });
   res.json({ ok: true });
@@ -583,11 +869,64 @@ app.delete('/api/demo', (req, res) => {
 let syncing = false;
 let syncState = { running: false, status: 'idle', stage: '', processed: 0, total: 0 };
 let activeRecorder = null;
+app.post('/api/emails/:id/extract-invoices', api(async (req, res) => {
+  const settings = readSettings();
+  const mailboxId = req.get('X-Mailbox-Id') || settings.activeMailboxId;
+  if (!settings.mailboxes.some((mailbox) => mailbox.id === mailboxId)) return res.status(404).json({ error: '邮箱不存在。' });
+  if (syncing || retryingAttachments.size || invoiceExtractions.size) return res.status(409).json({ error: '正在处理邮件，请稍候再提取发票。' });
+  const email = readStore(mailboxId).emails.find((item) => item.id === req.params.id);
+  if (!email) return res.status(404).json({ error: '原邮件不存在。' });
+  if ((email.category || email.extraction?.category) !== 'invoice') return res.status(400).json({ error: '请从发票报销邮件中提取发票。' });
+  if (!publicSettings(settings).modelReady) return res.status(400).json({ error: '请先在设置中填写模型接口。' });
+  invoiceExtractions.add(email.id);
+  const recorder = createTraceRecorder({ settings,
+    traces: readTraces(mailboxId).filter((trace) => trace.email_ref === emailReference(email.id)),
+    persist: (traces) => {
+      const merged = new Map(readTraces(mailboxId).map((trace) => [trace.trace_id, trace]));
+      for (const trace of traces) {
+        const latest = merged.get(trace.trace_id);
+        if (latest?.reply_delivery) trace.reply_delivery = latest.reply_delivery;
+        if (latest?.user_action_at) Object.assign(trace, { user_action_at: latest.user_action_at, user_action: latest.user_action, user_draft: latest.user_draft });
+        merged.set(trace.trace_id, trace);
+      }
+      saveTraces([...merged.values()], mailboxId);
+    } });
+  const context = recorder.beginEmail(email, 'qq');
+  context.update({ kind: 'invoice' });
+  try {
+    const result = await reextractInvoiceEmail(email, settings, { mailboxId, context });
+    const current = readStore(mailboxId);
+    const index = current.emails.findIndex((item) => item.id === email.id);
+    if (index < 0) return res.status(404).json({ error: '原邮件已删除。' });
+    const updated = result.email;
+    current.emails[index] = { ...current.emails[index],
+      category: 'invoice', intent: 'invoice', tags: ['invoice', updated.priority, 'invoice'].filter(Boolean),
+      status: 'imported', summary: updated.summary,
+      attachments: updated.attachments, attachmentTexts: updated.attachmentTexts, attachmentTextErrors: updated.attachmentTextErrors,
+      invoiceStatus: updated.invoiceStatus, invoiceErrors: updated.invoiceErrors, invoiceAttemptedAt: updated.invoiceAttemptedAt,
+      trace_id: context.trace.trace_id,
+      extraction: { ...(current.emails[index].extraction || {}), category: 'invoice', intent: 'invoice',
+        summary: updated.extraction?.summary || '', invoices: updated.extraction?.invoices || [] },
+    };
+    saveStore(current, mailboxId);
+    context.finish(result.error ? 'failed' : 'imported', { decision: updated.summary,
+      calendar_summary: '仅更新发票字段，未修改日程或待办。', extraction_snapshot: current.emails[index].extraction,
+      ...(result.error ? { error: result.error } : {}) });
+    res.status(result.error ? 502 : 200).json({ ...result, email: current.emails[index] });
+  } finally { invoiceExtractions.delete(email.id); }
+}));
 app.post('/api/sync/:mode', api(async (req, res) => {
   const requestedMode = ['mail', 'mailbox'].includes(req.params.mode) ? 'qq' : req.params.mode;
   const mode = ['demo-changes', 'demo-tasks', 'demo-conflicts'].includes(requestedMode) ? 'demo' : requestedMode;
   if (!['demo', 'qq'].includes(mode)) return res.status(400).json({ error: '未知导入方式。' });
-  if (syncing || retryingAttachments.size) return res.status(409).json({ error: '正在处理邮件，请稍候。' });
+  if (productionRuntime) {
+    if (mode !== 'qq') return res.status(400).json({ error: '生产模式不支持预置示例同步。' });
+    const mailboxId = String(req.body?.mailboxId || req.get('X-Mailbox-Id') || readSettings().activeMailboxId);
+    const { job } = await enqueueMail({ tenantId: req.user.id, ownerId: req.user.id, mailboxId,
+      idempotencyKey: requestJobKey(req.get('Idempotency-Key'), 'manual') });
+    return res.status(202).json({ job: publicJob(job) });
+  }
+  if (syncing || retryingAttachments.size || invoiceExtractions.size) return res.status(409).json({ error: '正在处理邮件，请稍候。' });
   const settings = readSettings();
   if (mode === 'qq' && (!publicSettings(settings).mailboxReady || !publicSettings(settings).modelReady)) {
     return res.status(400).json({ error: '请先在设置中填写邮箱、客户端授权码、收发服务器和模型接口。' });
@@ -596,9 +935,21 @@ app.post('/api/sync/:mode', api(async (req, res) => {
 }));
 
 function startMailboxSync(settings) {
+  if (productionRuntime) return false;
+  if (invoiceExtractions.size) return false;
   if (!publicSettings(settings).mailboxReady || !publicSettings(settings).modelReady) return false;
   runSync('qq', settings, 'mailbox-switch').catch(() => {});
   return true;
+}
+
+async function enqueueSwitchSync(req, settings) {
+  const ready = publicSettings(settings);
+  if (!ready.mailboxReady || !ready.modelReady) return null;
+  // Publish only after the mailbox/configuration is visible to another process.
+  await commitStorage();
+  const { job } = await enqueueMail({ tenantId: req.user.id, ownerId: req.user.id, mailboxId: settings.activeMailboxId,
+    idempotencyKey: requestJobKey(req.get('Idempotency-Key'), 'switch'), trigger: 'mailbox-switch' });
+  return job;
 }
 
 async function withMailboxOwner(settings) {
@@ -621,6 +972,7 @@ async function withMailboxOwner(settings) {
 }
 
 async function runSync(requestedMode, settings, trigger = 'manual') {
+  if (invoiceExtractions.size) throw Object.assign(new Error('正在提取发票，请稍候再同步。'), { status: 409 });
   const mailboxId = settings.activeMailboxId;
   const demoChanges = requestedMode === 'demo-changes';
   const demoTasks = requestedMode === 'demo-tasks';
@@ -710,14 +1062,22 @@ async function runSync(requestedMode, settings, trigger = 'manual') {
       previousTasks = new Map(snapshot.tasks.map((task) => [task.id, structuredClone(task)]));
       for (const email of snapshot.emails) previousEmailIds.add(email.id);
     };
+    const peerTasks = mode === 'qq' ? collectPeerTasks(mailboxId) : [];
     const result = await processEmails(snapshot, emails,
       mode === 'demo' ? async (email) => ({ summary: email.summary, events: email.events,
-        category: email.category, priority: email.priority, tasks: email.tasks || [] }) :
-        (email, events, traceContext, tasks) => extractEvents(email, settings, events, traceContext, tasks), mode, {
-          recorder, beforeImport: refreshCalendar, retryMode: trigger,
+        category: email.category, priority: email.priority, intent: email.intent, tasks: email.tasks || [], invoices: email.invoices || [] }) :
+        (email, events, traceContext, tasks) => extractEvents(email, settings, events, traceContext, tasks, { peerTasks }), mode, {
+          recorder, beforeImport: refreshCalendar, retryMode: trigger, peerTasks,
           ...(mode === 'qq' ? { handleSpecialEmail: (email, context) => processRecruitmentEmail(mailboxId, email, settings, context) } : {}),
           modelContext: JSON.stringify({ endpoint: settings.baseUrl, model: settings.model, version: EXTRACTION_VERSION }),
-          onProcessed: async (record) => { if (record.recruitmentStatus) touchedRecruitmentEmails.add(record.id); persistCalendar(); syncState.processed++; },
+          onProcessed: async (record) => {
+            if (record.recruitmentStatus) touchedRecruitmentEmails.add(record.id);
+            persistCalendar();
+            syncState.processed++;
+            try {
+              await ingestEmailKnowledge({ mailboxId, email: record, settings });
+            } catch { /* 知识库写入失败不阻断邮件处理 */ }
+          },
         });
     persistCalendar();
     Object.assign(syncState, { status: result.errors.length ? 'partial' : 'completed', stage: '处理完成', result,
@@ -737,7 +1097,7 @@ async function runSync(requestedMode, settings, trigger = 'manual') {
   }
 }
 
-registerWorker('mail.sync', async (payload = {}) => {
+if (!productionRuntime) registerWorker('mail.sync', async (payload = {}) => {
   const settings = readSettings();
   return runSync(payload.mode || 'qq', settings, payload.trigger || 'queue');
 });
@@ -746,8 +1106,8 @@ registerWorker('mail.sync', async (payload = {}) => {
 // 默认经消息队列投递（RabbitMQ 优先；连不上时 enqueue 回退进程内同步执行）。
 let autoSyncTicks = 0;
 const retryingAttachments = new Set();
-setInterval(async () => {
-  if (syncing || retryingAttachments.size) return;
+if (!productionRuntime) setInterval(async () => {
+  if (syncing || retryingAttachments.size || invoiceExtractions.size) return;
   const settings = readSettings();
   const { mailboxReady, modelReady } = publicSettings(settings);
   if (!mailboxReady || !modelReady) return;
@@ -763,12 +1123,13 @@ setInterval(async () => {
   }
 }, 60_000);
 
-refreshIdleWatcher(runSync);
+if (!productionRuntime) refreshIdleWatcher(runSync);
 
 app.get('/api/auth/config', (req, res) => {
   const auth = readInfraConfig().auth;
   res.json({
     requireAuth: Boolean(auth.requireAuth),
+    mobileApiVersion: 1,
     allowLocalDemoLogin: Boolean(auth.allowLocalDemoLogin),
     sessionDays: auth.sessionDays || 14,
     emailCodeRequired: true,
@@ -1013,6 +1374,21 @@ app.post('/api/admin/infra/test-mq', api(async (req, res) => {
     res.status(400).json({ ok: false, message: error.message });
   }
 }));
+app.get('/api/onboarding/guide', api(async (_req, res) => {
+  res.json(await readOnboardingGuideAsync());
+}));
+app.get('/api/admin/onboarding-guide', api(async (req, res) => {
+  await requireAdminFromHeader(req.get('Authorization'));
+  res.json(await readOnboardingGuideAsync());
+}));
+app.put('/api/admin/onboarding-guide', api(async (req, res) => {
+  await requireAdminFromHeader(req.get('Authorization'));
+  res.json(await saveOnboardingGuide(req.body || {}));
+}));
+app.post('/api/admin/onboarding-guide/reset', api(async (req, res) => {
+  await requireAdminFromHeader(req.get('Authorization'));
+  res.json(await resetOnboardingGuide());
+}));
 app.get('/api/admin/mail-templates', api(async (req, res) => {
   await requireAdminFromHeader(req.get('Authorization'));
   res.json({ templates: readMailTemplates(), meta: TEMPLATE_META });
@@ -1059,6 +1435,35 @@ app.post('/api/admin/mail-templates/send-test', api(async (req, res) => {
     },
   }));
 }));
+app.get('/api/admin/search', api(async (req, res) => {
+  await requireAdminFromHeader(req.get('Authorization'));
+  res.json(await buildAdminSearchIndex({ syncState }));
+}));
+
+app.post('/api/admin/assistant/chat', api(async (req, res) => {
+  await requireAdminFromHeader(req.get('Authorization'));
+  const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  if (!messages.length) return res.status(400).json({ error: '请输入问题' });
+  const stream = Boolean(req.body?.stream) || String(req.headers.accept || '').includes('text/event-stream');
+  const auth = req.get('Authorization');
+  if (!stream) {
+    return res.json(await runAdminAssistantChat({ messages, authorization: auth, syncState }));
+  }
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  const writeEvent = (event) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  try {
+    await runAdminAssistantChat({ messages, authorization: auth, syncState }, { onEvent: writeEvent });
+  } catch (error) {
+    writeEvent({ type: 'error', message: error.message || '管理助手请求失败' });
+  }
+  res.end();
+}));
+
 app.get('/api/admin/settings', api(async (req, res) => {
   await requireAdminFromHeader(req.get('Authorization'));
   res.json({ settings: publicSettings(readSettings()) });
@@ -1091,7 +1496,7 @@ app.put('/api/admin/settings', api(async (req, res) => {
     next.activeMailboxId = next.mailboxes[0].id;
   }
   const saved = saveSettings(next);
-  refreshIdleWatcher(runSync);
+  if (!productionRuntime) refreshIdleWatcher(runSync);
   res.json({ settings: publicSettings(saved) });
 }));
 
@@ -1141,11 +1546,56 @@ app.get(/^\/api\/attachments\/(.+)$/, api(async (req, res) => {
   }
 }));
 
+app.get('/api/assistant/drafts', api(async (req, res) => {
+  res.json(await listAssistantDrafts(readSettings().activeMailboxId));
+}));
+app.post('/api/assistant/drafts', api(async (req, res) => {
+  const settings = readSettings();
+  const requested = String(req.body?.mailboxId || '').trim();
+  const owned = (settings.mailboxes || []).some((item) => item.id === requested);
+  if (requested && !owned) return res.status(404).json({ error: '邮箱不存在或无权访问。' });
+  const mailboxId = requested || settings.activeMailboxId;
+  res.status(201).json(await createAssistantDraft(mailboxId, req.body || {}, settings));
+}));
+app.get('/api/assistant/drafts/:id', api(async (req, res) => {
+  res.json(await getAssistantDraft(readSettings().activeMailboxId, req.params.id));
+}));
+app.patch('/api/assistant/drafts/:id', api(async (req, res) => {
+  res.json(await updateAssistantDraft(readSettings().activeMailboxId, req.params.id, req.body || {}));
+}));
+app.post('/api/assistant/drafts/:id/discard', api(async (req, res) => {
+  res.json(await discardAssistantDraft(readSettings().activeMailboxId, req.params.id, req.body || {}));
+}));
+app.post('/api/assistant/drafts/:id/send', api(async (req, res) => {
+  const settings = readSettings();
+  res.json(await sendAssistantDraft(settings.activeMailboxId, req.params.id, req.body || {}, settings));
+}));
+
 app.post('/api/assistant/chat', api(async (req, res) => {
   const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
   if (!messages.length) return res.status(400).json({ error: '请输入问题' });
-  const result = await runAssistantChat({ messages });
-  res.json(result);
+  if (messages.length > 40 || messages.some((message) => typeof message?.content !== 'string' || message.content.length > 60_000)) {
+    return res.status(400).json({ error: '对话过长，请缩短消息后重试。' });
+  }
+  const input = { messages, requestId: req.body?.requestId };
+  const stream = Boolean(req.body?.stream) || String(req.headers.accept || '').includes('text/event-stream');
+  if (!stream) {
+    const result = await runAssistantRequest(input, runAssistantChat);
+    return res.json(result);
+  }
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  const writeEvent = (event) => {
+    if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+  try {
+    await runAssistantRequest(input, runAssistantChat, { onEvent: writeEvent });
+  } catch (error) {
+    writeEvent({ type: 'error', message: error.message || '助手请求失败' });
+  }
+  res.end();
 }));
 
 app.put('/api/calendar-categories', (req, res) => {
@@ -1167,8 +1617,15 @@ app.put('/api/mail-filters', (req, res) => {
   res.json(publicSettings(readSettings()));
 });
 
+function ownedRequestMailbox(req) {
+  const settings = readSettings();
+  const requested = String(req.get('X-Mailbox-Id') || '').trim();
+  if (requested && (settings.mailboxes || []).some((item) => item.id === requested)) return requested;
+  return settings.activeMailboxId;
+}
+
 app.get('/api/recruitment', (req, res) => {
-  const mailboxId = readSettings().activeMailboxId;
+  const mailboxId = ownedRequestMailbox(req);
   const data = getRecruitmentState(mailboxId);
   data.traces = [...data.traces, ...readTraces(mailboxId).filter((trace) => ['resume', 'recruitment'].includes(trace.kind))]
     .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
@@ -1176,43 +1633,45 @@ app.get('/api/recruitment', (req, res) => {
   res.json(data);
 });
 app.get('/api/recruitment/candidates/:id', (req, res) => {
-  const candidate = readRecruitment(readSettings().activeMailboxId).candidates.find((item) => item.id === req.params.id);
+  const candidate = readRecruitment(ownedRequestMailbox(req)).candidates.find((item) => item.id === req.params.id);
   if (!candidate) return res.status(404).json({ error: '候选人不存在。' });
   res.json(candidate);
 });
 app.post('/api/recruitment/chat', api(async (req, res) => {
   const settings = readSettings();
-  res.json(await runRecruitmentChat(settings.activeMailboxId, String(req.body.message || '').trim(), settings));
+  res.json(await runRecruitmentChat(ownedRequestMailbox(req), String(req.body.message || '').trim(), settings));
 }));
 app.post('/api/recruitment/demo', api(async (req, res) => {
   if (syncing || isRecruitmentBusy()) return res.status(409).json({ error: '请等待当前处理完成。' });
-  res.json(await importRecruitmentDemo(readSettings().activeMailboxId));
+  res.json(await importRecruitmentDemo(ownedRequestMailbox(req)));
 }));
-app.put('/api/recruitment/interviews/:id', api(async (req, res) => res.json(await updateInterview(readSettings().activeMailboxId, req.params.id, req.body))));
+app.put('/api/recruitment/interviews/:id', api(async (req, res) => {
+  res.json(await updateInterview(ownedRequestMailbox(req), req.params.id, req.body));
+}));
 app.post('/api/recruitment/interviews/:id/meeting', api(async (req, res) => {
   const settings = readSettings();
-  res.json(await prepareInterviewMeeting(settings.activeMailboxId, req.params.id, settings));
+  res.json(await prepareInterviewMeeting(ownedRequestMailbox(req), req.params.id, settings));
 }));
 app.post('/api/recruitment/interviews/:id/send', api(async (req, res) => {
   const settings = readSettings();
-  res.json(await sendInterview(settings.activeMailboxId, req.params.id, settings));
+  res.json(await sendInterview(ownedRequestMailbox(req), req.params.id, settings, { confirmDemoSend: req.body?.confirmDemoSend === true }));
 }));
-app.get('/api/recruitment/attachments/:id', (req, res) => {
+app.get('/api/recruitment/attachments/:id', api(async (req, res) => {
   const settings = readSettings();
   const mailboxId = String(req.query.mailbox || settings.activeMailboxId);
   if (!settings.mailboxes.some((mailbox) => mailbox.id === mailboxId)) return res.status(404).json({ error: '邮箱不存在。' });
   const attachment = getAttachment(mailboxId, req.params.id);
   if (!attachment) return res.status(404).json({ error: '附件不存在。' });
-  const file = attachmentPath(mailboxId, attachment.id);
-  if (!file || !fs.existsSync(file)) return res.status(404).json({ error: '附件文件不存在。' });
+  const bytes = await readAttachmentBytes(mailboxId, attachment.id);
+  if (!bytes) return res.status(404).json({ error: '附件文件不存在。' });
   res.set('Content-Type', 'application/pdf');
   res.set('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(attachment.filename || 'resume.pdf')}`);
-  res.sendFile(path.resolve(file));
-});
+  res.send(bytes);
+}));
 app.post('/api/recruitment/attachments/:id/retry', api(async (req, res) => {
   const settings = readSettings();
-  const mailboxId = settings.activeMailboxId;
-  if (syncing || isRecruitmentBusy() || retryingAttachments.size) return res.status(409).json({ error: '请等待当前处理完成再重试。' });
+  const mailboxId = ownedRequestMailbox(req);
+  if (syncing || isRecruitmentBusy() || retryingAttachments.size || invoiceExtractions.size) return res.status(409).json({ error: '请等待当前处理完成再重试。' });
   const attachment = getAttachment(mailboxId, req.params.id);
   if (!attachment) return res.status(404).json({ error: '附件不存在。' });
   const email = readStore(mailboxId).emails.find((item) => item.id === attachment.emailId);
@@ -1240,12 +1699,15 @@ app.post('/api/recruitment/attachments/:id/retry', api(async (req, res) => {
       record = resumeRecord(email, attachments);
     } else if (email.recruitmentStatus === 'partial' && attachments.every((item) => item.status === 'not_resume')) {
       const before = readStore(mailboxId);
-      const extracted = await extractEvents(email, settings, before.events, context, before.tasks);
+      const recoveredEmail = { ...email, attachments: mergeRecruitmentAttachments(email, attachments),
+        attachmentTexts: recruitmentAttachmentTexts(email, attachments) };
+      await enrichEmailWithAttachmentText(recoveredEmail, { context, skipRecruitment: false });
+      const extracted = await extractEvents(recoveredEmail, settings, before.events, context, before.tasks);
       const latest = readStore(mailboxId);
-      record = importEmail(latest, { ...email, attachments: attachments.map(({ pages, ...item }) => ({ ...item, pageCount: pages?.length || 0 })) }, extracted, 'qq');
+      record = importEmail(latest, recoveredEmail, extracted, 'qq');
       saveStore(latest, mailboxId);
     } else {
-      record = { ...email, attachments: attachments.map(({ pages, ...item }) => ({ ...item, pageCount: pages?.length || 0 })) };
+      record = { ...email, attachments: mergeRecruitmentAttachments(email, attachments) };
     }
     record.trace_id = context.trace.trace_id;
     const current = readStore(mailboxId);
@@ -1260,25 +1722,94 @@ app.post('/api/recruitment/attachments/:id/retry', api(async (req, res) => {
   } finally { retryingAttachments.delete(attachment.id); }
 }));
 
+app.get('/api/rag/status', api(async (req, res) => {
+  const settings = readSettings();
+  const mailboxId = ownedRequestMailbox(req);
+  const chunks = await listChunks(mailboxId);
+  const byAttachment = new Map();
+  for (const chunk of chunks) {
+    byAttachment.set(chunk.attachmentId, (byAttachment.get(chunk.attachmentId) || 0) + 1);
+  }
+  res.json({
+    mailboxId,
+    enabled: isRagEnabled(settings),
+    embeddings: settings.ragEmbeddings === true,
+    embeddingModel: settings.embeddingModel || '',
+    chunkCount: chunks.length,
+    attachmentCount: byAttachment.size,
+    embeddedCount: chunks.filter((item) => Array.isArray(item.embedding) && item.embedding.length).length,
+  });
+}));
+
+app.post('/api/rag/search', api(async (req, res) => {
+  const settings = readSettings();
+  if (!isRagEnabled(settings)) return res.status(400).json({ error: 'RAG 未开启。' });
+  const mailboxId = ownedRequestMailbox(req);
+  const query = String(req.body?.query || '').trim();
+  if (!query) return res.status(400).json({ error: '请提供检索 query。' });
+  const candidateIds = Array.isArray(req.body?.candidateIds)
+    ? req.body.candidateIds.map(String).filter(Boolean)
+    : undefined;
+  res.json(await ragSearch({
+    mailboxId,
+    query,
+    settings,
+    candidateIds,
+    limit: Math.min(20, Math.max(1, Number(req.body?.limit) || 6)),
+  }));
+}));
+
+app.post('/api/rag/reindex', api(async (req, res) => {
+  const settings = readSettings();
+  if (!isRagEnabled(settings)) return res.status(400).json({ error: 'RAG 未开启。' });
+  if (syncing || isRecruitmentBusy() || retryingAttachments.size) {
+    return res.status(409).json({ error: '请等待当前处理完成后再重建索引。' });
+  }
+  const mailboxId = ownedRequestMailbox(req);
+  const attachments = readRecruitment(mailboxId).attachments || [];
+  const emails = readStore(mailboxId).emails || [];
+  const result = await reindexMailboxAttachments({ mailboxId, attachments, settings });
+  const mail = await reindexMailboxEmails({ mailboxId, emails, settings });
+  const chunks = await listChunks(mailboxId);
+  res.json({ ...result, mail, chunkCount: chunks.length, mailboxId });
+}));
+
+app.post('/api/rag/ask', api(async (req, res) => {
+  const settings = readSettings();
+  if (!isRagEnabled(settings)) return res.status(400).json({ error: 'RAG 未开启。' });
+  const mailboxId = ownedRequestMailbox(req);
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ error: '请写出要查找的内容。' });
+  res.json(await askMailboxKnowledge({ mailboxId, message, settings, limit: req.body?.limit }));
+}));
+
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在。' }));
 app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ error: error.message });
 });
-if (process.argv.includes('--production')) {
+if (productionRuntime || process.argv.includes('--production')) {
   app.use(express.static(path.join(root, 'dist')));
   app.get('*', (req, res) => res.sendFile(path.join(root, 'dist/index.html')));
 } else {
+  // [desktop patch] 动态导入：安装版运行时不含 vite。
   const { createServer: createViteServer } = await import('vite');
-  const vite = await createViteServer({ root, server: { middlewareMode: true }, appType: 'spa' });
+  const vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { port: Number(process.env.DAYLIGHT_HMR_PORT || (Number(process.env.PORT || 3000) + 10000)) } }, appType: 'spa' });
   app.use(vite.middlewares);
 }
 const port = Number(process.env.PORT || 3000);
-const server = app.listen(port, '127.0.0.1');
+// [desktop patch] 桌面端只监听回环地址，不接受外部网卡。
+const host = process.env.DAYLIGHT_DESKTOP === '1' ? '127.0.0.1' : (process.env.HOST || (productionRuntime ? '0.0.0.0' : '127.0.0.1'));
+const server = app.listen(port, host);
 server.on('listening', () => {
+  health.started();
   const actualPort = server.address().port;
-  console.log(process.env.DAYLIGHT_DESKTOP === '1' ? `DAYLIGHT_READY ${actualPort}` : `Daylight is ready at http://127.0.0.1:${actualPort}`);
+  // [desktop patch] 原生壳层解析这一行拿到实际端口后再导航。
+  if (process.env.DAYLIGHT_DESKTOP === '1') console.log(`DAYLIGHT_READY ${actualPort}`);
+  else console.log(`Daylight is ready on port ${actualPort}`);
 });
-server.on('error', error => {
+server.on('error', (error) => {
+  // [desktop patch] 端口被占用时回退随机端口，避免用户机器上直接打不开。
   if (error.code === 'EADDRINUSE' && process.env.DAYLIGHT_DESKTOP === '1') server.listen(0, '127.0.0.1');
   else { console.error(error); process.exit(1); }
 });
+if (productionRuntime) installShutdown({ health, server });

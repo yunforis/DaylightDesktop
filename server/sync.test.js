@@ -107,9 +107,14 @@ async function fixtureServer(t) {
   const directory = fs.mkdtempSync(path.join(work, 'automatic-sync-test-'));
   fs.writeFileSync(path.join(directory, 'calendar.json'), JSON.stringify({ events: [], emails: [], tasks: [], lastSync: null }));
   fs.writeFileSync(path.join(directory, 'settings.json'), JSON.stringify({ ...settings, email: '', apiKey: '', authorizationCode: '' }));
+  fs.writeFileSync(path.join(directory, 'infra.json'), JSON.stringify({
+    postgres: { enabled: false },
+    mq: { enabled: false }, // Isolate transport from any RabbitMQ running on the host.
+    auth: { requireAuth: false, allowLocalDemoLogin: true, sessionDays: 14, jwtSecret: 'test', adminEmails: [] },
+  }, null, 2));
   const worker = new Worker(`(${serveFixture.toString()})()`, {
     eval: true, workerData: { indexUrl: new URL('./index.js', import.meta.url).href, authorizationCode: settings.authorizationCode },
-    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_DISABLE_AUTH: '1' },
+    env: { ...process.env, PORT: '0', DAYLIGHT_DATA_DIR: directory, DAYLIGHT_REQUIRE_AUTH: '0' },
   });
   t.after(() => worker.terminate());
   const [{ port }] = await once(worker, 'message');
@@ -284,94 +289,56 @@ test('模型等待期间手动新增的安排也参与冲突检测，手动数�
   assert.equal(state.emails[0].conflicts[0].existingEvents[0].id, existing.id);
 });
 
-test('匹配失败的下一分钟自动同步暂缓模型重试，手动同步仍可重试并在修正后成功', async (t) => {
+test('无法匹配时落库 needs_match；自动同步按邮件 ID 去重；人工点选后完成调整', async (t) => {
   const app = await fixtureServer(t);
   await app.configure();
   await app.command({ type: 'fail-match' });
   await app.tick();
-  const first = await app.waitForSync((sync) => sync.status === 'partial' && !sync.running);
-  assert.equal(first.result.errors.length, 1);
-  assert.equal(first.result.deferred, 0);
-  assert.match(first.result.errors[0].message, /未匹配到唯一日程/);
+  const first = await app.waitForSync((sync) => sync.status === 'completed' && !sync.running);
+  assert.deepEqual(first.result.errors, []);
   const initialState = (await app.request('/api/state')).body;
   assert.equal(initialState.events.length, 0);
-  assert.equal(initialState.emails.length, 0);
-  const initialTrace = (await app.request('/api/traces')).body.traces[0];
-  assert.equal(initialTrace.attempts.length, 1);
-  assert.ok(initialTrace.match_retry);
+  assert.equal(initialState.emails.length, 1);
+  assert.equal(initialState.emails[0].status, 'needs_match');
+  assert.ok(initialState.emails[0].pendingActions?.length >= 1);
+  assert.equal((await app.command({ type: 'counts' })).modelCalls, 1);
   await app.tick();
-  const deferred = await app.waitForSync((sync) => sync.id !== first.id && !sync.running);
-  assert.equal(deferred.status, 'partial');
-  assert.equal(deferred.trigger, 'auto');
-  assert.equal(deferred.deferred, 1);
-  assert.equal(deferred.processed, 0);
-  assert.equal(deferred.result.deferred, 1);
-  assert.equal(deferred.result.errors[0].deferred, true);
-  assert.equal(deferred.result.duplicate, 0);
-  const automaticCounts = await app.command({ type: 'counts' });
-  assert.equal(automaticCounts.reads, 2);
-  assert.equal(automaticCounts.sourceReads, 2, '失败邮件仍读取原文，成功邮件才跳过源数据');
-  assert.equal(automaticCounts.modelCalls, 1);
-  const deferredTrace = (await app.request('/api/traces')).body.traces[0];
-  assert.equal(deferredTrace.trace_id, initialTrace.trace_id);
-  assert.equal(deferredTrace.attempts.length, 1, '暂缓周期不创建空日志尝试');
-  assert.equal(deferredTrace.spans.length, initialTrace.spans.length);
-  assert.equal(deferredTrace.status, 'failed');
-  const manualFailure = await app.request('/api/sync/mailbox', 'POST');
-  assert.equal(manualFailure.status, 200);
-  assert.equal(manualFailure.body.deferred, 0);
-  assert.equal(manualFailure.body.errors.length, 1);
-  assert.equal((await app.command({ type: 'counts' })).modelCalls, 2);
-  assert.equal((await app.request('/api/traces')).body.traces[0].attempts.length, 2);
-  await app.command({ type: 'fail-match', value: false });
-  const recovered = await app.request('/api/sync/mailbox', 'POST');
-  assert.equal(recovered.status, 200);
-  assert.equal(recovered.body.added, 1);
-  assert.deepEqual(recovered.body.errors, []);
-  const completedTrace = (await app.request('/api/traces')).body.traces[0];
-  assert.equal(completedTrace.match_retry, null);
-  assert.equal(completedTrace.attempts.length, 3);
-  assert.equal(completedTrace.status, 'imported');
-  const state = (await app.request('/api/state')).body;
-  assert.equal(state.events.length, 1);
-  assert.equal(state.emails.length, 1);
-  await app.tick();
-  const repeated = await app.waitForSync((sync) => sync.id !== deferred.id && sync.trigger === 'auto' && !sync.running);
-  assert.equal(repeated.status, 'completed');
+  const repeated = await app.waitForSync((sync) => sync.id !== first.id && !sync.running);
+  assert.equal(repeated.trigger, 'auto');
   assert.equal(repeated.result.duplicate, 1);
-  assert.equal((await app.command({ type: 'counts' })).modelCalls, 3);
-  assert.equal((await app.command({ type: 'counts' })).sourceReads, 4);
-});
-
-test('手动补充原日程改变上下文后，自动同步恢复匹配并保存真实处理链的调整结果', async (t) => {
-  const app = await fixtureServer(t);
-  await app.configure();
-  await app.command({ type: 'fail-match' });
-  await app.tick();
-  const failed = await app.waitForSync((sync) => sync.status === 'partial' && !sync.running);
-  await app.tick();
-  const deferred = await app.waitForSync((sync) => sync.id !== failed.id && !sync.running);
-  assert.equal(deferred.result.deferred, 1);
   assert.equal((await app.command({ type: 'counts' })).modelCalls, 1);
   const original = (await app.request('/api/events', 'POST', { ...busyEvent,
     title: '自动同步演示评审', start: '2026-10-20T14:00:00+08:00', end: '2026-10-20T15:00:00+08:00' })).body;
+  const emailId = initialState.emails[0].id;
+  const pendingActionId = initialState.emails[0].pendingActions[0].id;
+  const resolved = await app.request(`/api/emails/${encodeURIComponent(emailId)}/resolve-match`, 'POST', {
+    pendingActionId,
+    targetEventId: original.id,
+    resolution: 'apply',
+  });
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.body.status, 'imported');
+  const state = (await app.request('/api/state')).body;
+  const oldEvent = state.events.find((event) => event.id === original.id);
+  assert.equal(oldEvent.status, 'cancelled');
+  assert.equal(oldEvent.cancellationType, 'reschedule');
+  const replacement = state.events.find((event) => event.previousEventId === original.id);
+  assert.equal(replacement.location, '合成会议室 C');
+});
+
+test('先有原日程时 fail-match 模型仍可带回 targetEventId 并直接调整', async (t) => {
+  const app = await fixtureServer(t);
+  await app.configure();
+  const original = (await app.request('/api/events', 'POST', { ...busyEvent,
+    title: '自动同步演示评审', start: '2026-10-20T14:00:00+08:00', end: '2026-10-20T15:00:00+08:00' })).body;
+  await app.command({ type: 'fail-match' });
   await app.tick();
-  const recovered = await app.waitForSync((sync) => sync.id !== deferred.id && !sync.running);
-  assert.equal(recovered.status, 'completed');
-  assert.equal(recovered.result.deferred, 0);
-  assert.equal(recovered.result.rescheduled, 1);
-  assert.deepEqual(recovered.result.errors, []);
-  assert.equal((await app.command({ type: 'counts' })).modelCalls, 2);
+  const sync = await app.waitForSync((item) => !item.running && item.result);
+  assert.equal(sync.result.rescheduled, 1);
+  assert.deepEqual(sync.result.errors, []);
   const state = (await app.request('/api/state')).body;
   const oldEvent = state.events.find((event) => event.id === original.id);
   const replacement = state.events.find((event) => event.id === oldEvent.replacementEventId);
   assert.equal(oldEvent.status, 'cancelled');
-  assert.equal(oldEvent.cancellationType, 'reschedule');
-  assert.equal(replacement.previousEventId, original.id);
   assert.equal(replacement.location, '合成会议室 C');
-  assert.equal(replacement.start, original.start);
-  assert.equal(state.emails.length, 1);
-  const trace = (await app.request('/api/traces')).body.traces[0];
-  assert.equal(trace.attempts.length, 2);
-  assert.equal(trace.match_retry, null);
 });

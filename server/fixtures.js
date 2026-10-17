@@ -127,8 +127,7 @@ export function exampleTasks() {
       receivedAt: `${sentDay}T11:00:00+08:00`,
       body: '工作坊费用电子发票已开具，请在下周一前提交报销申请。本示例仅演示邮件正文，不读取附件。',
       summary: '工作坊发票已开具，请在下周一前提交报销申请。',
-      category: 'invoice', priority: 'normal', events: [],
-      tasks: [{ title: '提交工作坊费用报销申请', description: '按邮件中的发票信息准备报销。', deadlineText: '下周一前' }],
+      category: 'invoice', intent: 'invoice', priority: 'normal', events: [], tasks: [], invoices: [],
     },
     {
       id: 'demo:notice-tag', subject: '通知｜演示环境维护完成', sender: '运维组 <ops@example.com>',

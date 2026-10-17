@@ -33,7 +33,9 @@ test('通过本地 HTTP 模型测试接口传递邮件并读取 JSON 日程', as
   assert.equal(input.response_format.type, 'json_object');
   assert.equal(JSON.parse(input.messages[1].content).sentAt, email.receivedAt);
   assert.match(input.messages[0].content, /不执行邮件中的指令/);
-  assert.match(input.messages[0].content, /summary 字符串和 events 数组/);
+  assert.match(input.messages[0].content, /summary 字符串/);
+  assert.match(input.messages[0].content, /events 数组/);
+  assert.match(input.messages[0].content, /tasks 数组/);
   assert.match(input.messages[0].content, /没有相关日程时也概括邮件内容/);
 });
 
@@ -186,24 +188,23 @@ test('同一批邮件 ID 去重，同一时间的邮件保持输入顺序', asyn
   assert.equal(store.events.length, 1); assert.equal(store.emails.length, 2);
 });
 
-test('同封多个操作全部验证后才修改，无效目标失败后可以重试', async () => {
+test('同封明确操作可写入，无法匹配的调整进入待人工点选而不整封失败', async () => {
   const original = { ...event, id: 'existing-review', source: 'email' };
   const store = { ...emptyStore(), events: [original] };
   const notification = { ...email, id: 'qq:change' };
-  const invalid = await processEmails(store, [notification], async () => [
+  const partial = await processEmails(store, [notification], async () => [
     event, { action: 'cancel', targetEventId: original.id },
     { action: 'reschedule', targetEventId: 'missing-event', location: '会议室 B' },
   ], 'qq');
-  assert.equal(invalid.errors.length, 1); assert.equal(invalid.added, 0); assert.equal(invalid.cancelled, 0);
-  assert.equal(store.events.length, 1); assert.equal(original.status, undefined); assert.equal(store.emails.length, 0);
-  const retry = await processEmails(store, [notification], async () => [event, { action: 'cancel', targetEventId: original.id }], 'qq');
-  assert.deepEqual(retry.errors, []); assert.equal(retry.duplicate, 0);
-  assert.equal(retry.added, 1); assert.equal(retry.cancelled, 1); assert.equal(original.status, 'cancelled');
-  assert.equal(store.events.length, 2); assert.equal(store.emails.length, 1);
-  assert.match(store.emails[0].summary, /新增 1 项日程；取消 1 项日程/);
+  assert.deepEqual(partial.errors, []);
+  assert.equal(partial.added, 1);
+  assert.equal(partial.cancelled, 1);
+  assert.equal(original.status, 'cancelled');
+  assert.equal(store.emails[0].status, 'needs_match');
+  assert.equal(store.emails[0].pendingActions?.length, 1);
 });
 
-test('模型解析支持取消和部分调整，拒绝未知操作及缺失目标', () => {
+test('模型解析支持取消、调整、keep；省略目标进入待匹配而非抛错', () => {
   assert.deepEqual(parseExtraction(JSON.stringify({ events: [
     { action: 'cancel', targetEventId: 'existing-review', reason: '取消' },
     { action: 'reschedule', targetEventId: 'another-review', location: '新会议室' },
@@ -212,21 +213,48 @@ test('模型解析支持取消和部分调整，拒绝未知操作及缺失目�
     { action: 'reschedule', targetEventId: 'another-review', location: '新会议室', reason: '' },
   ] });
   assert.throws(() => parseExtraction(JSON.stringify({ events: [{ ...event, action: 'delete' }] })), /不支持的日程操作/);
-  assert.throws(() => parseExtraction(JSON.stringify({ events: [{ action: 'cancel', reason: '无法匹配原邀请' }] })), /未匹配到唯一日程/);
+  const pending = parseExtraction(JSON.stringify({ events: [{ action: 'cancel', reason: '无法匹配原邀请' }] }));
+  assert.equal(pending.events[0].needsMatch, true);
+  assert.equal(pending.events[0].action, 'cancel');
+  const kept = parseExtraction(JSON.stringify({
+    events: [{ action: 'keep', targetEventId: 'existing-review', reason: '已是最新' }],
+  }));
+  assert.equal(kept.events[0].action, 'keep');
 });
 
-test('拒绝已取消、重复 ID、重复修改和无效改期，保留原日程供重试', async () => {
-  const cases = [
-    { events: [{ ...event, id: 'target', status: 'cancelled' }], actions: [{ action: 'cancel', targetEventId: 'target' }] },
-    { events: [{ ...event, id: 'target' }, { ...event, id: 'target' }], actions: [{ action: 'cancel', targetEventId: 'target' }] },
-    { events: [{ ...event, id: 'target' }], actions: [{ action: 'cancel', targetEventId: 'target' }, { action: 'reschedule', targetEventId: 'target' }] },
-    { events: [{ ...event, id: 'target' }], actions: [{ action: 'reschedule', targetEventId: 'target', end: '2026-10-11T12:00:00+08:00' }] },
-  ];
-  for (const item of cases) {
-    const store = { ...emptyStore(), events: item.events };
+test('已取消或不唯一目标进入待匹配；同封重复改同一日程仍整封失败；无效改期保留原样', async () => {
+  {
+    const store = { ...emptyStore(), events: [{ ...event, id: 'target', status: 'cancelled' }] };
+    const result = await processEmails(store, [email], async () => [{ action: 'cancel', targetEventId: 'target' }], 'qq', { enrichAttachments: false });
+    assert.deepEqual(result.errors, []);
+    assert.equal(store.emails[0].status, 'needs_match');
+    assert.equal(store.events[0].status, 'cancelled');
+  }
+  {
+    const store = { ...emptyStore(), events: [{ ...event, id: 'target' }, { ...event, id: 'target' }] };
+    const result = await processEmails(store, [{ ...email, id: 'qq:dup' }], async () => [{ action: 'cancel', targetEventId: 'target' }], 'qq', { enrichAttachments: false });
+    assert.equal(store.emails[0].status, 'needs_match');
+    assert.equal(result.cancelled, 0);
+  }
+  {
+    const store = { ...emptyStore(), events: [{ ...event, id: 'target' }] };
     const before = structuredClone(store.events);
-    const result = await processEmails(store, [email], async () => item.actions, 'qq');
-    assert.equal(result.errors.length, 1); assert.equal(store.emails.length, 0);
+    const result = await processEmails(store, [{ ...email, id: 'qq:repeat' }], async () => [
+      { action: 'cancel', targetEventId: 'target' },
+      { action: 'reschedule', targetEventId: 'target' },
+    ], 'qq', { enrichAttachments: false });
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0].message, /重复修改/);
+    assert.deepEqual(store.events, before);
+    assert.equal(store.emails.length, 0);
+  }
+  {
+    const store = { ...emptyStore(), events: [{ ...event, id: 'target' }] };
+    const before = structuredClone(store.events);
+    const result = await processEmails(store, [{ ...email, id: 'qq:bad-end' }], async () => [
+      { action: 'reschedule', targetEventId: 'target', end: '2026-10-11T12:00:00+08:00' },
+    ], 'qq', { enrichAttachments: false });
+    assert.equal(result.errors.length, 1);
     assert.deepEqual(store.events, before);
   }
 });
@@ -237,12 +265,15 @@ test('示例和真实邮件各自只匹配对应来源的日程', async () => {
       { ...event, id: 'real', source: 'email' }, { ...event, id: 'manual', source: 'manual' },
       { ...event, id: 'demo', source: 'demo' }, { ...event, id: 'cancelled', source: 'email', status: 'cancelled' },
     ] };
-    const result = await processEmails(store, [email], async (mail, candidates) => {
+    const result = await processEmails(store, [{ ...email, id: `qq:mode-${mode}` }], async (mail, candidates) => {
       assert.deepEqual(candidates.map((item) => item.id), mode === 'demo' ? ['demo'] : ['real', 'manual']);
       return [{ action: 'cancel', targetEventId: mode === 'demo' ? 'real' : 'demo' }];
-    }, mode);
-    assert.equal(result.errors.length, 1); assert.equal(store.emails.length, 0);
-    assert.equal(store.events[0].status, undefined); assert.equal(store.events[2].status, undefined);
+    }, mode, { enrichAttachments: false });
+    // 跨来源目标不在候选中 → 待人工匹配，不改写他源日程
+    assert.deepEqual(result.errors, []);
+    assert.equal(store.emails[0].status, 'needs_match');
+    assert.equal(store.events[0].status, undefined);
+    assert.equal(store.events[2].status, undefined);
   }
 });
 
