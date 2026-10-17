@@ -27,7 +27,7 @@ Daylight（Tauri 2 桌面应用）
 
 ## 1. 启动与构建
 
-需要 **Node.js 22+**（仓库含 `.nvmrc`）。Rust 工具链已内置在 `work/toolchain/`，无需单独安装。
+需要 **Node.js 22+**（仓库含 `.nvmrc`）。本机若已把 Rust 工具链放在 `work/toolchain/`（`work/` 不进仓库），`npm run desktop:*` 会自动使用它；**在新机器上需要自行安装 Rust**（见下方「打包前置」）。
 
 ```bash
 nvm use            # 切到 .nvmrc 指定的 Node
@@ -51,6 +51,23 @@ npm run desktop:dev   # 开发：Tauri 窗口 + 前端热更新 + Node 后台
 | `npm run test:desktop` | 桌面专有测试（`desktop-tests/`） |
 | `node scripts/desktop-sync.mjs` | 从 Daylight 真源重新同步业务代码并重贴桌面补丁 |
 
+### 打包前置
+
+`npm run desktop:build` 是一条命令，但不是零前置：
+
+- **Node.js 22+**（构建期用，安装包里另有一份内置 Node，终端用户不需要）。
+- **Rust 工具链**（`rustup` + 本机目标）。本机若把工具链放在 `work/toolchain/`，`scripts/desktop.mjs` 会自动使用；否则回落到系统 `cargo`。
+- **Linux** 还需要系统库：`libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf`。
+- **Windows** 需要 MSVC 生成工具与 WebView2 运行时（安装包用 `downloadBootstrapper` 自动装 WebView2）。
+
+**交叉打包**：安装包内置 Node，所以内置 Node 的架构必须等于安装包架构。用 `DAYLIGHT_TARGET_TRIPLE` 指定目标（脚本会去 nodejs.org 取对应架构的官方 Node，并用 `npm install --os/--cpu` 装对原生模块）：
+
+```bash
+DAYLIGHT_TARGET_TRIPLE=x86_64-apple-darwin npm run desktop:prepare
+```
+
+Intel Mac 的包正是这样在 Apple Silicon 上交叉构建的（`x86_64-apple-darwin`）——GitHub 已不再提供 x64 的 macOS runner。
+
 ### 打包产物
 
 ```bash
@@ -59,10 +76,12 @@ npm run desktop:build
 
 产物在 `src-tauri/target/release/bundle/`：
 
-- macOS：`macos/Daylight.app`（可直接运行）、`dmg/Daylight_0.1.0_<arch>.dmg`
-- Windows / Linux：在对应平台执行同一命令，产物在各自的 bundle 目录
+- macOS：`macos/Daylight.app`（可直接运行）、`dmg/Daylight_0.1.0_<arch>.dmg`，以及自动更新用的 `macos/Daylight.app.tar.gz` + `.sig`
+- Windows / Linux：在对应平台执行同一命令，产物在各自的 bundle 目录（含更新用的 `.sig`）
 
-安装包内已包含 Node 二进制、后台代码、前端产物与运行时依赖，终端用户无需安装任何环境。macOS 按 arm64 / x64 分别构建（见 `.github/workflows/desktop.yml`），不做通用二进制。
+安装包内已包含 Node 二进制、后台代码、前端产物与运行时依赖，终端用户无需安装任何环境。macOS 按 arm64 / x64 分别构建，不做通用二进制。
+
+打包自动更新产物需要签名私钥（`TAURI_SIGNING_PRIVATE_KEY`），缺失时会在「生成更新产物」这一步直接失败——这是刻意的，没有签名就不该发布更新。
 
 若提示端口被占用，开发模式可换端口：
 
@@ -130,11 +149,73 @@ npm run desktop:check # Rust 壳层检查
 bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴权边界）
 ```
 
-- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、打包运行时（不含 `vite`）能独立启动。
+- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、打包运行时（不含 `vite`）能独立启动。共 10 项，全通过。
 - **共享业务测试**共 680 项：587 通过 / 58 失败 / 35 跳过，与 Web 真源**逐条用例状态完全一致**（本轮对齐引入 0 项差异）。失败项是同时启动真实 Express 服务、mock timer 的历史集成测试，不是桌面端引入。CI 中该步骤 `continue-on-error`。
 - 所有写盘测试使用 `work/` 下的独立数据目录，不触碰用户数据。
 
-## 7. 与 Daylight 真源对齐
+## 7. 自动更新与发布
+
+### 客户端行为
+
+- 启动约 6 秒后**静默检查**一次更新：已是最新就什么都不做，有更新才弹原生对话框。
+- 托盘菜单 →「检查更新…」可手动检查，无论结果如何都会给出反馈。
+- **绝不静默安装**：弹窗里点「下载并安装」之后才会下载，下载期间窗口标题显示进度提示，装完自动重启到新版本。本地数据与配置不受影响（更新只替换程序本体）。
+- 更新逻辑**全部在 Rust 壳层**（`src-tauri/src/update.rs`）。应用页由回环 HTTP 提供，不给页面调用「替换自己安装文件」这条命令的通道，页面即使被注入也够不到更新能力。
+
+### 信任链
+
+更新包用 minisign 签名，客户端用编译进去的公钥校验，校验不过就拒绝安装。
+
+| 东西 | 位置 | 是否可公开 |
+| --- | --- | --- |
+| 公钥 | `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey` | 可提交 |
+| 私钥 | 本机 `work/updater-key/daylight.key`（`work/` 不进仓库）+ GitHub Secret `TAURI_SIGNING_PRIVATE_KEY` | **绝不可提交** |
+
+更新源固定为 `https://github.com/yunforis/DaylightDesktop/releases/latest/download/latest.json`（与 `package.json` 的 `repository` 一致，`desktop-tests` 会交叉校验）。它只指向**已发布的正式版本**，草稿与预发布不会推送给客户端。
+
+丢失私钥就无法再发布可用的更新（客户端会拒绝用别的密钥签出来的包），请妥善备份 `work/updater-key/`。
+
+### 发布六平台安装包
+
+打标签即发布（`.github/workflows/release.yml`）：
+
+```bash
+# 1. 三处版本必须一致，否则 guard 任务会直接挡住
+#    package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml
+# 2. 提交后打标签并推送
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+也可以到 Actions 页面手动运行 `release` 工作流，填一个已存在的标签（用于重跑失败的平台）。
+
+| 平台 | Runner | Rust target |
+| --- | --- | --- |
+| macOS Apple Silicon | `macos-14` | `aarch64-apple-darwin` |
+| macOS Intel | `macos-14`（交叉构建） | `x86_64-apple-darwin` |
+| Linux x64 | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` |
+| Linux ARM64 | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` |
+| Windows x64 | `windows-latest` | `x86_64-pc-windows-msvc` |
+| Windows ARM64 | `windows-11-arm` | `aarch64-pc-windows-msvc` |
+
+`fail-fast: false`：某个平台失败不影响其余平台，Release 里就少那一个产物，已发布的版本对能装的平台照常可用。
+
+### 需要在 GitHub 配置的 Secrets
+
+| Secret | 是否必需 | 说明 |
+| --- | --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | **必需** | `work/updater-key/daylight.key` 的**文件内容**。缺失时打包会在「生成更新产物」这步直接失败——这是刻意的，没有签名不该发布更新 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 可选 | 私钥口令，密钥未设口令时留空 |
+| `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` / `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | 可选 | macOS 签名与公证。**不配也能出包**，但用户首次打开需要在「系统设置 → 隐私与安全性」里手动放行 |
+
+工作流只在 `APPLE_CERTIFICATE` 非空时才注入签名变量（空变量会让 Tauri 打包器报错），所以没配证书时不会因此失败。
+
+### Linux / Windows 自更新的产物要求
+
+- **Windows**：自动更新只能安装 **NSIS**（`-setup.exe`）。`targets: "all"` 会同时产出 WiX（`.msi`），而客户端装不了 msi，所以 `release.yml` 里显式设了 `updaterJsonPreferNsis: true`，让 `latest.json` 指向 setup.exe。`.msi` 仍会随 Release 提供，供手动安装。
+- **Linux**：只对 **AppImage** 生效（Tauri 替换 AppImage 文件本身）。用 `.deb` / `.rpm` 安装的版本**不会**自动更新——包管理器管着的文件不该由应用自己替换，这类用户需要下载新包重新安装。Release 里三种产物都会出。
+
+## 8. 与 Daylight 真源对齐
 
 桌面端与 Web 版共享 `src/`、`server/`、`shared/`、`public/`、`scripts/`。当 Web 侧前进时：
 
@@ -158,7 +239,7 @@ DAYLIGHT_WEB_DIR=/path/to/Daylight node scripts/desktop-sync.mjs
 
 补丁清单与理由见 `STATUS.md`，`desktop-tests` 中有锚点自检测试守护。
 
-## 8. 已知边界
+## 9. 已知边界
 
 - 桌面端是**单用户本机应用**：没有多租户、没有管理后台、没有云端账号。后台只监听回环地址。
 - 同一数据目录**不能**给多个后台进程同时写入（JSON + 进程内协调）。
@@ -166,4 +247,7 @@ DAYLIGHT_WEB_DIR=/path/to/Daylight node scripts/desktop-sync.mjs
 - 真实 IMAP / SMTP / 模型 / 飞书 / 外部日历的可用性取决于用户自己的账号与网络，需要用户自行实连验证；本轮未做真实服务实连。
 - **字体**：`index.html` 仍会从 `fonts.googleapis.com` 拉取 Noto Sans SC / Sora / Space Grotesk。离线或受限网络下会回退到系统字体（macOS 为苹方），版式不会错乱，但字形与 Web 端联网时略有差异。桌面端未内置这些字体，以免安装包体积和字重授权扩散。
 - **睡眠唤醒**：壳层没有监听系统唤醒事件。后台 Node 进程在唤醒后仍在运行，定时同步与空闲监听会在下一轮触发；本机未实测唤醒路径。
-- 未在 Windows / Linux 实机验证；`.github/workflows/desktop.yml` 已配置三平台验证与四产物打包，但本机没有 GitHub remote，**Actions 未实际运行过**。
+- **未在 Windows / Linux 实机验证**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包，但这仍是**代码已实现**，不是**实机跑通**。
+- **发布流水线尚未真正跑过**：`.github/workflows/release.yml` 的六平台矩阵与 `desktop.yml` 的三平台验证都只在本机做过静态校验（YAML 结构、目标映射、交叉打包实测），**Actions 一次都没有实际运行**。首次打标签发布的成功率取决于 runner 可用性（`ubuntu-24.04-arm`、`windows-11-arm` 是 GitHub 的 ARM64 runner，可用性随账号与仓库可见性变化）。
+- **自动更新未做端到端验证**：本机已实测「更新产物签名能被应用内嵌公钥接受、篡改 1 字节即被拒绝」（含反向对照），但**下载 → 校验 → 替换安装文件 → 重启**这一整条链路需要发布两个真实版本才能验证，本轮未做。Linux 上还额外依赖 AppImage 形态。
+- **macOS 安装包未做签名与公证**：本机与 CI 默认产出未签名包，首次打开需要手动放行。配好 `APPLE_*` Secrets 后即可自动签名公证，那时需要 Apple 开发者账号（付费）。

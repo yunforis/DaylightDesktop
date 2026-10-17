@@ -1,4 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod update;
+
 use std::{fs, io::{BufRead, BufReader, Write}, process::{Child, Command, Stdio}, sync::Mutex, time::Duration};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, menu::{Menu, MenuItem, PredefinedMenuItem}, tray::TrayIconBuilder};
 use tauri_plugin_opener::OpenerExt;
@@ -78,6 +80,8 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             let external = handle.clone();
@@ -91,13 +95,15 @@ fn main() {
                 })
                 .build()?;
             let show_item = MenuItem::with_id(app, "show", "打开 Daylight", true, None::<&str>)?;
+            let update_item = MenuItem::with_id(app, "update", "检查更新…", true, None::<&str>)?;
             let data_item = MenuItem::with_id(app, "data", "打开数据目录", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出 Daylight", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&show_item, &data_item, &separator, &quit_item])?;
+            let menu = Menu::with_items(app, &[&show_item, &update_item, &data_item, &separator, &quit_item])?;
             TrayIconBuilder::new().icon(app.default_window_icon().unwrap().clone()).tooltip("Daylight · 邮件与日程")
                 .menu(&menu).on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => show(app),
+                    "update" => update::check_now(app.clone()),
                     "data" => { if let Ok(path) = app.path().app_data_dir() { let _ = app.opener().open_path(path.to_string_lossy(), None::<&str>); } },
                     "quit" => app.exit(0), _ => {}
                 }).build(app)?;
@@ -108,6 +114,8 @@ fn main() {
                 }
             });
             std::thread::spawn(move || { if let Err(error) = start_backend(handle.clone()) { startup_error(&handle, &error.to_string()); } });
+            // 更新检查在本地后台之外单独跑：后台起不来也要能更新；检查失败不影响启动。
+            update::check_in_background(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!()).expect("无法初始化 Daylight 桌面窗口");

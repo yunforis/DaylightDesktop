@@ -394,6 +394,96 @@ test('PDF 预览：离线资源随包分发，且应用自产 PDF 能渲染出�
   assert.ok(inked > 5_000, `页面必须真的画出内容（含中文字形），实际非白像素 ${inked}`);
 });
 
+/**
+ * 发布矩阵与内置 Node 架构映射必须一一对应。
+ *
+ * 这条测试守的是一个很难在本地发现、但在真机上必炸的错误：安装包架构与内置 Node 架构不一致。
+ * 我们把 Node 二进制打进安装包，所以「矩阵里新增/改名一个目标」必须同时在
+ * prepare-desktop.mjs 的 TRIPLES 里有对应项，否则打包脚本会静默退回「复制本机 Node」，
+ * 产出一个架构错配的包。
+ */
+test('发布矩阵与内置 Node 架构映射一一对应', () => {
+  const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  const rows = [...release.matchAll(/\{\s*name:\s*([\w-]+),\s*os:\s*([\w.-]+),\s*target:\s*([\w-]+)\s*\}/g)]
+    .map((match) => ({ name: match[1], os: match[2], target: match[3] }));
+  assert.equal(rows.length, 6, '发布矩阵应覆盖 macOS arm64/x64、Linux x64/arm64、Windows x64/arm64 六个目标');
+
+  const prepare = fs.readFileSync(path.join(ROOT, 'scripts', 'prepare-desktop.mjs'), 'utf8');
+  const mapping = new Map(
+    [...prepare.matchAll(/'([\w-]+)':\s*\{\s*os:\s*'(\w+)',\s*cpu:\s*'(\w+)',\s*dist:\s*'([\w-]+)',\s*ext:\s*'([\w.]+)'\s*\}/g)]
+      .map((match) => [match[1], { os: match[2], cpu: match[3], dist: match[4], ext: match[5] }]),
+  );
+
+  for (const row of rows) {
+    const spec = mapping.get(row.target);
+    assert.ok(spec, `prepare-desktop.mjs 缺少目标 ${row.target} 的映射；缺了会打包出架构错配的安装包`);
+    const expectedCpu = row.name.endsWith('-arm64') ? 'arm64' : 'x64';
+    assert.equal(spec.cpu, expectedCpu, `${row.name} 的架构与 ${row.target} 的映射不一致`);
+    // Node 官方发行版把 Windows 叫 win、macOS 叫 darwin；这个名字错了会下载到不存在的文件。
+    const nodeOs = { darwin: 'darwin', win32: 'win', linux: 'linux' }[spec.os];
+    assert.ok(nodeOs, `未知的目标系统 ${spec.os}`);
+    assert.equal(spec.dist, `${nodeOs}-${spec.cpu}`, `${row.target} 的 Node 发行版名不对`);
+    assert.equal(spec.ext, spec.os === 'win32' ? 'zip' : 'tar.gz', 'Windows 用 zip，其余用 tar.gz');
+  }
+
+  // 交叉构建至少要覆盖 Intel Mac：GitHub 已无 x64 macOS runner，只能在 Apple Silicon 上交叉打包。
+  const macX64 = rows.find((row) => row.name === 'macos-x64');
+  assert.ok(macX64, '发布矩阵必须包含 Intel Mac 产物');
+  assert.equal(macX64.target, 'x86_64-apple-darwin');
+  assert.ok(['macos-14', 'macos-15'].includes(macX64.os), 'Intel Mac 需在 Apple Silicon runner 上交叉构建');
+
+  for (const required of ['tauri-apps/tauri-action@v1', 'uploadUpdaterJson: true', 'updaterJsonPreferNsis: true', 'TAURI_SIGNING_PRIVATE_KEY', 'DAYLIGHT_TARGET_TRIPLE']) {
+    assert.ok(release.includes(required), `release.yml 缺少 ${required}`);
+  }
+  // Windows 的自动更新只能装 NSIS；不显式选 NSIS 就会把装不上的 .msi 写进 latest.json。
+  assert.ok(!release.includes('tauri-apps/tauri-action@v0'), '请使用当前的 tauri-action v1');
+});
+
+test('自动更新：签名公钥、发布源与原生侧流程都已接好', () => {
+  const conf = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  assert.equal(conf.bundle.createUpdaterArtifacts, true, '必须生成更新产物与签名，否则客户端无法自动更新');
+
+  const updater = conf.plugins?.updater;
+  assert.ok(updater, 'tauri.conf.json 必须配置 plugins.updater');
+  // 公钥可以公开；对应的私钥只能存在于本机与 GitHub Secrets（TAURI_SIGNING_PRIVATE_KEY）。
+  assert.match(
+    Buffer.from(updater.pubkey, 'base64').toString('utf8'),
+    /minisign public key/,
+    'pubkey 必须是 tauri signer 生成的 minisign 公钥',
+  );
+  assert.equal(updater.endpoints.length, 1);
+  const repositoryField = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).repository;
+  const repository = typeof repositoryField === 'string' ? repositoryField : repositoryField?.url ?? '';
+  assert.ok(repository, 'package.json 需要 repository 字段，用来和更新源交叉校验');
+  assert.ok(
+    updater.endpoints[0].startsWith(repository.replace(/\.git$/, '')),
+    `更新源 ${updater.endpoints[0]} 必须指向本仓库的发布页`,
+  );
+  assert.match(updater.endpoints[0], /^https:\/\//, '更新源必须是 HTTPS');
+  assert.match(updater.endpoints[0], /releases\/latest\/download\/latest\.json$/, '更新源必须是正式版发布页的 latest.json');
+
+  const cargo = fs.readFileSync(path.join(ROOT, 'src-tauri', 'Cargo.toml'), 'utf8');
+  assert.match(cargo, /^tauri-plugin-updater = /m);
+  assert.match(cargo, /^tauri-plugin-dialog = /m);
+
+  const mainRs = fs.readFileSync(path.join(ROOT, 'src-tauri', 'src', 'main.rs'), 'utf8');
+  assert.match(mainRs, /tauri_plugin_updater::Builder::new\(\)\.build\(\)/, '必须注册更新插件');
+  assert.match(mainRs, /tauri_plugin_dialog::init\(\)/, '确认对话框需要 dialog 插件');
+  assert.match(mainRs, /update::check_in_background/, '启动后要自动检查一次更新');
+  assert.match(mainRs, /"update" => update::check_now/, '托盘菜单要有手动检查入口');
+
+  // 更新能力刻意只做在原生侧：应用页由回环 HTTP 提供，不给页面调用更新命令的通道。
+  const updateRs = fs.readFileSync(path.join(ROOT, 'src-tauri', 'src', 'update.rs'), 'utf8');
+  assert.match(updateRs, /download_and_install/, '确认后要能下载并安装');
+  assert.match(updateRs, /OkCancelCustom/, '必须先弹出确认对话框');
+  assert.match(updateRs, /app\.restart\(\)/, '安装完成后要重启到新版本');
+  assert.ok(!/install\(\s*\)\s*\.await\s*;\s*$/m.test(updateRs), '不得在未确认的情况下直接安装');
+
+  // 发布流水线必须真的带上签名私钥来构建，否则更新产物签不出来。
+  const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.ok(release.includes('TAURI_SIGNING_PRIVATE_KEY'), '发布流水线必须使用更新签名私钥');
+});
+
 test('打包运行时（src-tauri/runtime）不含 vite，且能独立启动后台', async (t) => {
   if (!fs.existsSync(path.join(RUNTIME, 'server', 'desktop-entry.js'))) {
     t.skip('尚未执行 npm run desktop:prepare，跳过打包运行时验证');

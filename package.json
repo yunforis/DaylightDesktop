@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yunforis/DaylightDesktop"
+  },
   "engines": {
     "node": ">=22"
   },

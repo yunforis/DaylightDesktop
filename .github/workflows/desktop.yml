@@ -33,12 +33,24 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - run: npm ci
       - name: 构建前端
         run: npm run build
       - name: 准备内置运行时（含 shared/ 与白名单依赖）
         run: npm run desktop:prepare
+      # Intel Mac 的包只能在 Apple Silicon 上交叉构建，而「内置 Node 架构必须等于安装包架构」
+      # 这个约束一旦破了，错误要到用户机器上才暴露。这里用一条廉价检查提前挡住。
+      - name: 交叉打包自检（Apple Silicon → Intel Mac）
+        if: runner.os == 'macOS'
+        run: |
+          DAYLIGHT_TARGET_TRIPLE=x86_64-apple-darwin npm run desktop:prepare
+          arch=$(file --brief src-tauri/runtime/node)
+          echo "$arch"
+          case "$arch" in *x86_64*) echo "内置 Node 已是 x86_64" ;; *) echo "::error::交叉打包得到的内置 Node 不是 x86_64：$arch"; exit 1 ;; esac
+          node -e "const i=require('./src-tauri/runtime/build-info.json'); if(i.arch!=='x64') { console.error('build-info 架构错误：'+i.arch); process.exit(1) }"
+          # 恢复本机架构，避免影响后续步骤
+          npm run desktop:prepare
       - name: 桌面专有测试
         run: npm run test:desktop
       - name: 共享业务测试（已知 58 项历史失败，不作为门禁）
@@ -47,43 +59,6 @@ jobs:
       - name: Rust 壳层检查
         run: npm run desktop:check
 
-  # 安装包产物：macOS 分 arm64 / x64 两条，避免单机交叉产物混淆。
-  bundle:
-    name: bundle (${{ matrix.name }})
-    if: github.event_name != 'pull_request'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin }
-          - { name: macos-x64, os: macos-13, target: x86_64-apple-darwin }
-          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { name: linux-x64, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Linux WebKit / 托盘依赖
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-      - run: npm ci
-      - name: 打包（beforeBuildCommand 会先构建前端并准备运行时）
-        run: npm run desktop:build -- --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: daylight-${{ matrix.name }}
-          if-no-files-found: warn
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/**
-            src-tauri/target/release/bundle/**
+  # 安装包产物由 release.yml 负责：打 `v*` 标签时构建六平台安装包并发布到 Release
+  # （macOS arm64/x64、Linux x64/arm64、Windows x64/arm64），同时生成自动更新用的 latest.json。
+  # 这里不再重复构建，避免每次 push 都跑一遍完整的六平台打包。

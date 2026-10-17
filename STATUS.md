@@ -4,7 +4,67 @@
 
 验证等级用语（按 [AGENTS.md](AGENTS.md)）：**规划中** < **代码已实现** < **本地测试通过** < **真实服务实连成功** < **云端部署验证通过** < **生产验收通过**。
 
-## 本轮：与 Daylight 真源对齐 + 桌面端专有改造（2026-10-17）
+## 本轮：CI/CD 六平台发布流水线 + 应用内自动更新（2026-10-17）
+
+### 交付内容
+
+- **`.github/workflows/release.yml`（新增）**：打 `v*` 标签触发，构建**六个平台**安装包并发布到 GitHub Release，同时产出自动更新用的 `latest.json` 与各平台 `.sig`。
+
+  | 平台 | Runner | Rust target |
+  | --- | --- | --- |
+  | macOS Apple Silicon | `macos-14` | `aarch64-apple-darwin` |
+  | macOS Intel | `macos-14`（**交叉构建**） | `x86_64-apple-darwin` |
+  | Linux x64 | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` |
+  | Linux ARM64 | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` |
+  | Windows x64 | `windows-latest` | `x86_64-pc-windows-msvc` |
+  | Windows ARM64 | `windows-11-arm` | `aarch64-pc-windows-msvc` |
+
+  - `guard` 任务先校验**标签版本与 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处版本一致**，不一致直接失败，避免发出一个「版本号说不清」的包。
+  - `fail-fast: false`：单平台失败不影响其余平台。
+  - `includeUpdaterJson` 在当前的 `tauri-action` 里已更名为 `uploadUpdaterJson`；并显式设 `updaterJsonPreferNsis: true`（Windows 自动更新只能装 NSIS，不设就会把装不上的 `.msi` 写进 `latest.json`），`retryAttempts: 2`（六个 job 并发创建同一个 Release）。
+  - `tauri-apps/tauri-action@v1`，`releaseDraft: false`（打标签这个动作本身就是人工程序）；也可手动运行本工作流重跑某个平台。
+- **应用内自动更新（Rust 侧，`src-tauri/src/update.rs`）**：`tauri-plugin-updater` + `tauri-plugin-dialog`。启动约 6 秒后**静默**检查一次（已是最新不打扰用户），托盘菜单新增「检查更新…」手动检查；发现新版本弹原生对话框，**用户点确认后**才下载安装，装完 `app.restart()`；下载期间用窗口标题显示「正在下载更新…」。绝不静默安装，也不需要 WebView 参与。
+  - 配套：`tauri.conf.json` 增加 `plugins.updater`（可公开的 minisign 公钥 + 本仓库 `releases/latest/download/latest.json`）与 `bundle.createUpdaterArtifacts: true`。
+  - 私钥生成在 `work/updater-key/daylight.key`（`work/` 不进仓库），只用于本机与 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`。
+- **`scripts/prepare-desktop.mjs` 支持交叉打包**：新增 `DAYLIGHT_TARGET_TRIPLE`，按目标平台下载官方 Node 发行版替换内置 Node，并用 `npm install --os/--cpu` 装对原生模块（`@napi-rs/canvas` 是按平台可选依赖安装的）。目标架构变化时会清掉 `node_modules` 重建，避免上一轮为别的架构装的二进制留在包里。下载带 3 次重试与 `work/node-dist-cache/` 本地缓存。`runtime/build-info.json` 记录 `platform/arch/targetTriple/nodeSource`。
+  - 这是 **Intel Mac 包能出产物的前提**：GitHub 已不提供 x64 的 macOS runner，只能在 Apple Silicon 上交叉构建。
+- **`.github/workflows/desktop.yml`（改造）**：移除与 `release.yml` 重复的 bundle 任务（改由打标签时构建），新增一条 macOS 上的**交叉打包自检**（为 `x86_64-apple-darwin` 准备运行时并用 `file` 断言内置 Node 是 `x86_64`，再还原本机架构）。
+- **`package.json`** 增加 `repository` 字段：让「更新源指向本仓库」这件事可以被测试交叉校验，而不是靠人肉记住两个地方要同步改。
+
+### 决策记录
+
+- **D6 自动更新只在原生侧实现，不给应用页调用通道**：应用页由回环 HTTP（`src-tauri/capabilities/main.json` 里有 `remote: {"urls":["http://127.0.0.1:*/*"]}`）提供，页面可以调 Tauri 命令。「替换自己的安装文件」是本机权限最高的操作之一，把它做成纯 Rust 能力，页面即使被注入也够不到；签名校验也发生在原生侧，不依赖 WebView 里任何脚本。代价：更新入口在托盘菜单而不是应用内设置页；收益：更新能力不在远程来源页面的可达面内。
+- **D7 交叉打包必须换内置 Node，不能只换 Rust target**：安装包内置 Node 二进制，`--target x86_64-apple-darwin` 只换 Rust 产物架构，内置 Node 与原生模块仍是构建机架构，会产出一个「Rust 是 x64、Node 是 arm64」的包——在 Intel Mac 上直接启动失败。因此 `prepare-desktop.mjs` 必须同时处理内置 Node 与 `npm install --cpu`，并由 `desktop-tests` 里的「发布矩阵与内置 Node 架构映射一一对应」守死：**矩阵里每个 target 都必须在 `TRIPLES` 中有映射**，否则会静默退回「复制本机 Node」。
+- **D8 签名为发布必需，不提供「无签名也发布」的开关**：`createUpdaterArtifacts: true` + 缺少 `TAURI_SIGNING_PRIVATE_KEY` 时打包会**明确失败**。这是刻意的——没有签名就不该发布更新，客户端也会拒绝安装（同时挡住被篡改的包）。
+
+### 本轮验证记录
+
+| 项目 | 命令 | 结果 | 等级 |
+| --- | --- | --- | --- |
+| 交叉打包（Apple Silicon → Intel Mac） | `DAYLIGHT_TARGET_TRIPLE=x86_64-apple-darwin npm run desktop:prepare` | 成功；内置 `node` 经 `file` 确认为 `Mach-O 64-bit executable x86_64`（官方 `node-v22.23.3-darwin-x64`），原生模块只剩 `@napi-rs/canvas-darwin-x64`（切回 arm64 时只剩 `canvas-darwin-arm64`，无残留） | 本地测试通过 |
+| 交叉打包缓存与重试 | 连续两次同一目标 | 第二次命中 `work/node-dist-cache/`；实测遇到过 `nodejs.org` 连接超时并验证重试后成功 | 本地测试通过 |
+| 桌面专有测试 | `npm run test:desktop` | **10/10 通过**（新增 2 项：发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程） | 本地测试通过 |
+| Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（新增 updater / dialog 插件与 `update.rs`） | 本地测试通过 |
+| 签名安装包构建 | `TAURI_SIGNING_PRIVATE_KEY=work/updater-key/daylight.key npm run desktop:build` | 成功；产出 `Daylight.app` 284.39 MiB、`Daylight_0.1.0_aarch64.dmg` 97.48 MiB，以及**自动更新产物** `macos/Daylight.app.tar.gz`（99.06 MiB）+ `Daylight.app.tar.gz.sig` | 本地测试通过 |
+| **更新包签名校验（正向）** | 复刻 `tauri-plugin-updater` 的 `verify_signature` 流程（`minisign-verify`），用 `tauri.conf.json` 里的**公钥**校验打包产出的 103,867,487 字节 `.app.tar.gz` | 校验通过；trusted comment 里的 `version:0.1.0` 与公告版本一致 | 本地测试通过 |
+| **更新包签名校验（反向对照）** | 同工具校验「篡改 1 字节」的同一文件 | 被拒绝：`InvalidSignature`。证明上一条不是空检查 | 本地测试通过 |
+| 更新配置已编入二进制 | 在 `daylight-desktop` release 二进制里查找公钥与端点字符串 | 两者都已嵌入 | 本地测试通过 |
+| 发布流水线结构 | `python3 -c "yaml.safe_load(...)"` 解析两个工作流 | YAML 合法；矩阵解析出 6 个目标，与 `prepare-desktop.mjs` 的 `TRIPLES` 一一对应 | 本地测试通过（静态校验） |
+| 发布动作与输入名核对 | 读 `tauri-action` 官方 README（`v1`） | 确认使用 `@v1`、`uploadUpdaterJson`（旧名 `includeUpdaterJson`）、`updaterJsonPreferNsis`；据此外出修正了 Windows 更新包会指向 `.msi` 的问题 | 本地核对官方文档 |
+| Linux 依赖清单 | 对照 Tauri v2 官方 Debian/Ubuntu 前置依赖 | 工作流依赖清单已对齐官方列表（补 `build-essential curl wget file libxdo-dev libssl-dev`，加 AppImage 需要的 `patchelf`） | 本地核对官方文档 |
+| `npm ci` 与锁文件一致性 | 改动 `package.json` 后 `npm ci --dry-run` | 通过（607 包），CI 不会因加 `repository` 字段而失败 | 本地测试通过 |
+| 前端构建 | `npm run build` | 通过 | 本地测试通过 |
+
+### 未验证 / 明确边界
+
+- **发布流水线一次都没实际运行过**。全部结论来自本机静态校验（YAML、目标映射、交叉打包实测、签名校验）。首次打标签发布的成功率取决于 runner 可用性，其中 `ubuntu-24.04-arm` 与 `windows-11-arm` 是 GitHub 的 ARM64 runner，可用性随仓库可见性与账号类型变化——若不可用，对应平台会以 job 失败的形式暴露，不影响其余平台。
+- **自动更新未做端到端验证**：已验证「签名能被应用内嵌公钥接受、篡改即拒绝」，但**下载 → 校验 → 替换安装文件 → 重启**这条完整链路需要先发布两个真实版本才能验证。Linux 上还额外依赖 AppImage 形态（`.deb` 装的版本不会自动更新）。
+- **`tauri.conf.json` 里的公钥与 `work/updater-key/` 的私钥是本轮新生成的**，此前没有更新密钥。若私钥丢失，客户端会拒绝后续所有更新，只能让用户手动重装——`work/updater-key/` 需要自行备份（不进仓库）。
+- **macOS 未签名未公证**：本轮与 CI 默认产出未签名包，首次打开需要在「系统设置 → 隐私与安全性」手动放行。配好 `APPLE_*` Secrets 后可自动签名公证，需要 Apple 开发者账号。
+- **Windows / Linux 仍未在实机运行**：交叉打包逻辑只在本机（macOS）实测，Windows ARM64 / Linux ARM64 的内置 Node 下载与原生模块安装属于**代码已实现**。
+- **GitHub Secrets 尚未配置**：`TAURI_SIGNING_PRIVATE_KEY` 必须先在仓库 Settings → Secrets 里填好（内容即 `work/updater-key/daylight.key`），否则打标签发布会在生成更新产物这一步失败。`APPLE_*` 为可选。
+
+## 上一轮：与 Daylight 真源对齐 + 桌面端专有改造（2026-10-17）
 
 ### 对齐基线
 
@@ -53,7 +113,7 @@
 - **重活不阻塞界面**：后台 Node 进程与 WebView 是不同进程，OCR/PDF 解析不会阻塞渲染；OCR 由 `tesseract.js` 自带的 worker 执行。
 - **端口回退**：固定端口被占用时回退随机端口（`server.on('error')` + `EADDRINUSE`），原生壳层解析 `DAYLIGHT_READY <port>` 后再导航。
 
-### 本轮验证记录
+### 上一轮验证记录
 
 | 项目 | 命令 | 结果 | 等级 |
 | --- | --- | --- | --- |
@@ -91,7 +151,7 @@ src-tauri/target/release/bundle/
 
 - **真实邮箱与真实模型**：本轮**未做**任何真实 IMAP/SMTP/模型实连，也未运行示例以外的提取。特别地，本轮同步进来的「邮件写回真实邮箱」默认关闭，只验证了「开关未开时明确报错、不静默改本地」这条路径，**未验证真实写回**；`/api/reminders/parse` 需要已配置模型，本轮也未用真实模型调用。历史实连记录见下方 2026-10-15 及更早小节，仅作历史证据。
 - **界面渲染**：PDF 渲染已在真实浏览器核对（见上表），但**没有**在可见窗口的 Tauri GUI 中逐平台核对；Office 附件提示、邮件正文 `iframe`、图片/音视频预览同理。
-- **Windows / Linux**：未在对应实机运行；CI 配置已就绪（三平台 verify + 四产物 bundle），但在本机**没有 GitHub remote，Actions 未实际运行过**。
+- **Windows / Linux**：未在对应实机运行；CI 配置已就绪（三平台 verify + 六平台 release），但**Actions 未实际运行过**。
 - **睡眠唤醒**：未做显式的系统唤醒事件监听。Node 的定时器在唤醒后会继续触发，属于可接受行为，但未实测。
 - **字体**：`index.html` 仍从 `fonts.googleapis.com` 取 Noto Sans SC / Sora / Space Grotesk，离线时回退系统字体；桌面端未内置字体文件（避免安装包体积与字重授权扩散）。
 - **/api/jobs**：桌面端无任务列表接口（见上方决策），后台任务页显示「当前服务未启用后台任务」。

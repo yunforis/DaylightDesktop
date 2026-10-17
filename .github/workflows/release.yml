@@ -1,0 +1,174 @@
+name: release
+
+# 打标签即发布：六平台安装包 + 自动更新用的 latest.json。
+# 触发方式（二选一）：
+#   1) 推一个版本标签：  git tag v0.1.0 && git push origin v0.1.0
+#   2) Actions 页面手动运行本工作流，填一个已存在的标签
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已存在的版本标签，例如 v0.1.0'
+        required: true
+
+# tauri-action 需要写权限来创建 Release 并上传产物。
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 先挡住「标签版本与代码里的版本不一致」这一类最容易发错包的问题。
+  guard:
+    name: 校验版本
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - id: check
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-$REF_NAME}"
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::标签必须以 v 开头（当前 '$tag'）。推送形如 v0.1.0 的标签，或手动运行时填写它。"; exit 1 ;;
+          esac
+          version="${tag#v}"
+          pkg=$(node -p "require('./package.json').version")
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          echo "标签：$tag"
+          echo "package.json=$pkg  tauri.conf.json=$conf  Cargo.toml=$cargo"
+          for pair in "package.json:$pkg" "src-tauri/tauri.conf.json:$conf" "src-tauri/Cargo.toml:$cargo"; do
+            file="${pair%%:*}"; value="${pair#*:}"
+            if [ "$value" != "$version" ]; then
+              echo "::error::$file 的版本是 $value，与标签 $tag 不一致。请把三处版本都改成 $version 并提交，再重新打标签。"
+              exit 1
+            fi
+          done
+          # 应用版本号以 tauri.conf.json 为准：自动更新就是拿它和 latest.json 里的版本比较。
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: guard
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 一个平台失败不影响其他平台；失败的平台在 Release 里就是缺这个产物，其余照常可用。
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macos-arm64,   os: macos-14,         target: aarch64-apple-darwin }
+          # Intel Mac 已在 Apple Silicon 上交叉构建：GitHub 不再提供 x64 的 macOS runner，
+          # 而 prepare-desktop.mjs 会把内置 Node 换成官方 darwin-x64 版本，架构不会错配。
+          - { name: macos-x64,     os: macos-14,         target: x86_64-apple-darwin }
+          - { name: linux-x64,     os: ubuntu-22.04,     target: x86_64-unknown-linux-gnu }
+          - { name: linux-arm64,   os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { name: windows-x64,   os: windows-latest,   target: x86_64-pc-windows-msvc }
+          - { name: windows-arm64, os: windows-11-arm,   target: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装 Linux 系统依赖（WebKitGTK / 托盘 / AppImage）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - run: npm ci
+
+      # macOS 签名与公证是可选的：仓库里没有配置证书时，产出的 .app 是未签名的（首次打开需要
+      # 在「系统设置 → 隐私与安全性」里放行）。下面这段只在 APPLE_CERTIFICATE 存在时才注入变量，
+      # 空变量会让 Tauri 的打包器直接报错，所以不能无条件写进 env。
+      - name: 配置 macOS 签名与公证
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "未配置 APPLE_CERTIFICATE，跳过签名与公证（产出的应用未签名）。"
+            exit 0
+          fi
+          {
+            echo "APPLE_CERTIFICATE<<APPLE_CERT_EOF"
+            echo "$APPLE_CERTIFICATE"
+            echo "APPLE_CERT_EOF"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            echo "APPLE_ID=$APPLE_ID"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+          } >> "$GITHUB_ENV"
+          echo "已注入 macOS 签名与公证配置。"
+
+      - name: 构建并发布
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 自动更新的签名私钥。缺失时打包器会在「生成更新产物」这一步直接失败，
+          # 这是刻意的：没有签名就不能发布更新，否则客户端会拒绝安装（也挡住了被篡改的包）。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # 让 prepare-desktop.mjs 按目标平台挑选内置 Node 与原生模块架构。
+          DAYLIGHT_TARGET_TRIPLE: ${{ matrix.target }}
+        with:
+          tagName: ${{ needs.guard.outputs.tag }}
+          releaseName: 'Daylight ${{ needs.guard.outputs.version }}'
+          releaseBody: |
+            Daylight ${{ needs.guard.outputs.version }} 桌面客户端。
+
+            下载对应你系统的安装包：
+
+            | 系统 | 文件 |
+            | --- | --- |
+            | macOS（Apple Silicon） | `Daylight_${{ needs.guard.outputs.version }}_aarch64.dmg` |
+            | macOS（Intel） | `Daylight_${{ needs.guard.outputs.version }}_x64.dmg` |
+            | Windows（x64） | `Daylight_${{ needs.guard.outputs.version }}_x64-setup.exe` |
+            | Windows（ARM64） | `Daylight_${{ needs.guard.outputs.version }}_arm64-setup.exe` |
+            | Linux（x64） | `Daylight_${{ needs.guard.outputs.version }}_amd64.AppImage` / `.deb` |
+            | Linux（ARM64） | `Daylight_${{ needs.guard.outputs.version }}_arm64.AppImage` / `.deb` |
+
+            已安装的客户端会自动发现并安装这个版本（托盘菜单「检查更新…」可手动检查）。
+            自动更新基于 `latest.json`，只在**已发布的正式版本**上生效。
+
+            邮件内容是待分析的数据，客户端不会执行其中的任何指令。配置与数据都保存在本机。
+          releaseDraft: false
+          prerelease: false
+          # 生成并上传 latest.json 与各平台的 .sig 签名，客户端据此自动更新。
+          uploadUpdaterJson: true
+          # Windows 的自动更新只能装 NSIS（setup.exe），装不了 WiX（.msi）。
+          # `targets: "all"` 会让两者都存在，这里必须显式选 NSIS，否则客户端会拿到装不上的 .msi。
+          updaterJsonPreferNsis: true
+          # 六个 job 并发创建/更新同一个 Release，重试能吸收偶发的并发冲突与上传抖动。
+          retryAttempts: 2
+          args: --target ${{ matrix.target }}
