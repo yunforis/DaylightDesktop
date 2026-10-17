@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Daylight Desktop</h1>
+  <img src="docs/assets/readme/banner.svg" alt="Daylight Desktop — Turn messages into next steps." width="100%" />
   <p><strong>Turn messages into next steps.</strong></p>
   <p>An email-driven Agent desktop app · Tauri 2 + bundled Node runtime · UCloud AI Hackathon · Track B / AI Application</p>
   <p><strong><a href="README.md">简体中文</a> · English</strong></p>
@@ -42,7 +42,7 @@
 | Stand up a server, database, and account system before using AI | Install and run: the Node backend is bundled and data stays on this machine by default |
 | Handle resumes and invoices as scattered attachments | Review them in dedicated recruitment/invoice pages alongside originals |
 
-**Current delivery:** the desktop shell, a local single-user workspace, preset scenario templates, retrieval, Little D, and a complete native auto-update framework. Installers for all six targets (macOS arm64/x64, Windows x64/arm64, Linux x64/arm64) have been built in CI. **The app has not been launched on real Windows or Linux machines, and no public release has been published yet**; every unverified item is recorded in [STATUS](STATUS.md) and [Known boundaries](#evidence).
+**Current delivery:** the desktop shell, a local single-user workspace, preset scenario templates, retrieval, Little D, and a complete native auto-update framework. Installers for all six targets (macOS arm64/x64, Windows x64/arm64, Linux x64/arm64) have been built in CI — a full **draft** release round passed every stage (version guard → six-platform build → `latest.json` rewrite), leaving a single draft Release holding **27 artifacts** (`.dmg` / `.app.tar.gz` / NSIS `-setup.exe` / `.msi` / `AppImage` / `.deb` / `.rpm`, each with `.sig`, plus `latest.json`), and all 18 platform keys inside `latest.json` point at public download URLs. **The app has not been launched on real Windows or Linux machines, and no public release has been published yet**; every unverified item is recorded in [STATUS](STATUS.md) and [Known boundaries](#evidence).
 
 <a id="quickstart"></a>
 ## ⚡ Quick start
@@ -119,6 +119,8 @@ Business features match the Web version; details are in [STATUS.md](STATUS.md).
 
 Categorize campus, personal, and work inboxes. Calendars and tasks follow the selected view; email Q&A and Little D knowledge search use that scope to find indexed notices.
 
+<img src="docs/assets/readme/mailbox-scopes.svg" alt="Single mailbox, same-category and all-mailbox views with their retrieval scopes" width="100%" />
+
 | View | Useful for | Retrieval scope |
 | --- | --- | --- |
 | **Single mailbox** | Working in one inbox | Indexed content from the current mailbox |
@@ -136,14 +138,30 @@ Receive application → store attachment → extract PDF text/OCR → organize c
 
 Inspect candidate details, resumes, and origins; answers can reference source pages. Scans, extraction errors, and incomplete profiles require review/retry. Feishu meetings are optional and require configuration. Existing recruitment records are reused rather than duplicated when adding workspaces.
 
+<details>
+<summary>Recruitment processing diagram</summary>
+
+<img src="docs/assets/readme/recruitment-flow.svg" alt="Recruitment flow: attachment, original kept, PDF text/OCR, candidate profile, screening and reviewed invitation" width="100%" />
+
+</details>
+
 ### Invoices: from attachment to field checks
 
 Find invoice attachment → extract number/date/parties/amount/tax/items → check original → prepare reimbursement materials.
 
 Open/download originals from the invoice page. Extracted fields do not establish tax authenticity, reimbursement, or payment. Invoice recognition alone does not create calendar events or tasks.
 
+<details>
+<summary>Invoice processing diagram</summary>
+
+<img src="docs/assets/readme/invoice-flow.svg" alt="Invoice flow: attachment, extracted fields, amount and tax, check against the original, reimbursement materials" width="100%" />
+
+</details>
+
 <a id="architecture"></a>
 ## 🏗️ Architecture
+
+<img src="docs/assets/readme/architecture.svg" alt="Desktop local architecture: Tauri shell, bundled Node backend, local data and external services" width="100%" />
 
 ```text
 Daylight Desktop (Tauri 2 app)
@@ -197,6 +215,8 @@ The app bundles three demos built on **preset extraction results**, so the full 
 <a id="update"></a>
 ## 🔄 Auto-update & releases
 
+<img src="docs/assets/readme/update-flow.svg" alt="Auto-update trust chain: silent check, latest.json, download, signature verification, user confirmation, replace and restart" width="100%" />
+
 ### Client behavior
 
 - About 6 seconds after launch it **silently checks** once: if current, nothing happens; only a real update raises a native dialog.
@@ -230,7 +250,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-You can also run the `release` workflow manually from the Actions page with a tag (created on the run's commit if it does not exist) and optionally check **"draft release only"** to build without publishing — useful for verifying that all six platforms produce artifacts; uncheck it for a real release (the draft already holds every artifact and `latest.json`, so you can also publish it from the Releases page).
+You can also run the `release` workflow manually from the Actions page with a tag (created on the run's commit if it does not exist) and optionally check **"draft release only"** to build without publishing — useful for verifying that all six platforms produce artifacts. Once the draft looks right, **publish that draft straight from the Releases page**: it already holds every artifact and `latest.json`.
+
+> ⚠️ If a draft Release already exists for the tag, re-running with the box unchecked does **not** turn it into a public release — `guard` idempotently reuses the existing Release and it stays a draft. To use the "uncheck and re-run" route, delete the draft first.
 
 | Platform | Runner | Rust target |
 | --- | --- | --- |
@@ -374,7 +396,7 @@ bash work/smoke.sh    # backend smoke test (production mode / no PG / loopback o
 
 ### Known boundaries
 
-- **Six-platform builds verified; on-device launch not verified:** installers for all six targets have been **built for real** on GitHub-hosted runners (macOS `.dmg`/`.app.tar.gz`, Windows NSIS `.exe`/`.msi`, Linux `AppImage`/`.deb`/`.rpm`, each with `.sig`). However, **the app has never been launched on a real Windows or Linux machine**: `src-tauri/src/main.rs` and `scripts/prepare-desktop.mjs` contain genuine platform branches and the dependency list records prebuilt packages for every platform. This is therefore **implemented plus build-verified**, not **verified on device**. Two release-pipeline defects found through the draft release (concurrent duplicate Release creation, and `latest.json` pointing at an authenticated asset API URL) have been fixed; the result of the following full verification round is recorded in [STATUS.md](STATUS.md).
+- **Six-platform artifacts verified on a draft Release; on-device launch not verified:** installers for all six targets have been **built for real** on GitHub-hosted runners (macOS `.dmg`/`.app.tar.gz`, Windows NSIS `-setup.exe`/`.msi`, Linux `AppImage`/`.deb`/`.rpm`, each with `.sig`). Two release-pipeline defects found through the draft release (concurrent duplicate Release creation, and `latest.json` pointing at an authenticated asset API URL) have been fixed, and **the following full round finished green** (version guard + all six platform jobs + `latest.json` rewrite), with exactly one draft Release holding every platform's artifacts plus `latest.json`; reading `latest.json` back showed all 18 platform keys pointing at public download URLs (`releases/download/v0.1.0/<file>`). However, **the app has never been launched on a real Windows or Linux machine**: `src-tauri/src/main.rs` and `scripts/prepare-desktop.mjs` contain genuine platform branches and the dependency list records prebuilt packages for every platform. This is therefore **implemented plus build- and packaging-verified**, not **verified on device**. Full records in [STATUS.md](STATUS.md).
 - **Auto-update is not verified end to end:** locally we verified that the app's embedded public key accepts the signed updater artifact and rejects a 1-byte tamper (with a negative control), but the full **download → verify → replace installation → restart** chain needs two real published versions, which this round did not do. On Linux it additionally depends on the AppImage form.
 - **macOS installers are unsigned and not notarized:** local and CI builds produce unsigned packages that require manual approval on first launch. With `APPLE_*` secrets configured, signing and notarization become automatic, at which point a paid Apple Developer account is required.
 - **No public release yet:** only a draft Release exists; the `v0.1.0` tag is created at publish time. Until then, clients report "no update information available yet".
@@ -405,6 +427,7 @@ DaylightDesktop/
 ├── .github/workflows/          # desktop.yml (3-platform verify), release.yml (6-platform release)
 ├── docs/resume-test/           # Recruitment test fixtures
 ├── docs/invoice-test/          # Invoice test fixtures
+├── docs/assets/readme/         # README diagrams (hand-authored SVG + generator)
 ├── STATUS.md                   # Implemented features, verification results, boundaries
 └── AGENTS.md                   # Development conventions
 ```

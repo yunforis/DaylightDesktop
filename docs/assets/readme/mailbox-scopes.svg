@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="614" viewBox="0 0 1720 614" role="img" aria-label="Mailbox views and retrieval scope">
+  <title>Mailbox views and retrieval scope</title>
+  <defs>
+    <marker id="mk-ink" viewBox="0 0 10 8" refX="9.5" refY="4" markerWidth="8" markerHeight="6.4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#1B3A5C"/></marker>
+    <marker id="mk-slate" viewBox="0 0 10 8" refX="9.5" refY="4" markerWidth="8" markerHeight="6.4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#64748B"/></marker>
+    <marker id="mk-amber" viewBox="0 0 10 8" refX="9.5" refY="4" markerWidth="8" markerHeight="6.4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#D89A22"/></marker>
+    <marker id="mk-red" viewBox="0 0 10 8" refX="9.5" refY="4" markerWidth="8" markerHeight="6.4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#D9534F"/></marker>
+    <marker id="mk-green" viewBox="0 0 10 8" refX="9.5" refY="4" markerWidth="8" markerHeight="6.4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#3FA46A"/></marker>
+    <marker id="mk-blue" viewBox="0 0 10 8" refX="9.5" refY="4" markerWidth="8" markerHeight="6.4" orient="auto"><path d="M0 0 L10 4 L0 8 z" fill="#3E7CB1"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1720" height="614" rx="0" fill="#FAF7F2" />
+  <text x="80" y="68" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="36" font-weight="700" fill="#1B3A5C" >Mailbox views and retrieval scope</text>
+  <text x="80" y="106" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="400" fill="#64748B" >Categorize campus, personal and work inboxes; the selected view scopes search and answers</text>
+  <rect x="80" y="160" width="480" height="280" rx="22" fill="#FFFFFF" />
+  <rect x="136" y="213.4" width="36" height="25.2" rx="4.5" fill="none" stroke="#2C4A6B" stroke-width="2.7"/><path d="M137 216.4 L154 228.7 L171 216.4" fill="none" stroke="#2C4A6B" stroke-width="2.7" stroke-linejoin="round"/>
+  <text x="112" y="300" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="28" font-weight="700" fill="#1B3A5C" >Single mailbox</text>
+  <text x="112" y="336" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="400" fill="#64748B" >Working in one inbox</text>
+  <rect x="112" y="360" width="416" height="56" rx="14" fill="#EDF2F7" stroke="none" stroke-width="2"/>
+  <text x="132" y="396" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="17" font-weight="400" fill="#2C4A6B" >Indexed content from the current mailbox</text>
+  <rect x="620" y="160" width="480" height="280" rx="22" fill="#FFFFFF" />
+  <rect x="676" y="213.4" width="36" height="25.2" rx="4.5" fill="none" stroke="#2C4A6B" stroke-width="2.7"/><path d="M677 216.4 L694 228.7 L711 216.4" fill="none" stroke="#2C4A6B" stroke-width="2.7" stroke-linejoin="round"/>
+  <rect x="720" y="213.4" width="36" height="25.2" rx="4.5" fill="none" stroke="#2C4A6B" stroke-width="2.7"/><path d="M721 216.4 L738 228.7 L755 216.4" fill="none" stroke="#2C4A6B" stroke-width="2.7" stroke-linejoin="round"/>
+  <rect x="764" y="213.4" width="36" height="25.2" rx="4.5" fill="none" stroke="#2C4A6B" stroke-width="2.7"/><path d="M765 216.4 L782 228.7 L799 216.4" fill="none" stroke="#2C4A6B" stroke-width="2.7" stroke-linejoin="round"/>
+  <rect x="820" y="210" width="74" height="32" rx="16" fill="#F5B84A" />
+  <text x="857" y="232" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="19" font-weight="700" fill="#1B3A5C" text-anchor="middle">×3</text>
+  <text x="652" y="300" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="28" font-weight="700" fill="#1B3A5C" >Same category</text>
+  <text x="652" y="336" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="400" fill="#64748B" >Campus or work inboxes together</text>
+  <rect x="652" y="360" width="416" height="56" rx="14" fill="#EDF2F7" stroke="none" stroke-width="2"/>
+  <text x="672" y="396" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="17" font-weight="400" fill="#2C4A6B" >Indexed content from tagged mailboxes</text>
+  <rect x="1160" y="160" width="480" height="280" rx="22" fill="#FFFFFF" />
+  <rect x="1210" y="216.2" width="28" height="19.599999999999998" rx="3.5" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996"/><path d="M1211 219.2 L1224 228.1 L1237 219.2" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996" stroke-linejoin="round"/>
+  <rect x="1248" y="216.2" width="28" height="19.599999999999998" rx="3.5" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996"/><path d="M1249 219.2 L1262 228.1 L1275 219.2" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996" stroke-linejoin="round"/>
+  <rect x="1286" y="216.2" width="28" height="19.599999999999998" rx="3.5" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996"/><path d="M1287 219.2 L1300 228.1 L1313 219.2" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996" stroke-linejoin="round"/>
+  <rect x="1324" y="216.2" width="28" height="19.599999999999998" rx="3.5" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996"/><path d="M1325 219.2 L1338 228.1 L1351 219.2" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996" stroke-linejoin="round"/>
+  <rect x="1362" y="216.2" width="28" height="19.599999999999998" rx="3.5" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996"/><path d="M1363 219.2 L1376 228.1 L1389 219.2" fill="none" stroke="#2C4A6B" stroke-width="2.0999999999999996" stroke-linejoin="round"/>
+  <rect x="1410" y="210" width="74" height="32" rx="16" fill="#F5B84A" />
+  <text x="1447" y="232" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="19" font-weight="700" fill="#1B3A5C" text-anchor="middle">×5</text>
+  <text x="1192" y="300" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="28" font-weight="700" fill="#1B3A5C" >All mailboxes</text>
+  <text x="1192" y="336" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="400" fill="#64748B" >Finding a notice when its inbox is unclear</text>
+  <rect x="1192" y="360" width="416" height="56" rx="14" fill="#EDF2F7" stroke="none" stroke-width="2"/>
+  <text x="1212" y="396" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="17" font-weight="400" fill="#2C4A6B" >Indexed content from all local mailboxes</text>
+  <rect x="80" y="458" width="1560" height="92" rx="16" fill="#FFF8E8" stroke="#F0DCB0" stroke-width="2"/>
+  <text x="108" y="496" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="400" fill="#2C4A6B" >Combined views are a read scope only: events, drafts and sending still use the selected mailbox.</text>
+  <text x="108" y="530" font-family="PingFang SC,Hiragino Sans GB,Microsoft YaHei,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="20" font-weight="400" fill="#2C4A6B" >Retrieval covers indexed content, not necessarily the whole mailbox history.</text>
+</svg>

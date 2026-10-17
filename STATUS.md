@@ -1,6 +1,6 @@
 # Daylight 当前状态
 
-最后更新：**2026-10-17（北京时间）**。本文件记录实际实现和验证结果；使用步骤见 [README.md](README.md)，开发约定见 [AGENTS.md](AGENTS.md)。
+最后更新：**2026-10-18（北京时间）**。本文件记录实际实现和验证结果；使用步骤见 [README.md](README.md)，开发约定见 [AGENTS.md](AGENTS.md)。
 
 验证等级用语（按 [AGENTS.md](AGENTS.md)）：**规划中** < **代码已实现** < **本地测试通过** < **真实服务实连成功** < **云端部署验证通过** < **生产验收通过**。
 
@@ -56,6 +56,8 @@
 | CI 发现并修复：并发创建劈出两份草稿 Release | 用 Release API 逐个核对产物清单 | 同一标签 `v0.1.0` 下出现**两份**草稿（创建时间差 2 秒）：一份 11 个产物（只有 macOS + Windows x64），另一份 23 个（有全部 Linux 产物却没有 Windows x64），两份 `latest.json` 各缺一半。根因：`tauri-action` 用「按标签查已有 Release」的接口找草稿，而那个接口**不返回草稿**，六个并发 job 于是各建一份 | 云端抓到，本地修复 |
 | CI 发现并修复：`latest.json` 用的是资产 API 地址 | 匿名实测 `GET api.github.com/repos/.../releases/assets/<id>` | `Accept: application/octet-stream` → 302 到真正的二进制；**普通通配 Accept（客户端更新器的行为）→ 200 + `application/json`**，拿到的是资产元数据而不是安装包。客户端会「下载」到一段 JSON，签名校验必然失败，自动更新整条链路走不通 | 云端抓到 + 本地实测请求语义，已修复 |
 | `latest.json` 地址改写与完整性校验 | `npm run test:desktop` #14 | API 地址 → `releases/download/<tag>/<文件名>`；签名与其它字段原样保留；**重复运行不再改动**（幂等）；指向不存在的资产、或形态不认识的地址一律报错；六个平台缺任何一个都能被检出 | 本地测试通过 |
+| **六平台发布流水线真实运行（修复后完整一轮）** | `release.yml`，`workflow_dispatch` + 勾草稿，标签 `v0.1.0`，run [`39053509331`](https://github.com/yunforis/DaylightDesktop/actions/runs/39053509331) | `校验版本` + **六个平台 job**（`macos-arm64` / `macos-x64` / `linux-x64` / `linux-arm64` / `windows-x64` / `windows-arm64`）+ `修整 latest.json` **全部 success**。全程只创建 **1 份**草稿 Release（`id=415954992`，`draft=true`，第二轮复用了第一轮那份，走的正是幂等复用分支），收齐 **27 个产物**：macOS 双架构 `.dmg` + `.app.tar.gz` + `.sig`、Windows 双架构 `-setup.exe`（NSIS）+ `en-US.msi` + `.sig`、Linux 双架构 `AppImage` + `.deb` + `.rpm` + `.sig`，以及 `latest.json` | **云端部署验证通过（六平台出包，草稿）** |
+| `latest.json` 指向公开下载地址（真实产物核对） | 从草稿 Release 读回 `latest.json`（`Accept: application/octet-stream`） | 18 个平台键全部指向 `https://github.com/yunforis/DaylightDesktop/releases/download/v0.1.0/<文件名>`，不再是需要鉴权的 asset API 地址；`windows-x86_64` / `windows-aarch64` 指向 `-setup.exe`，另有 `-msi` 键指向 `.msi`；六个必需平台（darwin/linux/windows × aarch64/x86_64）齐全 | 云端部署验证通过（草稿） |
 | 发布正文模板 | `sed "s/{{VERSION}}/0.1.0/g" .github/release-body.md` | 版本占位替换正确，六平台下载表与实际产物名一致 | 本地测试通过 |
 | 产物文件名与引用自检 | `npm run test:desktop` #12 + 反向对照（撤掉修正重新构建） | 修正生效时 0 个非法名、117 个 `/assets/` 引用全部存在；**撤掉修正后该测试精确失败并点名那两个文件** | 本地测试通过 |
 | Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（新增 updater / dialog 插件与 `update.rs`） | 本地测试通过 |
@@ -71,7 +73,7 @@
 
 ### 未验证 / 明确边界
 
-- **发布流水线已真实运行（草稿），Linux 修好后需再跑一次确认**：`desktop.yml`（三平台 verify）三平台全绿。`release.yml` 六平台矩阵已于 2026-10-17 手动触发（勾草稿、标签 `v0.1.0`）真实跑过一轮：macOS 双架构与 Windows 双架构都**真实构建成功**，Linux 双架构在 AppImage 打包失败（见下两条边界），原因已定位并修好，正在重跑确认。**「六个平台全部出包」目前仍属未验证**，要等这一轮重跑完成。
+- **六平台出包已在草稿 Release 上真实验证通过，但还没有发布正式版本、也没有在实机上启动过**：`desktop.yml`（三平台 verify）三平台全绿；`release.yml` 六平台矩阵在修掉两个缺陷（Linux AppImage 误收 musl 原生模块、并发创建重复 Release 与 `latest.json` 用了 asset API 地址）后**完整跑通一轮**：`校验版本`、六个平台构建、`修整 latest.json` 全部 success，唯一一份草稿 Release 里收齐六平台安装包与 `latest.json`。**注意这仍是草稿**：`v0.1.0` 标签要到发布时才创建，公开更新地址 `releases/latest/download/latest.json` 在发布前返回 404，客户端会显示「还没有取到可用的更新信息」。**发布动作需要人明确决定后再做**；`latest.json` 里的 `releases/download/v0.1.0/...` 地址在发布后才会生效。
 - **文件名必须在 Windows 上也合法**：安装包里的每个文件名不能以点或空格结尾、不能含 `<>:"|?*`、不能用 `CON`/`PRN`/`NUL`/`COM1`/`LPT1` 这些保留名。构建发生在 macOS / Linux 上，这类文件名在那里完全合法，问题只会在 Windows 用户机器上出现。Vite 的默认资源命名就踩过：没有扩展名的文件（pdfjs-dist 的 `LICENSE_JBIG2`）会被命名成 `LICENSE_JBIG2-C_izpuvI.`。`vite.config.js` 已修掉这一点，`prepare-desktop.mjs` 在打包前会检查一遍并直接报错，`desktop-tests` 也有断言守着。\n- **Windows 上凭据文件没有 POSIX 权限位**：`server/secure-json.js` 写盘请求 `mode: 0o600`，Windows 会忽略它，Node 读回来恒是 `0o666`（CI 实测 `expected 384 / actual 438`）。这一侧的实际保护是「主密钥存进 Windows 凭据管理器」+「`%APPDATA%` 目录继承的 ACL」，都无法用 `fs.stat` 断言。`desktop-tests` 已改为按平台分支断言，并在注释里写明原因，不假装 Windows 上也验证了 0600。
 - **Windows 上 PATH 的键名是 `Path`，曾导致 `desktop:check` 静默失败**：`scripts/desktop.mjs` 里写的是 `env.PATH = ...`，而 `env` 是从 `process.env` 展开出的普通对象（大小写敏感），于是新增了一个键而不是改已有的 `Path`，交给子进程的环境块里同时存在 `Path` 与 `PATH`，系统挑到了不含 cargo 的那个——`spawnSync('cargo')` 找不到可执行文件，`npm run desktop:check` 只给出退出码 1、**全程没有任何输出**（CI 日志里唯一线索就是这一行）。已改为按键名不敏感地定位 PATH，并在 `cargo` 启动失败时明确报出原因；`desktop-tests` 里有静态断言守住写法。**这个差异只在 Windows 上存在**：macOS/Linux 的环境块是真·大小写敏感，复刻不出「系统在重复键里挑一个」的行为，所以本机无法行为验证，只能靠 `windows-latest` 上的真实运行。
 - **Windows 检出是 CRLF 行尾**：正则里的 `.` 不匹配 `\r`，带 `$` 锚点的断言在 CRLF 上会静默失效。写上面那条 PATH 守卫时就踩了一次——剥注释的 `/\/\/.*$/` 在 CRLF 下匹配不到行尾，把注释里那句「不要写 `env.PATH`」当成了违规代码，于是在 `windows-latest` 上失败、在 macOS 上通过。测试里读源码现已统一走 `readText()` 先归一化行尾。

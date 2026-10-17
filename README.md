@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Daylight Desktop</h1>
+  <img src="docs/assets/readme/banner.svg" alt="Daylight Desktop — 让分散的信息，成为可追踪的下一步。" width="100%" />
   <p><strong>让分散的信息，成为可追踪的下一步。</strong></p>
   <p>邮件驱动的多场景 Agent 桌面应用 · Tauri 2 + 内置 Node 后台 · UCloud 优刻得 AI 黑客松 · Track B / AI Application</p>
   <p><strong>简体中文 · <a href="README_EN.md">English</a></strong></p>
@@ -42,7 +42,7 @@
 | 为了用上 AI，先搭服务器、数据库和账号体系 | 下载安装包即可运行，内置 Node 后台，数据默认留在本机 |
 | 简历与发票附件分散 | 在招聘、发票页面集中查看，处理结果可对照原件 |
 
-**当前交付：** 桌面壳层、本地单用户工作区、预置场景模板、知识检索、小 D 助手，以及原生侧自动更新的完整框架。六种目标（macOS arm64/x64、Windows x64/arm64、Linux x64/arm64）的安装包已在 CI 真实构建。**安装包尚未在真实 Windows / Linux 机器上启动过，也还没有发布过正式版本**；未验证项逐条记录在 [STATUS](STATUS.md) 与[已知边界](#evidence)。
+**当前交付：** 桌面壳层、本地单用户工作区、预置场景模板、知识检索、小 D 助手，以及原生侧自动更新的完整框架。六种目标（macOS arm64/x64、Windows x64/arm64、Linux x64/arm64）的安装包已在 CI 真实构建——一轮完整的**草稿**发布跑通了「校验版本 → 六平台构建 → 修整 `latest.json`」全部环节，唯一一份草稿 Release 里收齐 **27 个产物**（`.dmg` / `.app.tar.gz` / NSIS `-setup.exe` / `.msi` / `AppImage` / `.deb` / `.rpm` 与各自的 `.sig`，以及 `latest.json`），`latest.json` 的 18 个平台键全部指向公开下载地址。**安装包尚未在真实 Windows / Linux 机器上启动过，也还没有发布过正式版本**；未验证项逐条记录在 [STATUS](STATUS.md) 与[已知边界](#evidence)。
 
 <a id="quickstart"></a>
 ## ⚡ 快速开始
@@ -119,6 +119,8 @@
 
 为校园、生活和工作邮箱设置分类。日历与待办按当前范围展示；邮件页问答和小 D 的知识检索也使用所选范围，从已入库内容中找回通知。
 
+<img src="docs/assets/readme/mailbox-scopes.svg" alt="单邮箱、同类混合与全部混合三种视图及其检索范围示意" width="100%" />
+
 | 视图 | 适合什么情况 | 检索范围 |
 | --- | --- | --- |
 | **单邮箱** | 只处理当前收件箱 | 当前自有邮箱的已入库内容 |
@@ -136,14 +138,30 @@
 
 在人才库查看资料、简历与来源，提问时可以返回对应页码和原文。扫描件、识别失败与信息不全需回查或重试；飞书建会是可选能力，需自行配置。既有招聘数据直接复用，不因添加工作台复制一份。
 
+<details>
+<summary>查看招聘处理流程图</summary>
+
+<img src="docs/assets/readme/recruitment-flow.svg" alt="招聘的处理流程：邮件附件、保存原件、PDF 文字/OCR、候选人资料、筛选与审核后发送邀约" width="100%" />
+
+</details>
+
 ### 发票：从邮件附件到字段核对
 
 发现票据附件 → 提取号码、日期、购销方、金额/税额和明细 → 对照原票 → 整理报销材料。
 
 发票页保留原附件查看/下载入口；提取结果需要核对，不代表税务验真、已经报销或完成付款。识别发票本身不会自动生成日程与待办。
 
+<details>
+<summary>查看发票处理流程图</summary>
+
+<img src="docs/assets/readme/invoice-flow.svg" alt="发票的处理流程：邮件附件、字段提取、金额税额、对照原件与报销材料" width="100%" />
+
+</details>
+
 <a id="architecture"></a>
 ## 🏗️ 系统架构
+
+<img src="docs/assets/readme/architecture.svg" alt="桌面端本地架构：Tauri 壳层、内置 Node 后台、本地数据与外部服务" width="100%" />
 
 ```text
 Daylight Desktop（Tauri 2 应用）
@@ -197,6 +215,8 @@ Daylight Desktop（Tauri 2 应用）
 <a id="update"></a>
 ## 🔄 自动更新与发布
 
+<img src="docs/assets/readme/update-flow.svg" alt="自动更新的信任链：静默检查、latest.json、下载、签名校验、用户确认后替换并重启" width="100%" />
+
 ### 客户端行为
 
 - 启动约 6 秒后**静默检查**一次更新：已是最新就什么都不做，有更新才弹原生对话框。
@@ -230,7 +250,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-也可以到 Actions 页面手动运行 `release` 工作流，填一个标签（标签不存在时会在本次运行的提交上创建），并可勾选 **「只产出草稿 Release」**只构建不公开——用于先验证六平台能不能都出包，确认后勾掉再跑一次即为正式发布（草稿里已经有全部产物与 `latest.json`，也可以直接在 Releases 页面把它发布出去）。
+也可以到 Actions 页面手动运行 `release` 工作流，填一个标签（标签不存在时会在本次运行的提交上创建），并可勾选 **「只产出草稿 Release」**只构建不公开——用于先验证六平台能不能都出包。**草稿验证通过后，直接在 Releases 页面把这份草稿发布出去**即为正式发布：草稿里已经有全部产物与 `latest.json`。
+
+> ⚠️ 如果同一标签下**已经存在**草稿 Release，再跑一次并取消勾选**不会**把它变成正式发布——`guard` 会幂等复用那份已存在的 Release，它仍然是草稿。想走「取消勾选重跑」这条路，需要先删掉草稿 Release。
 
 | 平台 | Runner | Rust target |
 | --- | --- | --- |
@@ -374,7 +396,7 @@ bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴�
 
 ### 已知边界
 
-- **六平台构建已验证，实机启动未验证**：六种目标的安装包已在 GitHub 托管的 runner 上**真实构建成功**（含 macOS 的 `.dmg`/`.app.tar.gz`、Windows 的 NSIS `.exe`/`.msi`、Linux 的 `AppImage`/`.deb`/`.rpm`，以及各自的 `.sig`）。但**应用本身没有在真实 Windows / Linux 机器上启动过**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包。因此这是**代码已实现 + 构建通过**，不是**实机跑通**。发布流水线在草稿 Release 上暴露的两个缺陷（并发创建重复 Release、`latest.json` 指向需鉴权的 asset API 地址）已修复，修复后整轮校验结果以 [STATUS.md](STATUS.md) 为准。
+- **六平台出包已在草稿 Release 上真实验证通过，实机启动未验证**：六种目标的安装包已在 GitHub 托管的 runner 上**真实构建成功**（含 macOS 的 `.dmg`/`.app.tar.gz`、Windows 的 NSIS `-setup.exe`/`.msi`、Linux 的 `AppImage`/`.deb`/`.rpm`，以及各自的 `.sig`）。发布流水线在草稿 Release 上暴露的两个缺陷（并发创建重复 Release、`latest.json` 指向需鉴权的 asset API 地址）已修复，**修复后完整一轮（`校验版本` + 六个平台 job + `修整 latest.json`）全部 success**，且全程只创建一份草稿 Release，六平台产物与 `latest.json` 都在里面；实测读回的 `latest.json` 里 18 个平台键全部是公开下载地址（`releases/download/v0.1.0/<文件名>`）。但**应用本身没有在真实 Windows / Linux 机器上启动过**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包。因此这是**代码已实现 + 构建与出包通过**，不是**实机跑通**。完整记录见 [STATUS.md](STATUS.md)。
 - **自动更新未做端到端验证**：本机已实测「更新产物签名能被应用内嵌公钥接受、篡改 1 字节即被拒绝」（含反向对照），但**下载 → 校验 → 替换安装文件 → 重启**这一整条链路需要发布两个真实版本才能验证，本轮未做。Linux 上还额外依赖 AppImage 形态。
 - **macOS 安装包未做签名与公证**：本机与 CI 默认产出未签名包，首次打开需要手动放行。配好 `APPLE_*` Secrets 后即可自动签名公证，那时需要 Apple 开发者账号（付费）。
 - **尚未发布正式版本**：当前只有草稿 Release；`v0.1.0` 标签在发布时才创建。客户端在正式发布前会显示「还没有取到可用的更新信息」。
@@ -405,6 +427,7 @@ DaylightDesktop/
 ├── .github/workflows/          # desktop.yml（三平台 verify）、release.yml（六平台发布）
 ├── docs/resume-test/           # 招聘测试素材
 ├── docs/invoice-test/          # 发票测试素材
+├── docs/assets/readme/         # README 说明图（手绘 SVG + 生成脚本）
 ├── STATUS.md                   # 已实现、验证结果与边界
 └── AGENTS.md                   # 开发约定
 ```
