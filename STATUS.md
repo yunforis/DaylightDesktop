@@ -22,7 +22,7 @@
   - `guard` 任务先校验**标签版本与 `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处版本一致**，不一致直接失败，避免发出一个「版本号说不清」的包。
   - `fail-fast: false`：单平台失败不影响其余平台。
   - `includeUpdaterJson` 在当前的 `tauri-action` 里已更名为 `uploadUpdaterJson`；并显式设 `updaterJsonPreferNsis: true`（Windows 自动更新只能装 NSIS，不设就会把装不上的 `.msi` 写进 `latest.json`），`retryAttempts: 2`（六个 job 并发创建同一个 Release）。
-  - `tauri-apps/tauri-action@v1`，`releaseDraft: false`（打标签这个动作本身就是人工程序）；也可手动运行本工作流重跑某个平台。
+  - `tauri-apps/tauri-action@v1`，`releaseDraft` 由 guard 任务归一化后的 `draft` 输出决定（**不写死**）：推标签默认正式发布，手动运行时可勾「只产出草稿 Release」来在不公开的前提下验证六平台构建。
 - **应用内自动更新（Rust 侧，`src-tauri/src/update.rs`）**：`tauri-plugin-updater` + `tauri-plugin-dialog`。启动约 6 秒后**静默**检查一次（已是最新不打扰用户），托盘菜单新增「检查更新…」手动检查；发现新版本弹原生对话框，**用户点确认后**才下载安装，装完 `app.restart()`；下载期间用窗口标题显示「正在下载更新…」。绝不静默安装，也不需要 WebView 参与。
   - 配套：`tauri.conf.json` 增加 `plugins.updater`（可公开的 minisign 公钥 + 本仓库 `releases/latest/download/latest.json`）与 `bundle.createUpdaterArtifacts: true`。
   - 私钥生成在 `work/updater-key/daylight.key`（`work/` 不进仓库），只用于本机与 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`。

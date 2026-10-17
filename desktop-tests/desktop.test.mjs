@@ -460,6 +460,12 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
   }
   // Windows 的自动更新只能装 NSIS；不显式选 NSIS 就会把装不上的 .msi 写进 latest.json。
   assert.ok(!release.includes('tauri-apps/tauri-action@v0'), '请使用当前的 tauri-action v1');
+
+  // 草稿开关：手动运行时要能在不公开的前提下验证六平台构建，且**不能**因为它误判成正式发布。
+  assert.match(release, /releaseDraft:\s*\$\{\{\s*needs\.guard\.outputs\.draft\s*\}\}/, '发布形态必须由 guard 归一化后的 draft 决定');
+  assert.ok(!/releaseDraft:\s*(true|false)\s*$/m.test(release), '不要写死 releaseDraft，否则草稿开关失效');
+  assert.match(release, /draft:\s*\n\s*description:[\s\S]*?type:\s*boolean/, 'workflow_dispatch 必须提供布尔 draft 开关');
+  assert.match(release, /draft=true/, 'guard 必须把布尔 input 归一化成 true/false');
 });
 
 test('自动更新：签名公钥、发布源与原生侧流程都已接好', () => {

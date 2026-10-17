@@ -3,15 +3,20 @@ name: release
 # 打标签即发布：六平台安装包 + 自动更新用的 latest.json。
 # 触发方式（二选一）：
 #   1) 推一个版本标签：  git tag v0.1.0 && git push origin v0.1.0
-#   2) Actions 页面手动运行本工作流，填一个已存在的标签
+#   2) Actions 页面手动运行本工作流，填一个标签；勾上 draft 则只产出**草稿** Release，
+#      用来在不公开的前提下验证六平台能不能都出包（勾掉 draft 再跑一次即可正式发布）。
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: '已存在的版本标签，例如 v0.1.0'
+        description: '版本标签，例如 v0.1.0（标签不存在时会在本次运行的提交上创建）'
         required: true
+      draft:
+        description: '只产出草稿 Release（不公开），用于验证六平台构建'
+        type: boolean
+        default: false
 
 # tauri-action 需要写权限来创建 Release 并上传产物。
 permissions:
@@ -29,6 +34,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
       tag: ${{ steps.check.outputs.tag }}
+      draft: ${{ steps.flags.outputs.draft }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,6 +67,20 @@ jobs:
           # 应用版本号以 tauri.conf.json 为准：自动更新就是拿它和 latest.json 里的版本比较。
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # 布尔 input 在不同触发方式下的字面形态不一致，这里统一归一化成 true/false，
+      # 免得把「勾了草稿」误判成正式发布（或反过来）。
+      - id: flags
+        env:
+          INPUT_DRAFT: ${{ inputs.draft }}
+        run: |
+          set -euo pipefail
+          case "${INPUT_DRAFT:-false}" in
+            true|True|TRUE) draft=true ;;
+            *) draft=false ;;
+          esac
+          echo "发布形态：$([ "$draft" = true ] && echo 草稿（不公开，仅验证构建） || echo 正式发布)"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.name }}
@@ -162,7 +182,7 @@ jobs:
             自动更新基于 `latest.json`，只在**已发布的正式版本**上生效。
 
             邮件内容是待分析的数据，客户端不会执行其中的任何指令。配置与数据都保存在本机。
-          releaseDraft: false
+          releaseDraft: ${{ needs.guard.outputs.draft }}
           prerelease: false
           # 生成并上传 latest.json 与各平台的 .sig 签名，客户端据此自动更新。
           uploadUpdaterJson: true

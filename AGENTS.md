@@ -60,7 +60,7 @@ node scripts/desktop-sync.mjs --check
 ## 发布与自动更新
 
 - **版本号三处必须一致**：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`。`release.yml` 的 guard 任务会挡住不一致的标签，但改版本时就该一起改。应用版本以 `tauri.conf.json` 为准（自动更新就是拿它和 `latest.json` 比）。
-- **发布方式**：改版本 → 提交 → `git tag v<版本>` → `git push origin <标签>`。也可以到 Actions 手动运行 `release` 工作流并填一个已存在的标签（重跑某个平台用）。
+- **发布方式**：改版本 → 提交 → `git tag v<版本>` → `git push origin <标签>`。推标签默认就是**正式发布**。也可以到 Actions 手动运行 `release` 工作流并填一个标签（不存在时会在本次运行的提交上创建），勾上「只产出草稿 Release」则只构建不公开——**验证六平台构建就用这一档**；确认后勾掉再跑一次即为正式发布（或直接在 Releases 页面发布已有草稿，草稿里已经有全部产物与 `latest.json`）。`releaseDraft` 由 guard 归一化的 `draft` 输出决定，不要在 workflow 里写死。
 - **仓库必须保持公开**：更新源是 `https://github.com/yunforis/DaylightDesktop/releases/latest/download/latest.json`，这是**匿名**下载地址。仓库转为私有后客户端会拿到 404，自动更新整体失效（客户端会把 `ReleaseNotFound` 显示成「还没有取到可用的更新信息」，不会崩，但也不会更新）。若确实要转私有，必须同时改成带 Authorization 头的私有下载方案，并接受「拿到安装包的人就能读出 token」的后果。
 - **更新签名私钥绝不可提交**：公钥在 `src-tauri/tauri.conf.json`（可公开），私钥只在本机 `work/updater-key/daylight.key` 与 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`。私钥丢失等于失去自动更新能力（客户端会拒绝别把密钥签出来的包），需要自行备份并提醒用户手动重装。
 - **自动更新只在 Rust 侧实现**：不给应用页调用更新命令的通道（`src-tauri/src/update.rs`）。页面来自回环 HTTP，属于远程来源；「替换自己的安装文件」这类能力不暴露给它。新增更新相关能力时保持这个边界。
