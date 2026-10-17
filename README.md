@@ -149,7 +149,7 @@ npm run desktop:check # Rust 壳层检查
 bash work/smoke.sh    # 后端冒烟（生产模式 / 无 PG / 仅回环 / 鉴权边界）
 ```
 
-- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写、前端产物文件名跨平台合法性、打包运行时（不含 `vite`）能独立启动。共 12 项，全通过。
+- **桌面专有测试**覆盖：无 PG/Redis/MQ 启动并重启读回、鉴权三层边界、会话一次性、凭据加密落盘、端口回退、补丁锚点自检、pdf.js 离线资源与自产 PDF 渲染、发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写、前端产物文件名跨平台合法性、内置运行时只含目标平台原生模块、打包运行时（不含 `vite`）能独立启动。共 13 项，全通过。
 - **共享业务测试**共 680 项：587 通过 / 58 失败 / 35 跳过，与 Web 真源**逐条用例状态完全一致**（本轮对齐引入 0 项差异）。失败项是同时启动真实 Express 服务、mock timer 的历史集成测试，不是桌面端引入。CI 中该步骤 `continue-on-error`。
 - 所有写盘测试使用 `work/` 下的独立数据目录，不触碰用户数据。
 
@@ -254,7 +254,7 @@ DAYLIGHT_WEB_DIR=/path/to/Daylight node scripts/desktop-sync.mjs
 - 真实 IMAP / SMTP / 模型 / 飞书 / 外部日历的可用性取决于用户自己的账号与网络，需要用户自行实连验证；本轮未做真实服务实连。
 - **字体**：`index.html` 仍会从 `fonts.googleapis.com` 拉取 Noto Sans SC / Sora / Space Grotesk。离线或受限网络下会回退到系统字体（macOS 为苹方），版式不会错乱，但字形与 Web 端联网时略有差异。桌面端未内置这些字体，以免安装包体积和字重授权扩散。
 - **睡眠唤醒**：壳层没有监听系统唤醒事件。后台 Node 进程在唤醒后仍在运行，定时同步与空闲监听会在下一轮触发；本机未实测唤醒路径。
-- **未在 Windows / Linux 实机验证**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包，但这仍是**代码已实现**，不是**实机跑通**。
-- **平台验证已是云端实测，发布流水线还没跑过**：`.github/workflows/desktop.yml`（三平台 verify）已在 GitHub Actions 上真实运行并**三平台全绿**——`macos-14`、`ubuntu-22.04`、`windows-latest` 各 17/17 步（含 12 项桌面专有测试与 `cargo check`）。Windows 那一路先后暴露并修掉了三个真实缺陷（见 [STATUS.md](STATUS.md)），其中「资源文件名以点结尾」会直接导致 Windows 用户装不上。`.github/workflows/release.yml` 的六平台矩阵与安装包发布**一次都没运行过**，要等第一次打标签；ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随账号与仓库可见性变化。
+- **未在 Windows / Linux 实机验证**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包；六平台安装包已在 GitHub 托管的 Linux / Windows runner 上**真实构建成功**，但**应用本身没有在那两个系统上启动过**。因此这仍是**代码已实现 + 构建通过**，不是**实机跑通**。
+- **发布流水线已真实运行一轮（草稿），六平台全部出包尚待确认**：`.github/workflows/desktop.yml`（三平台 verify）三平台全绿（各 17/17 步，含 13 项桌面专有测试与 `cargo check`）。`.github/workflows/release.yml` 六平台矩阵已手动触发过一次（勾「只产出草稿 Release」，标签 `v0.1.0`）：**macOS arm64/x64 与 Windows x64/arm64 四个目标真实构建成功**，Linux x64/arm64 在 AppImage 打包失败——`@napi-rs/canvas` 的 gnu 与 musl 两份原生模块被同时装进运行时，linuxdeploy 对 musl 那份跑 `ldd` 失败。已修复（运行时只保留目标平台的原生模块），正在重跑确认。**「六个平台全部出包」在重跑通过前不算已实现。**
 - **自动更新未做端到端验证**：本机已实测「更新产物签名能被应用内嵌公钥接受、篡改 1 字节即被拒绝」（含反向对照），但**下载 → 校验 → 替换安装文件 → 重启**这一整条链路需要发布两个真实版本才能验证，本轮未做。Linux 上还额外依赖 AppImage 形态。
 - **macOS 安装包未做签名与公证**：本机与 CI 默认产出未签名包，首次打开需要手动放行。配好 `APPLE_*` Secrets 后即可自动签名公证，那时需要 Apple 开发者账号（付费）。

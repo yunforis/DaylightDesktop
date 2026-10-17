@@ -639,3 +639,45 @@ test('前端产物文件名在 Windows 上也合法，且资源引用都能落�
     assert.deepEqual(runtimeOffenders, [], `内置运行时里存在 Windows 非法文件名：${runtimeOffenders.slice(0, 10).join(', ')}`);
   }
 });
+
+test('内置运行时只包含目标平台的原生模块（不留 musl / 异平台变体）', async (t) => {
+  // 事故复盘：@napi-rs/canvas 的平台包只声明 os/cpu、没有 libc 字段，npm 在 Linux 目标上会同时
+  // 装 canvas-linux-x64-gnu 与 canvas-linux-x64-musl。musl 那份会让 AppImage 打包直接失败——
+  // linuxdeploy 会对自己找到的每个 ELF 跑 ldd，musl 的解释器在 Ubuntu 上不存在，ldd 非零退出，
+  // linuxdeploy 抛异常中止，Tauri 又只留下一句 `failed to run linuxdeploy`（deb/rpm 反而都正常）。
+  const infoPath = path.join(RUNTIME, 'build-info.json');
+  if (!fs.existsSync(infoPath)) {
+    t.skip('尚未执行 npm run desktop:prepare，跳过内置运行时平台校验');
+    return;
+  }
+  const info = JSON.parse(fs.readFileSync(infoPath, 'utf8'));
+  const suffix = /-(android|darwin|linux|win32)-(x64|arm64|arm|ia32|riscv64)(-(gnu|musl|msvc|gnueabihf))?$/;
+  const offenders = [];
+  const found = [];
+  const scan = dir => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.name.startsWith('@') || !suffix.test(entry.name)) { scan(full); continue; }
+      let meta = null;
+      try { meta = JSON.parse(fs.readFileSync(path.join(full, 'package.json'), 'utf8')); } catch { /* 非包目录 */ }
+      if (!meta || (!meta.os && !meta.cpu)) { scan(full); continue; }
+      const okOs = !meta.os || meta.os.includes(info.platform);
+      const okCpu = !meta.cpu || meta.cpu.includes(info.arch);
+      const okLibc = info.platform !== 'linux' || !/-musl$/.test(entry.name);
+      const rel = path.relative(ROOT, full).split(path.sep).join('/');
+      if (okOs && okCpu && okLibc) found.push(rel);
+      else offenders.push(`${rel}（目标 ${info.platform}/${info.arch}）`);
+    }
+  };
+  scan(path.join(RUNTIME, 'node_modules'));
+
+  assert.deepEqual(offenders, [], `内置运行时里有不属于 ${info.platform}/${info.arch} 的原生包`);
+  assert.ok(found.length > 0, '内置运行时里应当至少有一个匹配目标平台的原生包（例如 @napi-rs/canvas）');
+  assert.match(
+    readText('scripts', 'prepare-desktop.mjs'),
+    /pruneForeignNativePackages/,
+    'prepare-desktop.mjs 必须保留清除非目标平台原生包的逻辑',
+  );
+});

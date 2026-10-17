@@ -66,6 +66,77 @@ if (triple && !TRIPLES[triple]) {
 }
 const cross = Boolean(triple) && (TRIPLES[triple].os !== process.platform || TRIPLES[triple].cpu !== process.arch);
 
+/**
+ * 原生包只声明 os / cpu，**没有 libc 字段**——`@napi-rs/canvas` 在 Linux 目标上会同时装进来
+ * `canvas-linux-x64-gnu` 与 `canvas-linux-x64-musl`，npm 分不出该留哪一份（glibc 版本我们要，
+ * musl 版本要丢）。musl 那份不只是白占 28 MB，它会让 AppImage 打包**直接失败**：
+ * linuxdeploy 会给自己在 AppDir 里找到的每个 ELF 跑一次 ldd，musl 二进制的解释器
+ * （/lib/ld-musl-*.so.1）在 Ubuntu 上不存在，ldd 非零退出，linuxdeploy 抛异常中止整次打包。
+ * 更糟的是 Tauri 在默认日志级别下把 linuxdeploy 的 stderr 丢掉了，CI 里只剩一句
+ * `failed to run linuxdeploy`（实测：deb / rpm 都能出，只有 AppImage 挂）。
+ *
+ * 这里按 lock 里的 os / cpu 元数据把不属于目标平台的原生包删掉。
+ */
+async function pruneForeignNativePackages() {
+  const lockPath = path.join(runtime, 'package-lock.json');
+  const lock = JSON.parse(await fs.readFile(lockPath, 'utf8'));
+  const removed = [];
+  for (const [name, meta] of Object.entries(lock.packages ?? {})) {
+    if (!name.startsWith('node_modules/')) continue;
+    const declaredOs = meta.os ?? [];
+    const declaredCpu = meta.cpu ?? [];
+    if (!declaredOs.length && !declaredCpu.length) continue; // 纯 JS 包
+    const short = name.slice('node_modules/'.length);
+    const reasons = [];
+    if (declaredOs.length && !declaredOs.includes(targetOs)) reasons.push(`系统 ${declaredOs.join('/')}`);
+    if (declaredCpu.length && !declaredCpu.includes(targetCpu)) reasons.push(`架构 ${declaredCpu.join('/')}`);
+    // 这些包没有 libc 字段，只能用包名后缀判断；我们发布的是 glibc 版本。
+    if (targetOs === 'linux' && /-musl$/.test(short)) reasons.push('musl（本产物面向 glibc）');
+    if (!reasons.length) continue;
+    await fs.rm(path.join(runtime, name), { recursive: true, force: true });
+    removed.push(`${short} — ${reasons.join('，')}`);
+  }
+  if (removed.length) {
+    console.log(`已移除不属于 ${targetOs}/${targetCpu} 的原生包：`);
+    for (const item of removed) console.log(`  ${item}`);
+  }
+  return removed;
+}
+
+/**
+ * 打包前独立再核一遍（不依赖 lock）：运行时里不能有任何「不属于目标平台」的原生包目录。
+ * 判断依据是包自己的 package.json 里的 os / cpu，避免仅凭名字误判普通包。
+ */
+async function assertNativeModulesMatchTarget() {
+  const suffix = /-(android|darwin|linux|win32)-(x64|arm64|arm|ia32|riscv64)(-(gnu|musl|msvc|gnueabihf))?$/;
+  const offenders = [];
+  const scan = async dir => {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.name.startsWith('@') || !suffix.test(entry.name)) {
+        await scan(full);
+        continue;
+      }
+      const meta = await fs.readFile(path.join(full, 'package.json'), 'utf8').then(JSON.parse).catch(() => null);
+      if (!meta || (!meta.os && !meta.cpu)) { await scan(full); continue; }
+      const declaredOs = meta.os ?? [];
+      const declaredCpu = meta.cpu ?? [];
+      const okOs = !declaredOs.length || declaredOs.includes(targetOs);
+      const okCpu = !declaredCpu.length || declaredCpu.includes(targetCpu);
+      const okLibc = targetOs !== 'linux' || !/-musl$/.test(entry.name);
+      if (!(okOs && okCpu && okLibc)) offenders.push(path.relative(runtime, full).split(path.sep).join('/'));
+    }
+  };
+  await scan(path.join(runtime, 'node_modules'));
+  if (offenders.length) {
+    throw new Error(
+      `运行时里残留了不属于 ${targetOs}/${targetCpu} 的原生包（会让 Linux AppImage 打包失败、也会白占体积）：\n${offenders.map(name => `  ${name}`).join('\n')}`,
+    );
+  }
+}
+
 const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
 const names = ['@aws-sdk/client-s3', '@napi-rs/canvas', 'amqplib', 'bcryptjs', 'cookie-parser', 'express', 'imapflow', 'ioredis', 'jsonwebtoken', 'mailparser', 'nodemailer', 'pdfjs-dist', 'pg', 'sql.js', 'svg-captcha', 'tesseract.js', 'undici'];
 const lock = JSON.parse(await fs.readFile(path.join(root, 'package-lock.json'), 'utf8'));
@@ -86,6 +157,10 @@ if (previous && (previous.platform !== targetOs || previous.arch !== targetCpu))
 }
 const result = spawnSync(npm, npmArgs, { cwd: runtime, stdio: 'inherit', shell: process.platform === 'win32' });
 if (result.status) process.exit(result.status);
+
+// npm 装完就把不属于目标平台的原生包清掉，并在打包前复核一遍（原因见函数注释）。
+await pruneForeignNativePackages();
+await assertNativeModulesMatchTarget();
 await fs.copyFile(path.join(runtime, 'package-lock.json'), savedLock);
 
 /**

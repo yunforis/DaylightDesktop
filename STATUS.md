@@ -49,6 +49,10 @@
 | CI 发现并修复：Windows `desktop:check` 静默失败 | `windows-latest` → Rust 壳层检查 | 退出码 1 且无任何输出；根因是 `env.PATH` 与 `Path` 大小写不同键共存，系统挑到了不含 cargo 的那个 | 云端抓到，本地修复 |
 | CI 发现并修复：CRLF 行尾让断言失效 | `windows-latest` → 桌面专有测试 #11 | 剥注释的 `$` 锚点正则匹配不到 CRLF 行尾，把注释当成了违规代码；测试读源码已统一走 `readText()` 归一化行尾 | 云端抓到，本地修复 |
 | CI 发现并修复：资源文件名以点结尾 | `windows-latest` → Rust 壳层检查 | `resource path `runtime\dist\assets\LICENSE_JBIG2-C_izpuvI.` doesn't exist`；Vite 默认命名对无扩展名文件产出以点结尾的名字，Windows 非法。`vite.config.js` 修命名，`prepare-desktop.mjs` 打包前整树校验 | 云端抓到，本地修复 |
+| **六平台发布流水线首次真实运行（草稿）** | `release.yml`，`workflow_dispatch` + 勾草稿，标签 `v0.1.0` | `macos-arm64` / `macos-x64` / `windows-x64` / `windows-arm64` 四个目标**真实构建成功**；`linux-x64` / `linux-arm64` 在 AppImage 打包失败（下两行）；`校验版本` 通过，草稿 Release 里已能看到产物 | **云端部署验证通过（4/6 目标）** |
+| CI 发现并修复：AppImage 打包被 musl 原生模块打断 | `linux-x64` / `linux-arm64` → `构建并发布` | `failed to run linuxdeploy`（Tauri 默认日志级别丢掉了 linuxdeploy 的 stderr）。用 `--verbose` 拿到真实原因：linuxdeploy 对 AppDir 里每个 ELF 跑 `ldd`，而 `@napi-rs/canvas-linux-*-musl` 的解释器在 Ubuntu 上不存在 → `ldd` 非零退出 → linuxdeploy 抛异常。根因是这些平台包**只声明 os/cpu、没有 libc 字段**，npm 在 Linux 上把 gnu 与 musl 两份都装了进来 | 云端抓到，本地修复 |
+| 定位手段：让打包器说出外部工具的 stderr | 读 Tauri `tauri-bundler` 源码 + `--verbose` 重跑 | 打包器仅在日志级别为 Error 时丢弃输出（`return Err(GenericError("failed to run linuxdeploy"))`），级别更高时走 `output_ok()`，会把 stderr 拼进错误信息。已把 `--verbose` 固定进发布工作流，失败时另有一步打印 AppDir 现场 | 本地测试通过（源码级确认）+ 云端实测 |
+| 运行时只留目标平台的原生模块 | `npm run test:desktop` #13 + 反向对照 | linux/x64 与 linux/arm64 目标各自只剩 `canvas-linux-x64-gnu` / `canvas-linux-arm64-gnu`；**撤掉修正重新准备后该测试精确失败并点名 `canvas-linux-x64-musl`** | 本地测试通过 |
 | 产物文件名与引用自检 | `npm run test:desktop` #12 + 反向对照（撤掉修正重新构建） | 修正生效时 0 个非法名、117 个 `/assets/` 引用全部存在；**撤掉修正后该测试精确失败并点名那两个文件** | 本地测试通过 |
 | Rust 壳层 | `npm run desktop:check` | `cargo check` 通过（新增 updater / dialog 插件与 `update.rs`） | 本地测试通过 |
 | 签名安装包构建 | `TAURI_SIGNING_PRIVATE_KEY=work/updater-key/daylight.key npm run desktop:build` | 成功；产出 `Daylight.app` 284.39 MiB、`Daylight_0.1.0_aarch64.dmg` 97.48 MiB，以及**自动更新产物** `macos/Daylight.app.tar.gz`（99.06 MiB）+ `Daylight.app.tar.gz.sig` | 本地测试通过 |
@@ -63,7 +67,7 @@
 
 ### 未验证 / 明确边界
 
-- **平台验证已三平台全绿，但发布流水线仍未跑过**：`desktop.yml`（三平台 verify）在 2026-10-17 首次真实运行，Windows 先后暴露三个真实缺陷（见下三条），修复后**`macos-14`、`ubuntu-22.04`、`windows-latest` 各自 17/17 步全部通过**，含桌面专有测试（12 项）与 `cargo check`。`release.yml` 的六平台矩阵**仍未运行过**（要等第一次打标签），ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随仓库可见性与账号类型变化。
+- **发布流水线已真实运行（草稿），Linux 修好后需再跑一次确认**：`desktop.yml`（三平台 verify）三平台全绿。`release.yml` 六平台矩阵已于 2026-10-17 手动触发（勾草稿、标签 `v0.1.0`）真实跑过一轮：macOS 双架构与 Windows 双架构都**真实构建成功**，Linux 双架构在 AppImage 打包失败（见下两条边界），原因已定位并修好，正在重跑确认。**「六个平台全部出包」目前仍属未验证**，要等这一轮重跑完成。
 - **文件名必须在 Windows 上也合法**：安装包里的每个文件名不能以点或空格结尾、不能含 `<>:"|?*`、不能用 `CON`/`PRN`/`NUL`/`COM1`/`LPT1` 这些保留名。构建发生在 macOS / Linux 上，这类文件名在那里完全合法，问题只会在 Windows 用户机器上出现。Vite 的默认资源命名就踩过：没有扩展名的文件（pdfjs-dist 的 `LICENSE_JBIG2`）会被命名成 `LICENSE_JBIG2-C_izpuvI.`。`vite.config.js` 已修掉这一点，`prepare-desktop.mjs` 在打包前会检查一遍并直接报错，`desktop-tests` 也有断言守着。\n- **Windows 上凭据文件没有 POSIX 权限位**：`server/secure-json.js` 写盘请求 `mode: 0o600`，Windows 会忽略它，Node 读回来恒是 `0o666`（CI 实测 `expected 384 / actual 438`）。这一侧的实际保护是「主密钥存进 Windows 凭据管理器」+「`%APPDATA%` 目录继承的 ACL」，都无法用 `fs.stat` 断言。`desktop-tests` 已改为按平台分支断言，并在注释里写明原因，不假装 Windows 上也验证了 0600。
 - **Windows 上 PATH 的键名是 `Path`，曾导致 `desktop:check` 静默失败**：`scripts/desktop.mjs` 里写的是 `env.PATH = ...`，而 `env` 是从 `process.env` 展开出的普通对象（大小写敏感），于是新增了一个键而不是改已有的 `Path`，交给子进程的环境块里同时存在 `Path` 与 `PATH`，系统挑到了不含 cargo 的那个——`spawnSync('cargo')` 找不到可执行文件，`npm run desktop:check` 只给出退出码 1、**全程没有任何输出**（CI 日志里唯一线索就是这一行）。已改为按键名不敏感地定位 PATH，并在 `cargo` 启动失败时明确报出原因；`desktop-tests` 里有静态断言守住写法。**这个差异只在 Windows 上存在**：macOS/Linux 的环境块是真·大小写敏感，复刻不出「系统在重复键里挑一个」的行为，所以本机无法行为验证，只能靠 `windows-latest` 上的真实运行。
 - **Windows 检出是 CRLF 行尾**：正则里的 `.` 不匹配 `\r`，带 `$` 锚点的断言在 CRLF 上会静默失效。写上面那条 PATH 守卫时就踩了一次——剥注释的 `/\/\/.*$/` 在 CRLF 下匹配不到行尾，把注释里那句「不要写 `env.PATH`」当成了违规代码，于是在 `windows-latest` 上失败、在 macOS 上通过。测试里读源码现已统一走 `readText()` 先归一化行尾。
@@ -71,8 +75,8 @@
 - **自动更新未做端到端验证**：已验证「签名能被应用内嵌公钥接受、篡改即拒绝」，但**下载 → 校验 → 替换安装文件 → 重启**这条完整链路需要先发布两个真实版本才能验证。Linux 上还额外依赖 AppImage 形态（`.deb` 装的版本不会自动更新）。
 - **`tauri.conf.json` 里的公钥与 `work/updater-key/` 的私钥是本轮新生成的**，此前没有更新密钥。若私钥丢失，客户端会拒绝后续所有更新，只能让用户手动重装——`work/updater-key/` 需要自行备份（不进仓库）。
 - **macOS 未签名未公证**：本轮与 CI 默认产出未签名包，首次打开需要在「系统设置 → 隐私与安全性」手动放行。配好 `APPLE_*` Secrets 后可自动签名公证，需要 Apple 开发者账号。
-- **Windows / Linux 仍未在实机运行**：交叉打包逻辑只在本机（macOS）实测，Windows ARM64 / Linux ARM64 的内置 Node 下载与原生模块安装属于**代码已实现**。
-- **GitHub Secrets 尚未配置**：`TAURI_SIGNING_PRIVATE_KEY` 必须先在仓库 Settings → Secrets 里填好（内容即 `work/updater-key/daylight.key`），否则打标签发布会在生成更新产物这一步失败。`APPLE_*` 为可选。
+- **安装包在真实 Linux / Windows runner 上构建成功 ≠ 应用在那两个系统上跑起来了**：六平台构建是在 GitHub 托管的 `ubuntu-22.04` / `ubuntu-24.04-arm` / `windows-latest` / `windows-11-arm` 上真实执行的（不是本地模拟），但**没有在实机上启动过**——没有对应机器可用，也没有人验证过界面、托盘、托盘菜单、PDF 预览与自动更新在 Windows / Linux 上的实际表现。这一条要一直挂到真有实机验证为止。
+- **原生模块只能留目标平台那一份，尤其是 Linux 的 glibc/musl**：`@napi-rs/canvas` 的平台包只声明 `os`/`cpu`、**没有 `libc` 字段**，npm 在 Linux 目标上会把 `canvas-linux-*-gnu` 与 `canvas-linux-*-musl` **同时**装上。musl 那份会让 AppImage 打包直接失败（linuxdeploy 对 AppDir 里每个 ELF 跑 `ldd`，musl 的解释器在 Ubuntu 上不存在），而且白占约 28 MB。`prepare-desktop.mjs` 现在按 lock 的 os/cpu 元数据清除异平台原生包，并在打包前独立复核一遍；`desktop-tests` #13 也用包自身的 `os`/`cpu` 断言守着。**换 npm 版本或新增原生依赖时都要留意这一类「装多了」的问题**——它在 macOS 与 Linux 上都很容易看不出来。
 
 ## 上一轮：与 Daylight 真源对齐 + 桌面端专有改造（2026-10-17）
 

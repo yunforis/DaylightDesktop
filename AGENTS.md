@@ -80,6 +80,8 @@ node scripts/desktop-sync.mjs --check
   - **PATH 的键名是 `Path`**。`{ ...process.env }` 得到的是普通对象（大小写敏感），写 `env.PATH = ...` 会新增一个键，环境块里同时出现 `Path` 与 `PATH`，系统挑一个用——曾因此让 `desktop:check` 静默失败（退出码 1、**没有任何输出**）。必须按键名不敏感定位后赋值（见 `scripts/desktop.mjs` 的 `PATH_KEY`）。这个差异在 macOS 上复刻不出来，只能靠 `windows-latest` 上的真实运行。
   - **没有 POSIX 权限位**：`fs.chmod` / `mode: 0o600` 被忽略，`fs.stat().mode` 恒为 `0o666`。涉及文件权限的断言必须按平台分支，并写明 Windows 的实际保护来自凭据库主密钥与 `%APPDATA%` 目录继承的 ACL，不要为了「看起来通过」而删掉断言。
   - **检出是 CRLF 行尾**（git `autocrlf`）。正则里的 `.` 不匹配 `\r`，任何带 `$` 锚点的断言在 CRLF 上都会失效——写「PATH 键名」那条守卫时就踩了：剥注释的 `/\/\/.*$/` 匹配不到行尾，于是把注释里那句「不要写 `env.PATH`」当成了违规代码。测试里读源码一律走 `readText()`（先归一化行尾），不要直接 `readFileSync`。
+- **原生模块只能留目标平台那一份**：npm 在这些平台包上只认 `os`/`cpu`，**不认 libc**（`@napi-rs/canvas` 的平台包根本没有 `libc` 字段），所以 Linux 目标会把 `canvas-linux-*-gnu` 与 `canvas-linux-*-musl` 一起装进来。musl 那份会让 AppImage 打包直接失败（linuxdeploy 对 AppDir 里每个 ELF 跑 `ldd`，musl 的解释器在 Ubuntu 上不存在）。`prepare-desktop.mjs` 会按 lock 的元数据清掉异平台原生包并独立复核，`desktop-tests` 也有断言；**新增原生依赖或换 npm 版本时要重新确认这一点**。
+- **打包失败先想办法拿到外部工具的 stderr**：Tauri 的打包器只在日志级别为 Error 时**丢弃**外部工具输出，只留一句 `failed to run linuxdeploy` / `failed to run ...`；叫上 `--verbose`（`output_ok()` 路径）它才会把 stderr 拼进错误信息。发布工作流已固定带 `--verbose`，并在失败时打印 AppDir 现场。**不要靠猜**——第一轮我们按社区说法猜了 `NO_STRIP` / FUSE / `.relr.dyn`，都与实际原因无关。
 - 为新增桌面行为补充有意义的验证，不要为低影响的可逆改动添加机械测试。
 - **不得在文档、示例、日志、测试或提交里写入真实授权码、API Key、邮件正文或任何真实凭据。**
 - 严格区分“规划中”“代码已实现”“本地测试通过”“真实服务实连成功”“云端部署验证通过”“生产验收通过”。填好配置或看到“已配置”**仅表示字段已保存**。
