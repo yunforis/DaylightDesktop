@@ -461,11 +461,24 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
   // Windows 的自动更新只能装 NSIS；不显式选 NSIS 就会把装不上的 .msi 写进 latest.json。
   assert.ok(!release.includes('tauri-apps/tauri-action@v0'), '请使用当前的 tauri-action v1');
 
-  // 草稿开关：手动运行时要能在不公开的前提下验证六平台构建，且**不能**因为它误判成正式发布。
-  assert.match(release, /releaseDraft:\s*\$\{\{\s*needs\.guard\.outputs\.draft\s*\}\}/, '发布形态必须由 guard 归一化后的 draft 决定');
-  assert.ok(!/releaseDraft:\s*(true|false)\s*$/m.test(release), '不要写死 releaseDraft，否则草稿开关失效');
+  // 草稿开关：手动运行时要能在不公开的前提下验证六平台构建。Release 由 guard 幂等创建，
+  // 所以草稿形态落在**创建那一步**上，而不是写死在别处。
+  assert.match(release, /-F draft="\$DRAFT"/, '创建 Release 时必须由 guard 归一化后的 DRAFT 决定草稿形态');
   assert.match(release, /draft:\s*\n\s*description:[\s\S]*?type:\s*boolean/, 'workflow_dispatch 必须提供布尔 draft 开关');
   assert.match(release, /draft=true/, 'guard 必须把布尔 input 归一化成 true/false');
+  assert.ok(!/draft:\s*(true|false)\s*$/m.test(release), '不要写死草稿形态，否则草稿开关失效');
+
+  // Release 只能创建一次。六个 job 是并发的，而 tauri-action 用「按标签查已有 Release」的接口
+  // 找草稿——那个接口不返回草稿，于是每个 job 都各建一份：实测同一标签下出现两份草稿 Release，
+  // 产物被劈成两半（一份只有 macOS + Windows x64，另一份没有 Windows x64，两份 latest.json 都不全）。
+  assert.match(release, /releaseId:\s*\$\{\{\s*needs\.guard\.outputs\.releaseId\s*\}\}/, '构建作业必须按 guard 给出的 releaseId 上传');
+  assert.ok(!/tagName:\s*\$\{\{\s*needs\.guard/.test(release), 'build 作业里不该再按 tagName 找/建 Release，否则并发时会劈出多份');
+
+  // 收尾作业：tauri-action 写的 latest.json 用的是资产 API 地址，客户端拿到的会是 JSON 元数据
+  // 而不是安装包，必须改写成公开下载地址；顺带卡住「哪个平台没传上来」。
+  assert.match(release, /^  finalize:/m, 'release.yml 必须有 finalize 收尾作业');
+  assert.match(release, /scripts\/fix-latest-json\.mjs/, 'finalize 必须调用 fix-latest-json.mjs');
+  assert.match(release, /needs:\s*\[guard,\s*build\]/, 'finalize 必须在六个平台都成功后才跑，避免发布残缺的 latest.json');
 });
 
 test('自动更新：签名公钥、发布源与原生侧流程都已接好', () => {
@@ -679,5 +692,61 @@ test('内置运行时只包含目标平台的原生模块（不留 musl / 异平
     readText('scripts', 'prepare-desktop.mjs'),
     /pruneForeignNativePackages/,
     'prepare-desktop.mjs 必须保留清除非目标平台原生包的逻辑',
+  );
+});
+
+test('latest.json：资产 API 地址改写为公开下载地址，缺平台/缺资产都要报错', async () => {
+  // 事故复盘：tauri-action 把每个平台的 url 写成 api.github.com/.../releases/assets/<id>。
+  // 实测不带凭据、用客户端那种普通 Accept 头请求该地址，返回的是**资产元数据 JSON**（200 +
+  // application/json），不是安装包——客户端会「下载」到一段 JSON，签名校验必然失败。
+  const { rewriteLatestJson, missingPlatforms, REQUIRED_PLATFORMS } = await import('../scripts/fix-latest-json.mjs');
+  const repo = 'yunforis/DaylightDesktop';
+  const tag = 'v0.1.0';
+  const api = `https://api.github.com/repos/${repo}/releases/assets/`;
+  const assets = [
+    { id: 11, name: 'Daylight_0.1.0_amd64.AppImage' },
+    { id: 12, name: 'Daylight_0.1.0_x64.app.tar.gz' },
+  ];
+
+  const { json: fixed, changes } = rewriteLatestJson(
+    {
+      version: '0.1.0',
+      notes: '注意保留',
+      platforms: {
+        'linux-x86_64': { url: `${api}11`, signature: 'sig-linux' },
+        'darwin-x86_64': { url: `${api}12`, signature: 'sig-darwin' },
+      },
+    },
+    assets,
+    { repo, tag },
+  );
+  assert.equal(
+    fixed.platforms['linux-x86_64'].url,
+    `https://github.com/${repo}/releases/download/${tag}/Daylight_0.1.0_amd64.AppImage`,
+    '必须改写成公开下载地址',
+  );
+  assert.equal(fixed.platforms['linux-x86_64'].signature, 'sig-linux', '签名必须原样保留，改了会让客户端拒绝更新');
+  assert.equal(fixed.version, '0.1.0', 'version 字段不能被改动');
+  assert.equal(fixed.notes, '注意保留', '其它字段必须原样保留');
+  assert.equal(changes.length, 2);
+
+  // 幂等：已经是公开地址时不再产生变更（重复运行同一标签不会反复改写）。
+  assert.deepEqual(rewriteLatestJson(fixed, assets, { repo, tag }).changes, []);
+
+  // 指向不存在的资产、或形态完全不认识的地址，都必须报错而不是猜一个地址。
+  assert.throws(
+    () => rewriteLatestJson({ platforms: { 'linux-x86_64': { url: `${api}999` } } }, assets, { repo, tag }),
+    /没有这个资产/,
+  );
+  assert.throws(
+    () => rewriteLatestJson({ platforms: { 'linux-x86_64': { url: 'https://example.com/a.zip' } } }, assets, { repo, tag }),
+    /既不是公开下载地址/,
+  );
+
+  // 缺平台必须能被发现：这是「六个平台都真的出包了」的判据。
+  assert.equal(REQUIRED_PLATFORMS.length, 6);
+  assert.deepEqual(
+    missingPlatforms({ platforms: { 'linux-x86_64': {} } }),
+    REQUIRED_PLATFORMS.filter(name => name !== 'linux-x86_64'),
   );
 });

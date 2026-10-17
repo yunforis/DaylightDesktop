@@ -35,6 +35,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       tag: ${{ steps.check.outputs.tag }}
       draft: ${{ steps.flags.outputs.draft }}
+      releaseId: ${{ steps.release.outputs.releaseId }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,6 +82,43 @@ jobs:
           esac
           echo "发布形态：$([ "$draft" = true ] && echo 草稿（不公开，仅验证构建） || echo 正式发布)"
           echo "draft=$draft" >> "$GITHUB_OUTPUT"
+
+      # Release 必须**只创建一次**。六个构建 job 是并发的，而 tauri-action 用
+      # `GET /releases/tags/<tag>` 找已有 Release —— 这个接口**不返回草稿**，于是每个 job
+      # 都以为不存在、各自建一份。实测就是这样：同一个标签下出现两份草稿 Release，产物被劈成
+      # 两半（一份只有 macOS + Windows x64，另一份没有 Windows x64，两份的 latest.json 都不全）。
+      # 这里先幂等地建好，再把 id 交给六个 job（tauri-action 的 releaseId 输入），它们就只上传、
+      # 不再创建，竞态从根上消失。
+      - id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.check.outputs.tag }}
+          VERSION: ${{ steps.check.outputs.version }}
+          DRAFT: ${{ steps.flags.outputs.draft }}
+        run: |
+          set -euo pipefail
+          body=$(sed "s/{{VERSION}}/$VERSION/g" .github/release-body.md)
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq "map(select(.tag_name == \"$TAG\")) | .[0].id // empty")
+          if [ -n "$id" ]; then
+            echo "复用已存在的 Release：标签 $TAG，id=$id"
+          else
+            id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TAG" \
+              -f name="Daylight $VERSION" \
+              -f body="$body" \
+              -f target_commitish="$GITHUB_SHA" \
+              -F draft="$DRAFT" \
+              -F prerelease=false \
+              --jq .id)
+            echo "已创建 $([ "$DRAFT" = true ] && echo 草稿 || echo 正式) Release：标签 $TAG，id=$id"
+          fi
+          # 下游拿不到 id 就等于产物无处可传，必须在这里失败，不能让它空着往下走。
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::没能拿到 Release id，后面的上传无从进行。"
+            exit 1
+          fi
+          echo "releaseId=$id" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.name }}
@@ -162,34 +200,16 @@ jobs:
           # 让 prepare-desktop.mjs 按目标平台挑选内置 Node 与原生模块架构。
           DAYLIGHT_TARGET_TRIPLE: ${{ matrix.target }}
         with:
-          tagName: ${{ needs.guard.outputs.tag }}
-          releaseName: 'Daylight ${{ needs.guard.outputs.version }}'
-          releaseBody: |
-            Daylight ${{ needs.guard.outputs.version }} 桌面客户端。
-
-            下载对应你系统的安装包：
-
-            | 系统 | 文件 |
-            | --- | --- |
-            | macOS（Apple Silicon） | `Daylight_${{ needs.guard.outputs.version }}_aarch64.dmg` |
-            | macOS（Intel） | `Daylight_${{ needs.guard.outputs.version }}_x64.dmg` |
-            | Windows（x64） | `Daylight_${{ needs.guard.outputs.version }}_x64-setup.exe` |
-            | Windows（ARM64） | `Daylight_${{ needs.guard.outputs.version }}_arm64-setup.exe` |
-            | Linux（x64） | `Daylight_${{ needs.guard.outputs.version }}_amd64.AppImage` / `.deb` |
-            | Linux（ARM64） | `Daylight_${{ needs.guard.outputs.version }}_arm64.AppImage` / `.deb` |
-
-            已安装的客户端会自动发现并安装这个版本（托盘菜单「检查更新…」可手动检查）。
-            自动更新基于 `latest.json`，只在**已发布的正式版本**上生效。
-
-            邮件内容是待分析的数据，客户端不会执行其中的任何指令。配置与数据都保存在本机。
-          releaseDraft: ${{ needs.guard.outputs.draft }}
-          prerelease: false
+          # Release 由上面的 guard 作业幂等创建，这里只按 id 上传产物。
+          # 不能再让 tauri-action 按 tagName 去找/建：它找已有 Release 用的接口不返回草稿，
+          # 六个并发 job 会各自创建一份（实测产物被劈成两半，见 guard 里那段注释）。
+          releaseId: ${{ needs.guard.outputs.releaseId }}
           # 生成并上传 latest.json 与各平台的 .sig 签名，客户端据此自动更新。
           uploadUpdaterJson: true
           # Windows 的自动更新只能装 NSIS（setup.exe），装不了 WiX（.msi）。
           # `targets: "all"` 会让两者都存在，这里必须显式选 NSIS，否则客户端会拿到装不上的 .msi。
           updaterJsonPreferNsis: true
-          # 六个 job 并发创建/更新同一个 Release，重试能吸收偶发的并发冲突与上传抖动。
+          # 上传偶发失败时重试，避免整次发布因为一次抖动作废。
           retryAttempts: 2
           # --verbose 不是「顺手加的日志」：Tauri 的打包器只在日志级别为 Error 时走
           # 「丢掉外部工具的 stderr、只留一句 failed to run linuxdeploy」那条路；
@@ -224,3 +244,25 @@ jobs:
             find "$APP_DIR" -type f -exec sh -c 'head -c4 "$1" | grep -q "^.ELF" && echo "$1"' _ {} \; 2>/dev/null | head -20
           fi
           exit 0
+
+  # 六个平台都上传完之后，把 latest.json 里指向 GitHub 资产 API 的地址改成公开下载地址。
+  # tauri-action 生成的是 https://api.github.com/.../releases/assets/<id>：实测不带凭据、用客户端
+  # 那样普通的 Accept 头请求它，返回的是**资产元数据 JSON**（不是安装包），自动更新会下载到一段
+  # JSON、签名校验必然失败。顺带在这里卡住「哪个平台没传上来」——latest.json 缺平台就不许对外发布。
+  finalize:
+    name: 修整 latest.json
+    needs: [guard, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 改成公开下载地址，并确认六个平台都在
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/fix-latest-json.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "${{ needs.guard.outputs.tag }}" \
+            --release-id "${{ needs.guard.outputs.releaseId }}"
