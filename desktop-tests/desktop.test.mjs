@@ -39,6 +39,14 @@ function temporaryDataDir(label) {
   return fs.mkdtempSync(path.join(WORK, `desktop-test-${label}-`));
 }
 
+// Windows 检出的行尾是 CRLF（git autocrlf），而正则里的 `.` 不匹配 `\r`：任何带 `$` 锚点的
+// 断言在 CRLF 上都会失效（写这个测试时就踩了一次——剥注释的 `/\/\/.*$/` 在 CRLF 下行尾匹配
+// 不上，把注释里那句「不要写 env.PATH」当成了违规代码）。所有「读源码再断言」的地方统一
+// 走这里，先把行尾归一化，让断言不依赖检出时的行尾。
+function readText(...segments) {
+  return fs.readFileSync(path.join(ROOT, ...segments), 'utf8').replace(/\r\n/g, '\n');
+}
+
 // Windows 上 PATH 的键名是 `Path`，`process.env.PATH` 在 Windows 上取不到值。
 // 按键名不敏感的方式取，避免构造出一个没有 PATH 的子进程环境。
 function inheritPath(env = process.env) {
@@ -312,7 +320,7 @@ test('首选端口被占用时回退到随机端口，功能不受影响', async
 });
 
 test('补丁锚点自检：重新基线时桌面补丁不能被静默丢弃', () => {
-  const index = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+  const index = readText('server', 'index.js');
   assert.match(index, /mountDesktopHttp\(app\)/);
   assert.match(index, /import \{ mountDesktopHttp \} from '\.\/desktop-http\.js'/);
   assert.match(index, /DAYLIGHT_READY/);
@@ -321,15 +329,15 @@ test('补丁锚点自检：重新基线时桌面补丁不能被静默丢弃', ()
   assert.match(index, /app\.use\('\/api\/admin'/, '桌面模式必须屏蔽管理端路由');
   assert.match(index, /EADDRINUSE/);
 
-  const auth = fs.readFileSync(path.join(ROOT, 'server', 'auth.js'), 'utf8');
+  const auth = readText('server', 'auth.js');
   assert.match(auth, /export async function issueDesktopAuth/);
   assert.match(auth, /DAYLIGHT_DESKTOP !== '1'/);
 
-  const store = fs.readFileSync(path.join(ROOT, 'server', 'store.js'), 'utf8');
+  const store = readText('server', 'store.js');
   assert.match(store, /readSecureJson/);
   assert.match(store, /writeSecureJson/);
 
-  const infra = fs.readFileSync(path.join(ROOT, 'server', 'infra', 'config.js'), 'utf8');
+  const infra = readText('server', 'infra', 'config.js');
   assert.match(infra, /const DESKTOP = process\.env\.DAYLIGHT_DESKTOP === '1'/);
   assert.match(infra, /enabled: !DESKTOP/);
 
@@ -337,7 +345,7 @@ test('补丁锚点自检：重新基线时桌面补丁不能被静默丢弃', ()
   for (const gone of ['src/pages/landing-page.jsx', 'src/pages/login-page.jsx', 'src/pages/admin-page.jsx', 'src/components/admin-shell.jsx']) {
     assert.ok(!fs.existsSync(path.join(ROOT, gone)), `${gone} 不应存在于桌面端`);
   }
-  const app = fs.readFileSync(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
+  const app = readText('src', 'App.jsx');
   assert.match(app, /<Navigate to="\/app" replace \/>/, '根路径必须直接进工作区');
   assert.ok(!/RequireAdmin/.test(app), '桌面端不应有管理端路由守卫');
 
@@ -345,7 +353,7 @@ test('补丁锚点自检：重新基线时桌面补丁不能被静默丢弃', ()
   // 桌面端不再维护自己的实现；离线可用依赖打包进产物的 CMap / 标准字体 / wasm。
   // 壳层加载页受 tauri.conf.json 的 CSP 约束；应用页由回环 HTTP 提供，
   // 安全边界是 Host/Origin/cookie 校验（见 desktop-http.js），这里只做两条防御性检查。
-  const csp = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8')).app.security.csp;
+  const csp = JSON.parse(readText('src-tauri', 'tauri.conf.json')).app.security.csp;
   assert.match(csp, /worker-src[^;]*(?:'self'|blob:)/, 'pdf.js 使用同源 module worker');
   assert.match(csp, /connect-src[^;]*data:/, '小体积 CMap 会被内联成 data: URL，连接源需放行');
   assert.ok(!/unsafe-eval/.test(csp), 'CSP 不应放开 unsafe-eval');
@@ -363,7 +371,7 @@ test('PDF 预览：离线资源随包分发，且应用自产 PDF 能渲染出�
     assert.ok(assets.some((name) => name.startsWith('pdf-preview') && name.endsWith('.js')), 'PDF 预览组件必须打进产物');
   }
 
-  const preview = fs.readFileSync(path.join(ROOT, 'src', 'components', 'pdf-preview.jsx'), 'utf8');
+  const preview = readText('src', 'components', 'pdf-preview.jsx');
   assert.match(preview, /isEvalSupported: false/, '桌面端 CSP 无 unsafe-eval，必须关掉 eval 路径');
   assert.match(preview, /useWorkerFetch: false/, '资源由主线程取回后交给 worker，避免 worker 直连受限');
   assert.match(preview, /BinaryDataFactory/, '离线部署必须自带 CMap/字体/wasm 的取数实现');
@@ -418,12 +426,12 @@ test('PDF 预览：离线资源随包分发，且应用自产 PDF 能渲染出�
  * 产出一个架构错配的包。
  */
 test('发布矩阵与内置 Node 架构映射一一对应', () => {
-  const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  const release = readText('.github', 'workflows', 'release.yml');
   const rows = [...release.matchAll(/\{\s*name:\s*([\w-]+),\s*os:\s*([\w.-]+),\s*target:\s*([\w-]+)\s*\}/g)]
     .map((match) => ({ name: match[1], os: match[2], target: match[3] }));
   assert.equal(rows.length, 6, '发布矩阵应覆盖 macOS arm64/x64、Linux x64/arm64、Windows x64/arm64 六个目标');
 
-  const prepare = fs.readFileSync(path.join(ROOT, 'scripts', 'prepare-desktop.mjs'), 'utf8');
+  const prepare = readText('scripts', 'prepare-desktop.mjs');
   const mapping = new Map(
     [...prepare.matchAll(/'([\w-]+)':\s*\{\s*os:\s*'(\w+)',\s*cpu:\s*'(\w+)',\s*dist:\s*'([\w-]+)',\s*ext:\s*'([\w.]+)'\s*\}/g)]
       .map((match) => [match[1], { os: match[2], cpu: match[3], dist: match[4], ext: match[5] }]),
@@ -455,7 +463,7 @@ test('发布矩阵与内置 Node 架构映射一一对应', () => {
 });
 
 test('自动更新：签名公钥、发布源与原生侧流程都已接好', () => {
-  const conf = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  const conf = JSON.parse(readText('src-tauri', 'tauri.conf.json'));
   assert.equal(conf.bundle.createUpdaterArtifacts, true, '必须生成更新产物与签名，否则客户端无法自动更新');
 
   const updater = conf.plugins?.updater;
@@ -467,7 +475,7 @@ test('自动更新：签名公钥、发布源与原生侧流程都已接好', ()
     'pubkey 必须是 tauri signer 生成的 minisign 公钥',
   );
   assert.equal(updater.endpoints.length, 1);
-  const repositoryField = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).repository;
+  const repositoryField = JSON.parse(readText('package.json')).repository;
   const repository = typeof repositoryField === 'string' ? repositoryField : repositoryField?.url ?? '';
   assert.ok(repository, 'package.json 需要 repository 字段，用来和更新源交叉校验');
   assert.ok(
@@ -477,18 +485,18 @@ test('自动更新：签名公钥、发布源与原生侧流程都已接好', ()
   assert.match(updater.endpoints[0], /^https:\/\//, '更新源必须是 HTTPS');
   assert.match(updater.endpoints[0], /releases\/latest\/download\/latest\.json$/, '更新源必须是正式版发布页的 latest.json');
 
-  const cargo = fs.readFileSync(path.join(ROOT, 'src-tauri', 'Cargo.toml'), 'utf8');
+  const cargo = readText('src-tauri', 'Cargo.toml');
   assert.match(cargo, /^tauri-plugin-updater = /m);
   assert.match(cargo, /^tauri-plugin-dialog = /m);
 
-  const mainRs = fs.readFileSync(path.join(ROOT, 'src-tauri', 'src', 'main.rs'), 'utf8');
+  const mainRs = readText('src-tauri', 'src', 'main.rs');
   assert.match(mainRs, /tauri_plugin_updater::Builder::new\(\)\.build\(\)/, '必须注册更新插件');
   assert.match(mainRs, /tauri_plugin_dialog::init\(\)/, '确认对话框需要 dialog 插件');
   assert.match(mainRs, /update::check_in_background/, '启动后要自动检查一次更新');
   assert.match(mainRs, /"update" => update::check_now/, '托盘菜单要有手动检查入口');
 
   // 更新能力刻意只做在原生侧：应用页由回环 HTTP 提供，不给页面调用更新命令的通道。
-  const updateRs = fs.readFileSync(path.join(ROOT, 'src-tauri', 'src', 'update.rs'), 'utf8');
+  const updateRs = readText('src-tauri', 'src', 'update.rs');
   assert.match(updateRs, /download_and_install/, '确认后要能下载并安装');
   assert.match(updateRs, /OkCancelCustom/, '必须先弹出确认对话框');
   assert.match(updateRs, /app\.restart\(\)/, '安装完成后要重启到新版本');
@@ -499,7 +507,7 @@ test('自动更新：签名公钥、发布源与原生侧流程都已接好', ()
   assert.match(updateRs, /TargetNotFound/, '缺少当前平台安装包不能被当成检查失败');
 
   // 发布流水线必须真的带上签名私钥来构建，否则更新产物签不出来。
-  const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  const release = readText('.github', 'workflows', 'release.yml');
   assert.ok(release.includes('TAURI_SIGNING_PRIVATE_KEY'), '发布流水线必须使用更新签名私钥');
 });
 
@@ -533,7 +541,7 @@ test('打包运行时（src-tauri/runtime）不含 vite，且能独立启动后�
 });
 
 test('Windows 环境变量大小写：PATH 按不敏感方式读写，cargo 缺失不得静默失败', async () => {
-  const launcher = fs.readFileSync(path.join(ROOT, 'scripts', 'desktop.mjs'), 'utf8');
+  const launcher = readText('scripts', 'desktop.mjs');
   // 只检查代码本身：上面那段解释「为什么不能这么写」的注释里就会出现这个写法，
   // 直接全文匹配会把说明文字当成违规。
   const launcherCode = launcher.split('\n').map(line => line.replace(/\/\/.*$/, '')).join('\n');
