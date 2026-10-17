@@ -86,6 +86,9 @@ jobs:
     name: ${{ matrix.name }}
     needs: guard
     runs-on: ${{ matrix.os }}
+    # TEMP-DIAG：只为定位 Linux AppImage 打包失败，本次只跑 Linux 两个目标。
+    # 定位完成后必须删掉这一行。
+    if: ${{ matrix.name == 'linux-x64' || matrix.name == 'linux-arm64' }}
     strategy:
       # 一个平台失败不影响其他平台；失败的平台在 Release 里就是缺这个产物，其余照常可用。
       fail-fast: false
@@ -191,4 +194,35 @@ jobs:
           updaterJsonPreferNsis: true
           # 六个 job 并发创建/更新同一个 Release，重试能吸收偶发的并发冲突与上传抖动。
           retryAttempts: 2
-          args: --target ${{ matrix.target }}
+          # TEMP-DIAG：--verbose 让打包器不再把 linuxdeploy 的 stderr 丢掉（Tauri 只在
+          # 日志级别为 Error 时走「吞掉输出、只留一句 failed to run linuxdeploy」那条路）。
+          # 定位完成后应改回 `args: --target ${{ matrix.target }}`。
+          args: --target ${{ matrix.target }} --verbose
+
+      - name: 诊断（仅失败时，仅 Linux）：把 AppImage 打包现场打印出来
+        if: failure() && runner.os == 'Linux'
+        run: |
+          set +e
+          echo "=== 打包产物目录 ==="
+          find src-tauri/target -maxdepth 5 -path '*bundle*' -maxdepth 5 -type d 2>/dev/null | head -20
+          echo
+          echo "=== tauri 缓存里的 linuxdeploy 工具 ==="
+          ls -la "$HOME/.cache/tauri" 2>/dev/null
+          echo
+          echo "=== AppDir 是否还在（失败时 Tauri 不会清理）==="
+          APP_DIR=$(find src-tauri/target -maxdepth 6 -name '*.AppDir' -type d 2>/dev/null | head -1)
+          echo "APP_DIR=$APP_DIR"
+          if [ -n "$APP_DIR" ]; then
+            echo "--- AppDir 顶层 ---"
+            ls -la "$APP_DIR"
+            echo "--- usr/bin ---"
+            ls -la "$APP_DIR/usr/bin" 2>/dev/null
+            echo "--- usr/lib 顶层（前 30 项）---"
+            ls -la "$APP_DIR/usr/lib" 2>/dev/null | head -30
+            echo "--- 各子目录体积 ---"
+            du -sh "$APP_DIR"/usr/lib/* 2>/dev/null | sort -h | tail -15
+            echo "--- 整个 AppDir 体积与文件数 ---"
+            du -sh "$APP_DIR"
+            find "$APP_DIR" -type f | wc -l
+          fi
+          exit 0
