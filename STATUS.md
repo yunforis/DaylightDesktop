@@ -44,7 +44,7 @@
 | 交叉打包（Apple Silicon → Intel Mac） | `DAYLIGHT_TARGET_TRIPLE=x86_64-apple-darwin npm run desktop:prepare` | 成功；内置 `node` 经 `file` 确认为 `Mach-O 64-bit executable x86_64`（官方 `node-v22.23.3-darwin-x64`），原生模块只剩 `@napi-rs/canvas-darwin-x64`（切回 arm64 时只剩 `canvas-darwin-arm64`，无残留） | 本地测试通过 |
 | 交叉打包缓存与重试 | 连续两次同一目标 | 第二次命中 `work/node-dist-cache/`；实测遇到过 `nodejs.org` 连接超时并验证重试后成功 | 本地测试通过 |
 | 桌面专有测试 | `npm run test:desktop` | **11/11 通过**（新增：发布矩阵与内置 Node 架构映射一一对应、自动更新配置与原生侧流程、Windows PATH 键名大小写） | 本地测试通过 |
-| GitHub Actions（首次真实运行）| `desktop.yml`，仓库 `yunforis/DaylightDesktop` 提交 `e849eb8` / `472e4f3` | `macos-14` **全绿 17/17 步**、`ubuntu-22.04` **全绿 17/17 步**（含桌面专有测试与 `cargo check`）；`windows-latest` 抓到两个真实缺陷（下两行） | **云端部署验证通过（macOS / Linux）** |
+| GitHub Actions（首次真实运行）| `desktop.yml`，仓库 `yunforis/DaylightDesktop` | 首次运行：`macos-14` / `ubuntu-22.04` 全绿，`windows-latest` 连抓三个真实缺陷（下三行）。**修复后 `macos-14` / `ubuntu-22.04` / `windows-latest` 各 17/17 步全部通过** | **云端部署验证通过（三平台 verify）** |
 | CI 发现并修复：Windows 凭据文件权限 | `windows-latest` → 桌面专有测试 #4 | `expected 384 / actual 438`：Windows 无 POSIX 权限位，断言按平台分支改写 | 云端抓到，本地修复 |
 | CI 发现并修复：Windows `desktop:check` 静默失败 | `windows-latest` → Rust 壳层检查 | 退出码 1 且无任何输出；根因是 `env.PATH` 与 `Path` 大小写不同键共存，系统挑到了不含 cargo 的那个 | 云端抓到，本地修复 |
 | CI 发现并修复：CRLF 行尾让断言失效 | `windows-latest` → 桌面专有测试 #11 | 剥注释的 `$` 锚点正则匹配不到 CRLF 行尾，把注释当成了违规代码；测试读源码已统一走 `readText()` 归一化行尾 | 云端抓到，本地修复 |
@@ -63,7 +63,7 @@
 
 ### 未验证 / 明确边界
 
-- **发布流水线尚未真正跑完整**：`desktop.yml`（三平台 verify）在 2026-10-17 首次真实运行。**`macos-14` 与 `ubuntu-22.04` 均已全绿（各 17/17 步，含桌面专有测试与 `cargo check`）**；`windows-latest` 抓到两个真实问题（见下条），修复后仍在等重新运行的结果。`.github/workflows/release.yml` 的六平台矩阵**仍未运行过**（要等第一次打标签），ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随仓库可见性与账号类型变化。因此本仓库的 CI 证据等级是「**macOS / Linux 云端部署验证通过（verify 流水线）**」，Windows 尚在验证中。
+- **平台验证已三平台全绿，但发布流水线仍未跑过**：`desktop.yml`（三平台 verify）在 2026-10-17 首次真实运行，Windows 先后暴露三个真实缺陷（见下三条），修复后**`macos-14`、`ubuntu-22.04`、`windows-latest` 各自 17/17 步全部通过**，含桌面专有测试（12 项）与 `cargo check`。`release.yml` 的六平台矩阵**仍未运行过**（要等第一次打标签），ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随仓库可见性与账号类型变化。
 - **文件名必须在 Windows 上也合法**：安装包里的每个文件名不能以点或空格结尾、不能含 `<>:"|?*`、不能用 `CON`/`PRN`/`NUL`/`COM1`/`LPT1` 这些保留名。构建发生在 macOS / Linux 上，这类文件名在那里完全合法，问题只会在 Windows 用户机器上出现。Vite 的默认资源命名就踩过：没有扩展名的文件（pdfjs-dist 的 `LICENSE_JBIG2`）会被命名成 `LICENSE_JBIG2-C_izpuvI.`。`vite.config.js` 已修掉这一点，`prepare-desktop.mjs` 在打包前会检查一遍并直接报错，`desktop-tests` 也有断言守着。\n- **Windows 上凭据文件没有 POSIX 权限位**：`server/secure-json.js` 写盘请求 `mode: 0o600`，Windows 会忽略它，Node 读回来恒是 `0o666`（CI 实测 `expected 384 / actual 438`）。这一侧的实际保护是「主密钥存进 Windows 凭据管理器」+「`%APPDATA%` 目录继承的 ACL」，都无法用 `fs.stat` 断言。`desktop-tests` 已改为按平台分支断言，并在注释里写明原因，不假装 Windows 上也验证了 0600。
 - **Windows 上 PATH 的键名是 `Path`，曾导致 `desktop:check` 静默失败**：`scripts/desktop.mjs` 里写的是 `env.PATH = ...`，而 `env` 是从 `process.env` 展开出的普通对象（大小写敏感），于是新增了一个键而不是改已有的 `Path`，交给子进程的环境块里同时存在 `Path` 与 `PATH`，系统挑到了不含 cargo 的那个——`spawnSync('cargo')` 找不到可执行文件，`npm run desktop:check` 只给出退出码 1、**全程没有任何输出**（CI 日志里唯一线索就是这一行）。已改为按键名不敏感地定位 PATH，并在 `cargo` 启动失败时明确报出原因；`desktop-tests` 里有静态断言守住写法。**这个差异只在 Windows 上存在**：macOS/Linux 的环境块是真·大小写敏感，复刻不出「系统在重复键里挑一个」的行为，所以本机无法行为验证，只能靠 `windows-latest` 上的真实运行。
 - **Windows 检出是 CRLF 行尾**：正则里的 `.` 不匹配 `\r`，带 `$` 锚点的断言在 CRLF 上会静默失效。写上面那条 PATH 守卫时就踩了一次——剥注释的 `/\/\/.*$/` 在 CRLF 下匹配不到行尾，把注释里那句「不要写 `env.PATH`」当成了违规代码，于是在 `windows-latest` 上失败、在 macOS 上通过。测试里读源码现已统一走 `readText()` 先归一化行尾。

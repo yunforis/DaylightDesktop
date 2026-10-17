@@ -255,6 +255,6 @@ DAYLIGHT_WEB_DIR=/path/to/Daylight node scripts/desktop-sync.mjs
 - **字体**：`index.html` 仍会从 `fonts.googleapis.com` 拉取 Noto Sans SC / Sora / Space Grotesk。离线或受限网络下会回退到系统字体（macOS 为苹方），版式不会错乱，但字形与 Web 端联网时略有差异。桌面端未内置这些字体，以免安装包体积和字重授权扩散。
 - **睡眠唤醒**：壳层没有监听系统唤醒事件。后台 Node 进程在唤醒后仍在运行，定时同步与空闲监听会在下一轮触发；本机未实测唤醒路径。
 - **未在 Windows / Linux 实机验证**：`src-tauri/src/main.rs` 与 `scripts/prepare-desktop.mjs` 里有真实的平台分支，依赖清单也记录了全部平台的预编译包，但这仍是**代码已实现**，不是**实机跑通**。
-- **发布流水线尚未真正跑过**：`.github/workflows/release.yml` 的六平台矩阵与 `desktop.yml` 的三平台验证都只在本机做过静态校验（YAML 结构、目标映射、交叉打包实测），**Actions 一次都没有实际运行**。首次打标签发布的成功率取决于 runner 可用性（`ubuntu-24.04-arm`、`windows-11-arm` 是 GitHub 的 ARM64 runner，可用性随账号与仓库可见性变化）。
+- **平台验证已是云端实测，发布流水线还没跑过**：`.github/workflows/desktop.yml`（三平台 verify）已在 GitHub Actions 上真实运行并**三平台全绿**——`macos-14`、`ubuntu-22.04`、`windows-latest` 各 17/17 步（含 12 项桌面专有测试与 `cargo check`）。Windows 那一路先后暴露并修掉了三个真实缺陷（见 [STATUS.md](STATUS.md)），其中「资源文件名以点结尾」会直接导致 Windows 用户装不上。`.github/workflows/release.yml` 的六平台矩阵与安装包发布**一次都没运行过**，要等第一次打标签；ARM64 runner（`ubuntu-24.04-arm`、`windows-11-arm`）的可用性随账号与仓库可见性变化。
 - **自动更新未做端到端验证**：本机已实测「更新产物签名能被应用内嵌公钥接受、篡改 1 字节即被拒绝」（含反向对照），但**下载 → 校验 → 替换安装文件 → 重启**这一整条链路需要发布两个真实版本才能验证，本轮未做。Linux 上还额外依赖 AppImage 形态。
 - **macOS 安装包未做签名与公证**：本机与 CI 默认产出未签名包，首次打开需要手动放行。配好 `APPLE_*` Secrets 后即可自动签名公证，那时需要 Apple 开发者账号（付费）。
